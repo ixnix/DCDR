@@ -1,0 +1,58 @@
+[project]
+name = "dcdr"
+version = "0.1.0"
+description = "Dust Climate Data Record: quality-controlled dust events from NOAA ISD"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Xin Xi" }]
+dependencies = [
+  "polars>=2.0,<3",
+  "pyarrow>=20",
+  "duckdb>=1.5",
+  "obstore>=0.12",
+  "pandera[polars]>=0.34",
+  "pydantic>=2.10",
+  "pyyaml>=6.0",
+  "typer>=0.15",
+]
+
+[project.scripts]
+dcdr = "dcdr.cli:app"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.9",
+  "mypy>=1.15",
+  "types-pyyaml>=6.0",
+  "pre-commit>=4.0",
+  "matplotlib>=3.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dcdr"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["legacy", "docs"]  # kept verbatim: original scripts and design docs
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]  # line length is handled by `ruff format`
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not network'"
+markers = ["network: test needs internet access to NOAA S3"]
