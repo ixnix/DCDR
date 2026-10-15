@@ -138,7 +138,7 @@ If full-scale silver (about 700k files) needs fast whole-archive scans, adopt a 
 ### 7.1 Ingest → bronze
 
 #### 7.1.1 Discovery
-- List `s3://noaa-global-hourly-pds/{year}/` for each year in scope (paginated ListObjectsV2).
+- List `s3://noaa-global-hourly-pds/{year}/` for each year in scope (paginated ListObjectsV2). With obstore, a listing prefix matches **whole path segments only** (e.g. `prefix="2024"`, not `"2024/7238"`). ETags arrive quoted (`"…"`) and are stored without the quotes. `REPORT_TYPE` values may carry trailing spaces (`"SOD  "`), so they are stripped during parsing.
 - Keep keys whose station ID (file name without `.csv`, 11 characters) is in the selected station list (`config.stations.list`), or all keys when `stations: all`.
 - The pilot list is a CSV with at least `station_id, region, role` (`role` ∈ `source_candidate, contrast`).
 
@@ -185,7 +185,7 @@ Row order: input rows are **explicitly sorted** by `(time_utc, report_type, sour
 | Visibility | `VIS` | `vis_raw (m), vis_qc, vis_var, vis_var_qc` |
 | Temperature | `TMP, DEW` | `t, t_qc, td, td_qc` (°C) |
 | Pressure | `SLP` | `slp, slp_qc` (hPa) |
-| Gust | `OC1`, `OD1–OD3` (type 3 = gust) | `gust, gust_qc, gust_src` |
+| Gust | `OC1`, `OD1–OD3` (types 3 = maximum instantaneous wind, 4 = maximum gust; config `parse.gust_od_types`, default `[3, 4]`) | `gust, gust_qc, gust_src`. The legacy code used type 3 only, which misses e.g. every Las Vegas gust (type 4). |
 | Present weather | `MW1–MW7`, `AU1–AU9`, `AW1–AW4` | code + QC per occurrence (§7.2.4) |
 | Vicinity / past | `MV1–MV7`, `AY1–AY2` | code + QC (+ period for AY) |
 | Precipitation / snow | `AA1–AA4`, `AJ1` | `precip_mm, precip_period_h, precip_qc, snow_depth_cm, snow_qc` (low reliability) |
@@ -199,7 +199,7 @@ Missing-value sentinels (e.g. `9999`, `99999`, `999999`, `+9999`) become null. S
 - `lmst_date` (the local day used by daily products), `lmst_hour` (fractional hour, 0–24).
 
 #### 7.2.3 QC (`qc.py`)
-- ISD QC codes per value: `0,1,4,5,9,M` → `ok`; `2,6` → `suspect`; `3,7` → `erroneous`; missing value → `missing`. Stored as `<var>_flag`.
+- ISD QC codes per value (ISD format document, general quality-code table): `0,1,4,5,9` and the validator letters `A,C,I,M,P,R,U` → `ok`; `2,6` → `suspect`; `3,7` → `erroneous`; any other code → `suspect`; missing value → `missing`. Stored as `<var>_flag`. The mapping is config (`qc.codes`).
 - Range checks set `erroneous`: wsd 0–75 m/s; t −90 to 60 °C; td −100 to 40 °C and td ≤ t + 0.5 °C; vis_raw 0–160,000 m; slp 850–1090 hPa; gust 0–100 m/s.
 - `use_<var>` = flag ∈ `qc.accept` (default `[ok]`; set `[ok, suspect]` to include suspect values).
 - **RH:** Magnus form (Alduchov & Eskridge 1996): `e_s(T) = 6.1094·exp(17.625·T/(T+243.04))`, `rh = 100·e_s(td)/e_s(t)`. Null if either value is unusable; `td > t + 0.5` makes RH null and sets the td flag to erroneous.
