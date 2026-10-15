@@ -1,0 +1,33 @@
+# DCDR default configuration. Every method choice in the spec is a key here.
+paths:
+  data_root: /Volumes/CrucialX8/dcdr
+ingest:
+  bucket: noaa-global-hourly-pds
+  region: us-east-1
+  max_concurrency: 16
+  retries: 5
+parse:
+  gust_od_types: [3, 4]
+qc:
+  codes_ok: ["0", "1", "4", "5", "9", "A", "C", "I", "M", "P", "R", "U"]
+  codes_suspect: ["2", "6"]
+  codes_erroneous: ["3", "7"]
+  accept: [ok]
+  vis_cap_m: 10000
+  rh_screen_pct: 90
+  rh_screen_classes: [suspended, haze, haze_or_suspended, dust_haze]
+classify:
+  fields: [MW, AU, AW]
+  haze_window_h: 24
+  sand_min_t_c: 3.0
+  snow_max_t_c: 0.0
+sampling:
+  window_min: 30
+  exclude_types: [SOD, SOM]
+  priority: [FM-12, SY-MT, SY-SA, SY-AE, SY-AU, FM-15, SAO, AUTO, FM-16]
+  synoptic_dust_source: selected
+products:
+  min_slots_per_day: 4
+  gold_keep_versions: 3
+stations:
+  station_list: config/stations/thin_slice.csv
