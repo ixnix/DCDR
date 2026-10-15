@@ -213,3 +213,35 @@ def classify_reports(df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg) -> pl.DataFr
         flag_bd=r.is_in([RANK["blowing"], RANK["whirls"]]),
         flag_ds=(r >= RANK["storm"]),
     ).drop("_snow", "_sand", "_snowt", "_cls")
+
+
+def apply_haze_and_rh(df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg) -> pl.DataFrame:
+    """Haze rule (window (t-24h, t], same station, unscreened dust) then RH screen.
+
+    `df` must hold one station and be sorted by `time_utc`.
+    """
+    haze_like = pl.col("dust_class_rule").is_in(["haze", "haze_or_suspended"])
+    if cfg.haze_window_h > 0:
+        recent = (
+            pl.col("flag_du")
+            .cast(pl.Int8)
+            .rolling_max_by("time_utc", window_size=f"{cfg.haze_window_h}h", closed="right")
+            == 1
+        )
+        dust_haze = (haze_like & recent).fill_null(False)
+    else:
+        dust_haze = pl.lit(False)
+    df = df.with_columns(dust_haze=dust_haze)
+    df = df.with_columns(flag_duhz=pl.col("flag_du") | pl.col("dust_haze"))
+    pre = (
+        pl.when(pl.col("dust_haze")).then(pl.lit("dust_haze")).otherwise(pl.col("dust_class_rule"))
+    )
+    screened = (
+        pl.col("rh").is_not_null()
+        & (pl.col("rh") > qc.rh_screen_pct)
+        & pre.is_in(qc.rh_screen_classes)
+    ).fill_null(False)
+    df = df.with_columns(rh_screened=screened)
+    return df.with_columns(
+        dust_class_final=pl.when(pl.col("rh_screened")).then(pl.lit("screened")).otherwise(pre)
+    )
