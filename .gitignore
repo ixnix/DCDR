@@ -1,0 +1,32 @@
+# macOS / exFAT metadata
+.DS_Store
+._*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Data never lives in git (it lives on /Volumes/CrucialX8/dcdr)
+data/
+*.parquet
+*.tif
+*.nc
+*.zarr/
+
+# Legacy inputs: keep scripts and small reference text, ignore bulky data files
+legacy/station_history/*.csv
+
+# Private funding drafts (contain personal application details)
+docs/funding/
+
+# Web build output
+web/dist/
+web/.observablehq/cache/
+node_modules/
