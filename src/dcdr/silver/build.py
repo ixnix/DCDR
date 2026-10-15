@@ -115,7 +115,14 @@ def build_station_year(
     df = classify_reports(df, settings.classify, settings.qc)
     df = apply_haze_and_rh(df, settings.classify, settings.qc)
     df = select_synoptic(df, settings.sampling)
-    df = df.filter(pl.col("time_utc").dt.year() == year).sort(_SORT, nulls_last=True)
+    # Each report lives in exactly one station-year file: slot candidates belong to their SLOT's
+    # year (a 23:56 Dec-31 report competes for the Jan-1 00:00 slot), others to their own year.
+    owner_year = (
+        pl.when(pl.col("is_candidate"))
+        .then(pl.col("slot_time").dt.year())
+        .otherwise(pl.col("time_utc").dt.year())
+    )
+    df = df.filter(owner_year == year).sort(_SORT, nulls_last=True)
     rest = sorted(c for c in df.columns if c not in CORE_COLUMNS)
     return df.select(CORE_COLUMNS + rest)
 

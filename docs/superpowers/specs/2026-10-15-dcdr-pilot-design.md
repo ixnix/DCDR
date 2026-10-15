@@ -173,7 +173,7 @@ If full-scale silver (about 700k files) needs fast whole-archive scans, adopt a 
 
 ### 7.2 Bronze → silver
 
-Unit of work: one station-year **plus the bronze rows of the same station in the final 24 h (UTC) of the previous year**, which are needed by the haze rule (§7.2.5). Output: one row per report for the target year only. **No rows are deleted**; everything is flagged.
+Unit of work: one station-year **plus the bronze rows of the same station in the final 24 h (UTC) of the previous year**, which are needed by the haze rule (§7.2.5). Output: the rows **owned** by the target year. A synoptic-slot candidate is owned by its slot's year, so a report at 23:56 on 31 December belongs to the next year's file because it competes for the 1 January 00:00 slot. Every other row is owned by its own UTC year. Each report is therefore stored exactly once, and each slot is selected in exactly one file. This was found on real Las Vegas data in the Plan 1 thin slice. **No rows are deleted**; everything is flagged.
 
 Row order: input rows are **explicitly sorted** by `(time_utc, report_type, source, row_key)`, where `row_key` = SHA-1 of the row's source values (columns in sorted name order, provenance columns excluded). This makes order independent of file row order. NOAA notes that files from 2005 onward may be unsorted or incompletely merged (`NOTICE-ISD-MERGE-ISSUE.TXT`). Rows identical in **all** source columns are collapsed to one (`dup_count` records how many). Rows with the same timestamp but different values are kept as separate candidates.
 
