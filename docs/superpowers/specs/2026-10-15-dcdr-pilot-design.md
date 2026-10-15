@@ -200,7 +200,7 @@ Missing-value sentinels (e.g. `9999`, `99999`, `999999`, `+9999`) become null. S
 
 #### 7.2.3 QC (`qc.py`)
 - ISD QC codes per value (ISD format document, general quality-code table): `0,1,4,5,9` and the validator letters `A,C,I,M,P,R,U` → `ok`; `2,6` → `suspect`; `3,7` → `erroneous`; any other code → `suspect`; missing value → `missing`. Stored as `<var>_flag`. The mapping is config (`qc.codes`).
-- Range checks set `erroneous`: wsd 0–75 m/s; t −90 to 60 °C; td −100 to 40 °C and td ≤ t + 0.5 °C; vis_raw 0–160,000 m; slp 850–1090 hPa; gust 0–100 m/s.
+- Range checks set `erroneous`, using the MIN/MAX of each field in the ISD format document: wind direction 1–360°; wsd 0–90 m/s; t −93.2 to 61.8 °C; td −98.2 to 36.8 °C, and td ≤ t + 0.5 °C; vis_raw 0–160,000 m; slp 860–1090 hPa; OC1 gust 5–110 m/s; OD speed 0–200 m/s.
 - `use_<var>` = flag ∈ `qc.accept` (default `[ok]`; set `[ok, suspect]` to include suspect values).
 - **RH:** Magnus form (Alduchov & Eskridge 1996): `e_s(T) = 6.1094·exp(17.625·T/(T+243.04))`, `rh = 100·e_s(td)/e_s(t)`. Null if either value is unusable; `td > t + 0.5` makes RH null and sets the td flag to erroneous.
 - **Visibility:** `vis_capped = min(vis_raw, qc.vis_cap_m)` (default 10,000 m). `vis_raw`, `vis_qc` and `vis_capped` are all kept.
