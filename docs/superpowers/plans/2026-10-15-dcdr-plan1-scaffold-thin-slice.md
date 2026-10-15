@@ -32,7 +32,8 @@
 - Never discover data files with broad globs. Use the manifest, the station list, or `state.safe_listdir`, which skips names starting with `.` (macOS `._*` files, `.DS_Store`) and names ending in `.tmp`.
 - Every file write is atomic: write `<name>.tmp`, then `os.replace` onto the final name. A failure leaves the previous file intact and no `.tmp` behind.
 - Silver never deletes rows. The **only** exception is rows whose `DATE` can't be parsed: they can't be placed in time, so they are dropped and counted in a warning log line.
-- Present-weather code tables are exactly those in spec §7.2.4. **AW codes 30–35 are fog, never dust.**
+- **The ISD format document is the authority for every raw field**: layout, missing-value sentinels, scale factors, code tables and QC codes. It's at `legacy/isd-format-document.pdf`, identical to `s3://noaa-isd-pds/isd-format-document.pdf` (MD5 `4a284890fc90b2a4a5873880b99accc5`). Before coding a field, extract its section (`uv run --with pypdf …`, then grep) and confirm it. If the document contradicts this plan or the spec, follow the document and update both.
+- Present-weather code tables are exactly those in spec §7.2.4 (verified against the document). **AW codes 30–35 are fog, never dust.**
 - Local time is **local mean solar time**: `time_lmst = time_utc + lon/15 h`.
 - Tests run offline by default. Tests that need NOAA S3 carry `@pytest.mark.network` and are excluded by `addopts`.
 - Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
