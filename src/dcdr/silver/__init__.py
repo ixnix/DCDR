@@ -4,4 +4,4 @@ Bump METHOD_VERSION whenever parse/QC/classify/sampling logic changes; silver fi
 and gold refuses to mix versions.
 """
 
-METHOD_VERSION = "1.0.0"
+METHOD_VERSION = "1.0.1"

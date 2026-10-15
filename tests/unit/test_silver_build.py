@@ -81,3 +81,23 @@ def test_contract_rejects_two_selected_reports_in_one_slot(settings: Settings) -
     broken = out.with_columns(is_synoptic_selected=pl.lit(True))
     with pytest.raises(SilverContractError):
         validate_silver(broken)
+
+
+def test_year_boundary_slot_is_selected_once_across_files(settings: Settings) -> None:
+    """A 23:56 Dec-31 report is a candidate for the Jan-1 00:00 slot: it must live in ONE file."""
+    from datetime import datetime
+
+    prev_rows = [
+        isd_row("2023-12-31T21:00:00", REPORT_TYPE="FM-15"),
+        isd_row("2023-12-31T23:56:00", REPORT_TYPE="FM-15"),
+    ]
+    cur_rows = [isd_row("2024-01-01T00:00:00", REPORT_TYPE="FM-15")]
+    s23 = build_station_year(bronze_frame(prev_rows), None, 2023, settings)
+    s24 = build_station_year(bronze_frame(cur_rows), bronze_frame(prev_rows), 2024, settings)
+    both = pl.concat([s23, s24], how="diagonal_relaxed")
+    assert both["row_key"].n_unique() == both.height  # every report stored exactly once
+    jan1 = both.filter(
+        pl.col("is_synoptic_selected") & (pl.col("slot_time") == datetime(2024, 1, 1))
+    )
+    assert jan1.height == 1
+    assert jan1["time_utc"].item() == datetime(2024, 1, 1)  # closest report wins the slot
