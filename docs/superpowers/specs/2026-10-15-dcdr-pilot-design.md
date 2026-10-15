@@ -175,7 +175,7 @@ If full-scale silver (about 700k files) needs fast whole-archive scans, adopt a 
 
 Unit of work: one station-year **plus the bronze rows of the same station in the final 24 h (UTC) of the previous year**, which are needed by the haze rule (§7.2.5). Output: one row per report for the target year only. **No rows are deleted**; everything is flagged.
 
-Row order: input rows are **explicitly sorted** by `(time_utc, report_type, source, source_key, row_number)`. NOAA notes that files from 2005 onward may be unsorted or incompletely merged (`NOTICE-ISD-MERGE-ISSUE.TXT`). Rows identical in **all** source columns are collapsed to one (`dup_count` records how many). Rows with the same timestamp but different values are kept as separate candidates.
+Row order: input rows are **explicitly sorted** by `(time_utc, report_type, source, row_key)`, where `row_key` = SHA-1 of the row's source values (columns in sorted name order, provenance columns excluded). This makes order independent of file row order. NOAA notes that files from 2005 onward may be unsorted or incompletely merged (`NOTICE-ISD-MERGE-ISSUE.TXT`). Rows identical in **all** source columns are collapsed to one (`dup_count` records how many). Rows with the same timestamp but different values are kept as separate candidates.
 
 #### 7.2.1 Parsed fields (`parse.py`)
 | Group | ISD fields | Parsed columns |
@@ -257,7 +257,7 @@ A report whose class is `haze` or `haze_or_suspended` becomes `dust_haze` if the
 
 #### 7.2.7 Synoptic sampling (`sampling.py`)
 - Slots: 00, 03, …, 21 UTC each day. Candidates: reports with `|time_utc − slot| ≤ sampling.window_min` (default 30), excluding `sampling.exclude_types` (default `[SOD, SOM]`).
-- Each candidate gets `slot_time`, `selection_rank` and `selection_reason`. Rank order: (1) report-type priority, `sampling.priority` (default `[FM-12, SY-MT, SY-SA, SY-AE, SY-AU, FM-15, SAO, AUTO, FM-16]`, unlisted types after); (2) `has_pw` (true first, which favours reports *with* present-weather information, never dust-positive ones); (3) `|Δt|`; (4) `time_utc`; (5) `source_key`; (6) row number.
+- Each candidate gets `slot_time`, `selection_rank` and `selection_reason`. Rank order: (1) report-type priority, `sampling.priority` (default `[FM-12, SY-MT, SY-SA, SY-AE, SY-AU, FM-15, SAO, AUTO, FM-16]`, unlisted types after); (2) `has_pw` (true first, which favours reports *with* present-weather information, never dust-positive ones); (3) `|Δt|`; (4) `time_utc`; (5) `source`; (6) `row_key`.
 - `is_synoptic_selected` = rank 1. The result is independent of input row order.
 - `sampling.synoptic_dust_source`: `selected` (default; dust from the selected report only) or `any_in_window`.
 
