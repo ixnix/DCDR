@@ -98,3 +98,16 @@ def test_current_pointer_and_pruning(tmp_path: Path) -> None:
     assert current_gold_dir(s) == s.data_root / "gold" / "versions" / run_ids[-1]
     remaining = sorted(p.name for p in (s.data_root / "gold" / "versions").iterdir())
     assert remaining == run_ids[-2:]
+
+
+def test_dusty_day_any_source_uses_past_and_daily_summaries(settings: Settings) -> None:
+    rows = (
+        _slots("2024-01-01", MW1="02,1")
+        + [isd_row("2024-01-01T06:30:00", **LON0, REPORT_TYPE="FM-15", AY1="3,1,06,1")]
+        + _slots("2024-01-02", MW1="02,1")
+        + [isd_row("2024-01-02T23:59:00", **LON0, REPORT_TYPE="SOD", AX1="07,5,24,5")]
+        + _slots("2024-01-03", MW1="02,1")
+    )
+    d = _daily(settings, [_silver(settings, rows)]).sort("lmst_date")
+    assert d["dusty_day_synoptic"].to_list() == [False, False, False]
+    assert d["dusty_day_any_source"].to_list() == [True, True, False]

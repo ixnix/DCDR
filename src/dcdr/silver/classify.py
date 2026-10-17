@@ -9,7 +9,7 @@ from __future__ import annotations
 import polars as pl
 
 from dcdr.config import ClassifyCfg, QcCfg
-from dcdr.silver.parse import AU_N, AW_N, AY_N, MV_N, MW_N
+from dcdr.silver.parse import AT_N, AU_N, AW_N, AX_N, AY_N, AZ_N, MV_N, MW_N
 from dcdr.silver.qc import code_flag
 
 RANK: dict[str, int] = {
@@ -53,6 +53,10 @@ AW_TABLE = {"04": "haze_or_suspended", "07": "blowing"}  # 30-35 are fog -> rank
 AW_SNOW_OR_SAND = ["27", "28", "29"]
 MV_VICINITY = ["03", "04", "05", "07", "08"]
 MW_SNOW = [str(c) for c in range(70, 80)]
+AT_DUST = ["07"]  # daily present weather: dust, volcanic ash, blowing dust/sand or obstruction
+AX_DUST = ["07"]  # daily past weather: blowing dust or sand, visibility <= 1/2 mile
+AY_DUST_OR_SNOW = ["3"]  # WMO 4561 past weather: sandstorm, duststorm or blowing snow
+AZ_BLOWING = ["2"]  # WMO 4531 automated past weather: blowing phenomena, visibility reduced
 
 
 def _accepted(qc_col: str, qc: QcCfg) -> pl.Expr:
@@ -114,6 +118,18 @@ def classify_reports(df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg) -> pl.DataFr
     ay_ok = {
         n: pl.col(f"ay{n}_code").is_not_null() & _accepted(f"ay{n}_qc", qc)
         for n in range(1, AY_N + 1)
+    }
+    az_ok = {
+        n: pl.col(f"az{n}_code").is_not_null() & _accepted(f"az{n}_qc", qc)
+        for n in range(1, AZ_N + 1)
+    }
+    ax_ok = {
+        n: pl.col(f"ax{n}_code").is_not_null() & _accepted(f"ax{n}_qc", qc)
+        for n in range(1, AX_N + 1)
+    }
+    at_ok = {
+        n: pl.col(f"at{n}_wea").is_not_null() & _accepted(f"at{n}_qc", qc)
+        for n in range(1, AT_N + 1)
     }
 
     snow = pl.any_horizontal(
@@ -180,19 +196,38 @@ def classify_reports(df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg) -> pl.DataFr
             )
         )
     for n, ok in ay_ok.items():
-        evidence.append(pl.when(ok & (pl.col(f"ay{n}_code") == "3")).then(pl.lit(f"AY{n}=3")))
+        evidence.append(
+            pl.when(ok & pl.col(f"ay{n}_code").is_in(AY_DUST_OR_SNOW)).then(pl.lit(f"AY{n}=3"))
+        )
+    for n, ok in az_ok.items():
+        evidence.append(
+            pl.when(ok & pl.col(f"az{n}_code").is_in(AZ_BLOWING)).then(pl.lit(f"AZ{n}=2"))
+        )
+    for n, ok in ax_ok.items():
+        evidence.append(
+            pl.when(ok & pl.col(f"ax{n}_code").is_in(AX_DUST)).then(pl.lit(f"AX{n}=07"))
+        )
+    for n, ok in at_ok.items():
+        evidence.append(pl.when(ok & pl.col(f"at{n}_wea").is_in(AT_DUST)).then(pl.lit(f"AT{n}=07")))
 
     vicinity = pl.any_horizontal(
         list(au_vic.values())
         + [ok & pl.col(f"mv{n}_code").is_in(MV_VICINITY) for n, ok in mv_ok.items()]
     ).fill_null(False)
-    past = pl.any_horizontal(
-        [ok & (pl.col(f"ay{n}_code") == "3") & pl.col("_sand") for n, ok in ay_ok.items()]
-    ).fill_null(False)
+    # Past weather (AY 3, AZ 2) can be snow or sand: resolved by temperature like AW 27-29.
+    past_codes = [ok & pl.col(f"ay{n}_code").is_in(AY_DUST_OR_SNOW) for n, ok in ay_ok.items()] + [
+        ok & pl.col(f"az{n}_code").is_in(AZ_BLOWING) for n, ok in az_ok.items()
+    ]
+    past = pl.any_horizontal([p & pl.col("_sand") for p in past_codes]).fill_null(False)
     neither = ~pl.col("_sand") & ~pl.col("_snowt")
     ambiguous = pl.any_horizontal(
         [ok & pl.col(f"aw{n}_code").is_in(AW_SNOW_OR_SAND) & neither for n, ok in aw_ok.items()]
-        + [ok & (pl.col(f"ay{n}_code") == "3") & neither for n, ok in ay_ok.items()]
+        + [p & neither for p in past_codes]
+    ).fill_null(False)
+    # Daily summaries (AT/AX, in SOD rows) are day-level evidence, not present-weather observations.
+    daily_dust = pl.any_horizontal(
+        [ok & pl.col(f"at{n}_wea").is_in(AT_DUST) for n, ok in at_ok.items()]
+        + [ok & pl.col(f"ax{n}_code").is_in(AX_DUST) for n, ok in ax_ok.items()]
     ).fill_null(False)
 
     df = df.with_columns(
@@ -203,6 +238,7 @@ def classify_reports(df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg) -> pl.DataFr
         flag_vicinity=vicinity,
         flag_past=past,
         flag_ambiguous=ambiguous,
+        flag_daily_dust=daily_dust,
         _cls=cls,
     )
     r = pl.col("dust_rank")
