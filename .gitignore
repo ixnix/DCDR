@@ -30,3 +30,6 @@ docs/funding/
 web/dist/
 web/.observablehq/cache/
 node_modules/
+
+# Microsoft Office lock files
+~$*

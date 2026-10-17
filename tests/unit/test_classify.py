@@ -114,3 +114,35 @@ def test_flags_follow_classes(settings: Settings) -> None:
     assert (r["flag_bd"], r["flag_ds"]) == (True, False)
     r = _cls(settings, MW1="98,1")
     assert (r["flag_ds"], r["flag_du"]) == (True, True)
+
+
+@pytest.mark.parametrize(
+    "fields,daily_dust",
+    [
+        ({"AT1": "AU,07,DU  ,5"}, True),
+        ({"AX1": "07,5,24,5"}, True),
+        ({"AX1": "08,5,24,5"}, False),
+        ({"AT1": "AU,07,DU  ,3"}, False),
+        ({"AT1": "AU,16,RA  ,5"}, False),
+    ],
+)
+def test_daily_summary_dust_evidence(settings: Settings, fields: dict, daily_dust: bool) -> None:
+    r = _cls(settings, REPORT_TYPE="SOD", **fields)
+    assert r["flag_daily_dust"] is daily_dust
+    assert r["has_pw"] is False  # daily summaries are not present-weather observations
+
+
+@pytest.mark.parametrize(
+    "tmp,past,ambiguous",
+    [("+0304,1", True, False), ("-0050,1", False, False), ("+0015,1", False, True)],
+)
+def test_automated_past_weather_blowing_resolved_by_temperature(
+    settings: Settings, tmp: str, past: bool, ambiguous: bool
+) -> None:
+    r = _cls(settings, MW1="02,1", AZ1="2,1,06,1", TMP=tmp, DEW="-0100,1")
+    assert (r["flag_past"], r["flag_ambiguous"], r["flag_du"]) == (past, ambiguous, False)
+
+
+def test_missing_present_weather_is_not_observed(settings: Settings) -> None:
+    r = _cls(settings, AY1="3,1,06,1")  # past weather only: present weather NOT observed
+    assert (r["has_pw"], r["dust_class_rule"], r["flag_past"]) == (False, "unknown", True)

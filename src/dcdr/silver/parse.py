@@ -11,6 +11,7 @@ from __future__ import annotations
 import polars as pl
 
 MW_N, AU_N, AW_N, MV_N, AY_N, OD_N, AA_N = 7, 9, 4, 7, 2, 3, 4
+AT_N, AX_N, AZ_N = 8, 6, 2
 PARSE_BITS = {"WND": 1, "VIS": 2, "TMP": 4, "DEW": 8, "SLP": 16}
 _AU_PARTS = ("int", "desc", "prec", "obsc", "other", "comb", "qc")
 
@@ -103,6 +104,21 @@ def parse_reports(raw: pl.DataFrame) -> pl.DataFrame:
         _num(_part(d, "AJ1", 0), ("9999",)).alias("aj1_cm"),
         _part(d, "AJ1", 2).alias("aj1_qc"),
     ]
+    for n in range(1, AT_N + 1):  # DAILY-PRESENT-WEATHER: source, weather type, abbreviation, QC
+        c = f"AT{n}"
+        exprs += [
+            _part(d, c, 0).alias(f"at{n}_src"),
+            _part(d, c, 1).alias(f"at{n}_wea"),
+            _part(d, c, 3).alias(f"at{n}_qc"),
+        ]
+    for fam, count in (("AX", AX_N), ("AZ", AZ_N)):  # past weather: code, QC, period (h), period QC
+        for n in range(1, count + 1):
+            c, low = f"{fam}{n}", f"{fam.lower()}{n}"
+            exprs += [
+                _part(d, c, 0).alias(f"{low}_code"),
+                _part(d, c, 1).alias(f"{low}_qc"),
+                _num(_part(d, c, 2), ("99",)).alias(f"{low}_period_h"),
+            ]
     bits = [
         _malformed(wnd_spd, ("9999",)).cast(pl.Int32) * PARSE_BITS["WND"],
         _malformed(vis, ("999999",)).cast(pl.Int32) * PARSE_BITS["VIS"],

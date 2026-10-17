@@ -77,3 +77,11 @@ def test_lmst_uses_each_reports_longitude() -> None:
     assert first["lmst_date"] == date(2023, 12, 31)
     assert first["lmst_hour"] == pytest.approx(17.3222, abs=1e-3)
     assert second["lmst_date"] == date(2024, 6, 1) and second["lmst_hour"] == pytest.approx(1.0)
+
+
+def test_daily_and_past_weather_fields() -> None:
+    # Layouts per ISD format document and real SOD rows ("AU,16,RA  ,5"; "08,6,24,6").
+    r = _one(REPORT_TYPE="SOD  ", AT1="AU,07,DU  ,5", AX1="07,5,24,5", AZ1="2,1,06,1")
+    assert (r["at1_src"], r["at1_wea"], r["at1_qc"]) == ("AU", "07", "5")
+    assert (r["ax1_code"], r["ax1_qc"], r["ax1_period_h"]) == ("07", "5", 24.0)
+    assert (r["az1_code"], r["az1_qc"], r["az1_period_h"]) == ("2", "1", 6.0)

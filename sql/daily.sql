@@ -54,9 +54,16 @@ all_daily AS (
             ['suspended', 'blowing', 'whirls', 'storm', 'storm_severe', 'storm_thunder', 'dust_haze'],
             dust_class_final
         )) AS dusty_day_any,
-        max(gust) FILTER (WHERE use_gust) AS gust_max
+        max(gust) FILTER (WHERE use_gust) AS gust_max,
+        bool_or(flag_past) AS past_weather_dust
     FROM silver
     WHERE NOT is_excluded_type
+    GROUP BY station_id, lmst_date
+),
+summary_daily AS (
+    -- daily-summary (SOD) rows are excluded from sampling but carry AT/AX dust codes
+    SELECT station_id, lmst_date, bool_or(flag_daily_dust) AS daily_summary_dust
+    FROM silver
     GROUP BY station_id, lmst_date
 ),
 joined AS (
@@ -69,6 +76,10 @@ joined AS (
         coalesce(s.n_slots_pw, 0) >= getvariable('min_slots') AS valid_day,
         coalesce(s.dusty_day_synoptic, false) AS dusty_day_synoptic,
         coalesce(a.dusty_day_any, false) AS dusty_day_any,
+        coalesce(a.past_weather_dust, false) AS past_weather_dust,
+        coalesce(m.daily_summary_dust, false) AS daily_summary_dust,
+        coalesce(a.dusty_day_any, false) OR coalesce(a.past_weather_dust, false)
+            OR coalesce(m.daily_summary_dust, false) AS dusty_day_any_source,
         coalesce(s.n_dust_slots_suspended, 0) AS n_dust_slots_suspended,
         coalesce(s.n_dust_slots_blowing, 0) AS n_dust_slots_blowing,
         coalesce(s.n_dust_slots_whirls, 0) AS n_dust_slots_whirls,
@@ -91,6 +102,7 @@ joined AS (
         s.dup6_mean
     FROM all_daily AS a
     LEFT JOIN sel_daily AS s ON a.station_id = s.station_id AND a.lmst_date = s.lmst_date
+    LEFT JOIN summary_daily AS m ON a.station_id = m.station_id AND a.lmst_date = m.lmst_date
 )
 SELECT
     *,

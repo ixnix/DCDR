@@ -187,7 +187,7 @@ Row order: input rows are **explicitly sorted** by `(time_utc, report_type, sour
 | Pressure | `SLP` | `slp, slp_qc` (hPa) |
 | Gust | `OC1`, `OD1–OD3` (types 3 = maximum instantaneous wind, 4 = maximum gust; config `parse.gust_od_types`, default `[3, 4]`) | `gust, gust_qc, gust_src`. The legacy code used type 3 only, which misses e.g. every Las Vegas gust (type 4). |
 | Present weather | `MW1–MW7`, `AU1–AU9`, `AW1–AW4` | code + QC per occurrence (§7.2.4) |
-| Vicinity / past | `MV1–MV7`, `AY1–AY2` | code + QC (+ period for AY) |
+| Vicinity / past / daily | `MV1–MV7`, `AY1–AY2`, `AZ1–AZ2`, `AX1–AX6`, `AT1–AT8` | code + QC (+ period for AY/AZ/AX; source and weather type for AT). AT/AX appear in daily-summary (SOD) rows. |
 | Precipitation / snow | `AA1–AA4`, `AJ1` | `precip_mm, precip_period_h, precip_qc, snow_depth_cm, snow_qc` (low reliability) |
 | Status | | `parse_status` (bit flags per malformed field), `dup_count` |
 
@@ -234,7 +234,10 @@ Each present-weather field has **its own code table** (verified against the ISD 
 | **MV** (vicinity) | 03, 05 | `vicinity` (storm) |
 | | 04 | `vicinity` (whirls) |
 | | 07, 08 | `vicinity` (blowing) |
-| **AY** (past weather, WMO 4561) | 3 | `past_storm_or_blowing_snow` → resolved by temperature |
+| **AY** (past weather, manual, WMO 4561) | 3 | sandstorm, dust storm or blowing snow → `flag_past` if resolved as sand (temperature) |
+| **AZ** (past weather, automated, WMO 4531) | 2 | blowing phenomena, visibility reduced → `flag_past` if resolved as sand (temperature) |
+| **AX** (daily past weather, summary of day) | 07 | blowing dust or sand, visibility ≤ ½ mile → `flag_daily_dust` |
+| **AT** (daily present weather) | 07 | dust, volcanic ash, blowing dust/sand or obstruction → `flag_daily_dust` |
 
 **Snow/sand resolution** (AW 27–29, AY 3): sand/dust if `t ≥ classify.sand_min_t_c` (default 3 °C) and no snow evidence in the same report (AU precipitation 03 or MW 70–79); snow if `t ≤ 0 °C`; otherwise `ambiguous`. Default thresholds are reviewed with diagnostics during the pilot (§15, V1).
 
@@ -265,7 +268,7 @@ A report whose class is `haze` or `haze_or_suspended` becomes `dust_haze` if the
 
 ### 7.3 Silver → gold
 
-Gold is rebuilt **in full** for the pilot into `gold/versions/<run_id>/`, validated, then activated via `CURRENT`. Gold refuses to build if silver files have mixed `method_version` or `config_hash` values. "Valid synoptic slot" = a selected report with `has_pw` true. "Valid day" = an LMST day with ≥ `products.min_slots_per_day` valid synoptic slots (default 4).
+Gold is rebuilt **in full** for the pilot into `gold/versions/<run_id>/`, validated, then activated via `CURRENT`. Gold refuses to build if silver files have mixed `method_version` or `config_hash` values. "Valid synoptic slot" = a selected report with `has_pw` true, i.e. carrying at least one usable **present-weather** code (MW/AU/AW). **A missing weather field always means "not observed", never "no significant weather"** (user decision, 2026-10-17): gaps can come from instrument outages, human error or protocol changes, even at stations that report weather occasionally. Past-weather and daily-summary fields add dust evidence but do not make a slot valid. "Valid day" = an LMST day with ≥ `products.min_slots_per_day` valid synoptic slots (default 4).
 
 #### 7.3.1 `synoptic3h`
 The selected reports (one per station per slot), with UTC and LMST time, all parsed values, flags and classes.
@@ -278,6 +281,8 @@ The selected reports (one per station per slot), with UTC and LMST time, all par
 | `valid_day` | `n_slots_pw ≥ products.min_slots_per_day` |
 | `dusty_day_synoptic` | Any selected slot with `dust_class_final` ∈ {suspended, blowing, whirls, storm*, dust_haze} (**primary**) |
 | `dusty_day_any` | Same test over all non-excluded reports |
+| `past_weather_dust`, `daily_summary_dust` | Any non-excluded report with `flag_past` (AY 3 / AZ 2, resolved as sand); any report, SOD included, with `flag_daily_dust` (AT 07 / AX 07) |
+| `dusty_day_any_source` | `dusty_day_any` OR `past_weather_dust` OR `daily_summary_dust`: the most sensitive dusty-day flag. The SOD day is the local standard day, approximated by the LMST date. |
 | `n_dust_slots_<class>` | Count of selected slots per class |
 | `dust_first_lmst_hour` | Earliest `lmst_hour` of a dusty selected slot |
 | `wsd_mean`, `wsd_max` | Scalar mean and maximum of usable `wsd` over selected slots |

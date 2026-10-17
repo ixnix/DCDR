@@ -53,6 +53,7 @@ CORE_COLUMNS = [
     "flag_vicinity",
     "flag_past",
     "flag_ambiguous",
+    "flag_daily_dust",
     "pw_evidence",
     "wsd",
     "use_wsd",
