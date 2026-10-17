@@ -5,7 +5,7 @@ import polars as pl
 from obstore.store import MemoryStore
 
 from dcdr.config import Settings
-from dcdr.pipeline import run_gold, run_ingest, run_silver, start_run
+from dcdr.pipeline import run_gold, run_ingest, run_silver, silver_path, start_run
 from tests.fixtures.isd import isd_row, make_isd_csv
 
 STATION = "40582099999"
@@ -56,3 +56,49 @@ def test_end_to_end_incremental(settings: Settings) -> None:
     daily = pl.read_parquet(run_gold(ctx, [STATION], [2024]) / "daily" / "part-000.parquet")
     jan1 = daily.filter(pl.col("lmst_date") == date(2024, 1, 1)).row(0, named=True)
     assert not jan1["dusty_day_synoptic"]
+
+
+def test_one_bad_station_year_does_not_abort_silver(settings: Settings, monkeypatch) -> None:
+    """Review I3: per-file failure isolation, like ingest."""
+    import dcdr.pipeline as pipe
+
+    store = MemoryStore()
+    _jan1(store)
+    obs.put(
+        store,
+        "2024/72386023169.csv",
+        make_isd_csv([isd_row("2024-01-01T00:00:00", STATION="72386023169")]),
+    )
+    ctx = start_run(settings, "test")
+    run_ingest(ctx, [STATION, "72386023169"], [2024], store=store)
+    real = pipe.build_station_year
+
+    def flaky(current, previous, year, settings_, **kw):
+        if current["STATION"][0] == "72386023169":
+            raise ValueError("corrupt station-year")
+        return real(current, previous, year, settings_, **kw)
+
+    monkeypatch.setattr(pipe, "build_station_year", flaky)
+    s = run_silver(ctx, [STATION, "72386023169"], [2024])
+    assert (s.built, s.failed) == (1, 1)
+
+
+def test_previous_year_rebuilt_when_next_year_bronze_arrives(settings: Settings) -> None:
+    """Review I2: the Dec-31 23:56 row moves to the next year's file once that file exists."""
+    store = MemoryStore()
+    _put(
+        store,
+        2023,
+        [
+            isd_row("2023-12-31T21:00:00", **LON0),
+            isd_row("2023-12-31T23:56:00", **LON0, REPORT_TYPE="FM-15"),
+        ],
+    )
+    ctx = start_run(settings, "test")
+    run_ingest(ctx, [STATION], [2023], store=store)  # 2024 bronze does not exist yet
+    run_silver(ctx, [STATION], [2023])
+    assert pl.read_parquet(silver_path(ctx.root, 2023, STATION)).height == 2
+    _jan1(store)
+    run_ingest(ctx, [STATION], [2024], store=store)
+    assert run_silver(ctx, [STATION], [2023]).built == 1  # 2023 rebuilt because 2024 now exists
+    assert pl.read_parquet(silver_path(ctx.root, 2023, STATION)).height == 1

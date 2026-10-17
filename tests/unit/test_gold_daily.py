@@ -4,7 +4,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from dcdr.config import Settings, load_settings
+from dcdr.config import Settings, load_settings, silver_config_hash
 from dcdr.gold import MixedSilverVersionsError, build_gold, current_gold_dir
 from dcdr.silver.build import build_station_year, write_silver
 from tests.fixtures.isd import bronze_frame, isd_row
@@ -12,7 +12,10 @@ from tests.fixtures.isd import bronze_frame, isd_row
 LON0 = {"LONGITUDE": "0.0"}  # LMST == UTC keeps expectations readable
 
 
-def _silver(settings: Settings, rows: list[dict], name: str = "S", cfg_hash: str = "h") -> Path:
+def _silver(
+    settings: Settings, rows: list[dict], name: str = "S", cfg_hash: str | None = None
+) -> Path:
+    cfg_hash = cfg_hash or silver_config_hash(settings)
     df = build_station_year(bronze_frame(rows), None, 2024, settings)
     path = settings.data_root / "silver" / "year=2024" / f"{name}.parquet"
     write_silver(df, path, run_id="r", config_hash=cfg_hash, source_md5="m", prev_source_md5="")
@@ -111,3 +114,41 @@ def test_dusty_day_any_source_uses_past_and_daily_summaries(settings: Settings) 
     d = _daily(settings, [_silver(settings, rows)]).sort("lmst_date")
     assert d["dusty_day_synoptic"].to_list() == [False, False, False]
     assert d["dusty_day_any_source"].to_list() == [True, True, False]
+
+
+LV = {"LONGITUDE": "-115.16343"}  # Las Vegas: LMST runs ~18 min ahead of local standard time
+
+
+def test_daily_summary_dated_to_the_day_it_summarises(settings: Settings) -> None:
+    """Review C1: SOD rows are stamped 23:59 local STANDARD time (07:59Z next day at Las Vegas)."""
+    rows = [
+        isd_row(f"2024-01-{d:02d}T{h:02d}:00:00", **LV, MW1="02,1")
+        for d in (6, 7, 8)
+        for h in range(0, 24, 3)
+    ] + [isd_row("2024-01-07T07:59:00", **LV, REPORT_TYPE="SOD", AT1="AU,07,DU  ,5")]
+    d = _daily(settings, [_silver(settings, rows)])
+    flagged = d.filter(pl.col("daily_summary_dust"))["lmst_date"].to_list()
+    assert flagged == [date(2024, 1, 6)]
+
+
+def test_slot_counted_on_its_own_lmst_day(settings: Settings) -> None:
+    """Review I1: a 20:35Z report filling the 21Z slot must count on the slot's LMST day (Kuwait)."""
+    kw = {"LONGITUDE": "47.968928"}  # LMST = UTC + 3:11:52; slot 21Z -> 00:11 LMST next day
+    rows = (
+        [isd_row("2024-02-29T21:00:00", **kw, MW1="02,1")]
+        + [isd_row(f"2024-03-01T{h:02d}:00:00", **kw, MW1="02,1") for h in range(0, 21, 3)]
+        + [isd_row("2024-03-01T20:35:00", **kw, REPORT_TYPE="FM-15", MW1="02,1")]
+        + [isd_row(f"2024-03-02T{h:02d}:00:00", **kw, MW1="02,1") for h in range(0, 21, 3)]
+    )
+    d = _daily(settings, [_silver(settings, rows)]).sort("lmst_date")
+    by_day = dict(zip(d["lmst_date"].to_list(), d["n_slots"].to_list(), strict=True))
+    assert by_day[date(2024, 3, 1)] == 8 and by_day[date(2024, 3, 2)] == 8
+
+
+def test_gold_refuses_silver_built_with_other_config(settings: Settings) -> None:
+    """Review I4: gold must not silently use stale silver."""
+    from dcdr.gold import StaleSilverError
+
+    stale = _silver(settings, _slots("2024-01-01"), cfg_hash="not-the-current-hash")
+    with pytest.raises(StaleSilverError):
+        build_gold(settings, [stale], "20260101T000000Z-aaaaaa")

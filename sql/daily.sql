@@ -16,9 +16,10 @@ WITH sel AS (
     WHERE is_synoptic_selected
 ),
 sel_daily AS (
+    -- a report filling a slot counts on the SLOT's LMST day (it may sit up to 30 min across midnight)
     SELECT
         station_id,
-        lmst_date,
+        slot_lmst_date AS lmst_date,
         count(*) AS n_slots,
         count(*) FILTER (WHERE has_pw) AS n_slots_pw,
         bool_or(is_dusty) AS dusty_day_synoptic,
@@ -43,7 +44,7 @@ sel_daily AS (
         avg(slp) FILTER (WHERE use_slp) AS slp_mean,
         avg(dup6) AS dup6_mean
     FROM sel
-    GROUP BY station_id, lmst_date
+    GROUP BY station_id, slot_lmst_date
 ),
 all_daily AS (
     SELECT
@@ -61,16 +62,27 @@ all_daily AS (
     GROUP BY station_id, lmst_date
 ),
 summary_daily AS (
-    -- daily-summary (SOD) rows are excluded from sampling but carry AT/AX dust codes
-    SELECT station_id, lmst_date, bool_or(flag_daily_dust) AS daily_summary_dust
+    -- daily-summary (SOD) rows are excluded from sampling but carry AT/AX dust codes;
+    -- they are dated to the day they summarise (summary_lmst_date), not their timestamp
+    SELECT
+        station_id,
+        coalesce(summary_lmst_date, lmst_date) AS lmst_date,
+        bool_or(flag_daily_dust) AS daily_summary_dust
     FROM silver
-    GROUP BY station_id, lmst_date
+    GROUP BY ALL
+),
+keys AS (
+    -- a station-day exists if it has any non-excluded report or any selected slot;
+    -- a day known only from a daily summary (SOD) has no row (no observations to back it)
+    SELECT station_id, lmst_date FROM all_daily
+    UNION
+    SELECT station_id, lmst_date FROM sel_daily
 ),
 joined AS (
     SELECT
-        a.station_id,
-        a.lmst_date,
-        a.n_reports,
+        k.station_id,
+        k.lmst_date,
+        coalesce(a.n_reports, 0) AS n_reports,
         coalesce(s.n_slots, 0) AS n_slots,
         coalesce(s.n_slots_pw, 0) AS n_slots_pw,
         coalesce(s.n_slots_pw, 0) >= getvariable('min_slots') AS valid_day,
@@ -100,9 +112,10 @@ joined AS (
         s.rh_mean,
         s.slp_mean,
         s.dup6_mean
-    FROM all_daily AS a
-    LEFT JOIN sel_daily AS s ON a.station_id = s.station_id AND a.lmst_date = s.lmst_date
-    LEFT JOIN summary_daily AS m ON a.station_id = m.station_id AND a.lmst_date = m.lmst_date
+    FROM keys AS k
+    LEFT JOIN all_daily AS a ON k.station_id = a.station_id AND k.lmst_date = a.lmst_date
+    LEFT JOIN sel_daily AS s ON k.station_id = s.station_id AND k.lmst_date = s.lmst_date
+    LEFT JOIN summary_daily AS m ON k.station_id = m.station_id AND k.lmst_date = m.lmst_date
 )
 SELECT
     *,

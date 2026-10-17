@@ -26,12 +26,15 @@ CORE_COLUMNS = [
     "time_lmst",
     "lmst_date",
     "lmst_hour",
+    "summary_lmst_date",
     "report_type",
     "source",
     "lat",
     "lon",
+    "lon_used",
     "elev",
     "slot_time",
+    "slot_lmst_date",
     "slot_delta_min",
     "is_candidate",
     "is_excluded_type",
@@ -102,7 +105,12 @@ def dedupe(raw: pl.DataFrame) -> pl.DataFrame:
 
 
 def build_station_year(
-    current: pl.DataFrame, previous: pl.DataFrame | None, year: int, settings: Settings
+    current: pl.DataFrame,
+    previous: pl.DataFrame | None,
+    year: int,
+    settings: Settings,
+    *,
+    next_year_exists: bool = False,
 ) -> pl.DataFrame:
     frames = [current] if previous is None else [previous_year_tail(previous, year), current]
     raw = dedupe(pl.concat(frames, how="diagonal_relaxed"))
@@ -123,7 +131,9 @@ def build_station_year(
         .then(pl.col("slot_time").dt.year())
         .otherwise(pl.col("time_utc").dt.year())
     )
-    df = df.filter(owner_year == year).sort(_SORT, nulls_last=True)
+    # ...unless the next year's file will not exist: then keep them here so nothing is lost.
+    keep = (owner_year == year) | (pl.lit(not next_year_exists) & (owner_year == year + 1))
+    df = df.filter(keep).sort(_SORT, nulls_last=True)
     rest = sorted(c for c in df.columns if c not in CORE_COLUMNS)
     return df.select(CORE_COLUMNS + rest)
 
@@ -136,6 +146,7 @@ def write_silver(
     config_hash: str,
     source_md5: str,
     prev_source_md5: str,
+    next_year_present: bool = False,
 ) -> None:
     validate_silver(df)
     atomic_write_parquet(
@@ -148,5 +159,6 @@ def write_silver(
             "run_id": run_id,
             "source_md5": source_md5,
             "prev_source_md5": prev_source_md5,
+            "next_year_present": "1" if next_year_present else "0",
         },
     )

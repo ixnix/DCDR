@@ -16,6 +16,7 @@ def _frame(rows: list[tuple[str, str, bool, str]]) -> pl.DataFrame:
             "has_pw": [pw for _, _, pw, _ in rows],
             "source": ["4"] * len(rows),
             "row_key": [k for _, _, _, k in rows],
+            "lon_used": [0.0] * len(rows),
         }
     )
 

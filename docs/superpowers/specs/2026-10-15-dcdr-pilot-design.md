@@ -173,7 +173,9 @@ If full-scale silver (about 700k files) needs fast whole-archive scans, adopt a 
 
 ### 7.2 Bronze → silver
 
-Unit of work: one station-year **plus the bronze rows of the same station in the final 24 h (UTC) of the previous year**, which are needed by the haze rule (§7.2.5). Output: the rows **owned** by the target year. A synoptic-slot candidate is owned by its slot's year, so a report at 23:56 on 31 December belongs to the next year's file because it competes for the 1 January 00:00 slot. Every other row is owned by its own UTC year. Each report is therefore stored exactly once, and each slot is selected in exactly one file. This was found on real Las Vegas data in the Plan 1 thin slice. **No rows are deleted**; everything is flagged.
+Unit of work: one station-year **plus the bronze rows of the same station in the final 24 h (UTC) of the previous year**, which are needed by the haze rule (§7.2.5). Output: the rows **owned** by the target year. A synoptic-slot candidate is owned by its slot's year, so a report at 23:56 on 31 December belongs to the next year's file because it competes for the 1 January 00:00 slot — **if that file's bronze exists**. When year Y+1 has no bronze (the last year ingested, or a station that stopped), Y keeps those rows; silver metadata records `next_year_present`, and Y is rebuilt when Y+1 bronze arrives (final review I2). Every other row is owned by its own UTC year. Each report is therefore stored exactly once, and each slot is selected in exactly one file. This was found on real Las Vegas data in the Plan 1 thin slice. **No rows are deleted**; everything is flagged.
+
+**Failures:** a station-year that fails to build is logged and counted (`failed`, `failures` in the run summary); its previous silver file, if any, is left in place and the stage continues (final review I3).
 
 Row order: input rows are **explicitly sorted** by `(time_utc, report_type, source, row_key)`, where `row_key` = SHA-1 of the row's source values (columns in sorted name order, provenance columns excluded). This makes order independent of file row order. NOAA notes that files from 2005 onward may be unsorted or incompletely merged (`NOTICE-ISD-MERGE-ISSUE.TXT`). Rows identical in **all** source columns are collapsed to one (`dup_count` records how many). Rows with the same timestamp but different values are kept as separate candidates.
 
@@ -195,8 +197,10 @@ Missing-value sentinels (e.g. `9999`, `99999`, `999999`, `+9999`) become null. S
 
 #### 7.2.2 Time model
 - `time_utc` from `DATE`.
-- `time_lmst = time_utc + lon/15 h`, where `lon` is the report's own longitude (catalog longitude if missing). This is **local mean** solar time; apparent solar time (equation of time, ±16 min) is not used and doesn't matter at 3-hourly resolution.
+- `time_lmst = time_utc + lon_used/15 h`, where `lon_used` is the report's own longitude, or the station-year median if missing. Coordinates outside ±90 / ±180 (ISD missing code `+999999` reads as 999.999) are set to null first; a station-year with no valid longitude fails with `MissingLongitudeError` (final review I5). This is **local mean** solar time; apparent solar time (equation of time, ±16 min) is not used and doesn't matter at 3-hourly resolution.
 - `lmst_date` (the local day used by daily products), `lmst_hour` (fractional hour, 0–24).
+- `slot_lmst_date` = LMST date of the **slot** time. A selected report counts on its slot's day, not its own, because a report up to 30 min early can sit across local midnight (final review I1).
+- `summary_lmst_date` (SOD rows only) = `date(time_lmst − 12 h)`. SOD rows are stamped 23:59 local **standard** time, which can fall just after LMST midnight (e.g. 07:59Z at Las Vegas), so they are dated to the day they summarise (final review C1).
 
 #### 7.2.3 QC (`qc.py`)
 - ISD QC codes per value (ISD format document, general quality-code table): `0,1,4,5,9` and the validator letters `A,C,I,M,P,R,U` → `ok`; `2,6` → `suspect`; `3,7` → `erroneous`; any other code → `suspect`; missing value → `missing`. Stored as `<var>_flag`. The mapping is config (`qc.codes`).
@@ -268,7 +272,7 @@ A report whose class is `haze` or `haze_or_suspended` becomes `dust_haze` if the
 
 ### 7.3 Silver → gold
 
-Gold is rebuilt **in full** for the pilot into `gold/versions/<run_id>/`, validated, then activated via `CURRENT`. Gold refuses to build if silver files have mixed `method_version` or `config_hash` values. "Valid synoptic slot" = a selected report with `has_pw` true, i.e. carrying at least one usable **present-weather** code (MW/AU/AW). **A missing weather field always means "not observed", never "no significant weather"** (user decision, 2026-10-17): gaps can come from instrument outages, human error or protocol changes, even at stations that report weather occasionally. Past-weather and daily-summary fields add dust evidence but do not make a slot valid. "Valid day" = an LMST day with ≥ `products.min_slots_per_day` valid synoptic slots (default 4).
+Gold is rebuilt **in full** for the pilot into `gold/versions/<run_id>/`, validated, then activated via `CURRENT`. Gold refuses to build if silver files have mixed `method_version` or `config_hash` values (`MixedSilverVersionsError`), or if that single version differs from the running code's `METHOD_VERSION` and silver config hash (`StaleSilverError`, final review I4). Each gold version records its silver lineage in `silver_version.json`. "Valid synoptic slot" = a selected report with `has_pw` true, i.e. carrying at least one usable **present-weather** code (MW/AU/AW). **A missing weather field always means "not observed", never "no significant weather"** (user decision, 2026-10-17): gaps can come from instrument outages, human error or protocol changes, even at stations that report weather occasionally. Past-weather and daily-summary fields add dust evidence but do not make a slot valid. "Valid day" = an LMST day with ≥ `products.min_slots_per_day` valid synoptic slots (default 4).
 
 #### 7.3.1 `synoptic3h`
 The selected reports (one per station per slot), with UTC and LMST time, all parsed values, flags and classes.
@@ -277,12 +281,12 @@ The selected reports (one per station per slot), with UTC and LMST time, all par
 | Column | Definition |
 |---|---|
 | `n_reports` | Reports in the day, excluding `sampling.exclude_types` |
-| `n_slots`, `n_slots_pw` | Selected synoptic slots; of those, slots with `has_pw` |
+| `n_slots`, `n_slots_pw` | Selected synoptic slots whose **slot** falls on this LMST day (`slot_lmst_date`); of those, slots with `has_pw` |
 | `valid_day` | `n_slots_pw ≥ products.min_slots_per_day` |
 | `dusty_day_synoptic` | Any selected slot with `dust_class_final` ∈ {suspended, blowing, whirls, storm*, dust_haze} (**primary**) |
 | `dusty_day_any` | Same test over all non-excluded reports |
 | `past_weather_dust`, `daily_summary_dust` | Any non-excluded report with `flag_past` (AY 3 / AZ 2, resolved as sand); any report, SOD included, with `flag_daily_dust` (AT 07 / AX 07) |
-| `dusty_day_any_source` | `dusty_day_any` OR `past_weather_dust` OR `daily_summary_dust`: the most sensitive dusty-day flag. The SOD day is the local standard day, approximated by the LMST date. |
+| `dusty_day_any_source` | `dusty_day_any` OR `past_weather_dust` OR `daily_summary_dust`: the most sensitive dusty-day flag. SOD rows are dated by `summary_lmst_date`. A station-day exists only if it has a non-excluded report or a selected slot; a day known only from a daily summary has no row. |
 | `n_dust_slots_<class>` | Count of selected slots per class |
 | `dust_first_lmst_hour` | Earliest `lmst_hour` of a dusty selected slot |
 | `wsd_mean`, `wsd_max` | Scalar mean and maximum of usable `wsd` over selected slots |

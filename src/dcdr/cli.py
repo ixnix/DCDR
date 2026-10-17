@@ -92,7 +92,13 @@ def build_silver(
     def body(ctx: pipeline.RunContext) -> dict[str, Any]:
         ids = _station_ids(ctx.settings, stations)
         s = pipeline.run_silver(ctx, ids, pipeline.parse_years(years), force=force)
-        return {"built": s.built, "skipped": s.skipped, "missing_bronze": s.missing_bronze}
+        return {
+            "built": s.built,
+            "skipped": s.skipped,
+            "missing_bronze": s.missing_bronze,
+            "failed": s.failed,
+            "failures": s.failures,
+        }
 
     _execute("build silver", config, profile, body)
 
@@ -132,6 +138,8 @@ def run(
             "ingest": asdict(ing),
             "silver_built": sil.built,
             "silver_skipped": sil.skipped,
+            "silver_failed": sil.failed,
+            "silver_failures": sil.failures,
             "gold": str(gold),
         }
 
