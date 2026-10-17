@@ -123,6 +123,8 @@ class SilverSummary:
     built: int = 0
     skipped: int = 0
     missing_bronze: int = 0
+    failed: int = 0
+    failures: list[str] = field(default_factory=list)
     paths: list[Path] = field(default_factory=list)
 
 
@@ -134,7 +136,9 @@ def _bronze_md5(path: Path) -> str:
     return read_parquet_metadata(path).get("source_md5", "") if path.exists() else ""
 
 
-def _silver_is_current(path: Path, cfg_hash: str, md5: str, prev_md5: str) -> bool:
+def _silver_is_current(
+    path: Path, cfg_hash: str, md5: str, prev_md5: str, next_present: bool
+) -> bool:
     if not path.exists():
         return False
     meta = read_parquet_metadata(path)
@@ -143,6 +147,7 @@ def _silver_is_current(path: Path, cfg_hash: str, md5: str, prev_md5: str) -> bo
         and meta.get("config_hash") == cfg_hash
         and meta.get("source_md5") == md5
         and meta.get("prev_source_md5") == prev_md5
+        and meta.get("next_year_present") == ("1" if next_present else "0")
     )
 
 
@@ -158,22 +163,36 @@ def run_silver(
                 summary.missing_bronze += 1
                 continue
             prev_path = bronze_path(ctx.root, year - 1, station)
+            next_present = bronze_path(ctx.root, year + 1, station).exists()
             md5, prev_md5 = _bronze_md5(bpath), _bronze_md5(prev_path)
             spath = silver_path(ctx.root, year, station)
-            if not force and _silver_is_current(spath, cfg_hash, md5, prev_md5):
+            if not force and _silver_is_current(spath, cfg_hash, md5, prev_md5, next_present):
                 summary.skipped += 1
                 summary.paths.append(spath)
                 continue
-            previous = pl.read_parquet(prev_path) if prev_path.exists() else None
-            df = build_station_year(pl.read_parquet(bpath), previous, year, ctx.settings)
-            write_silver(
-                df,
-                spath,
-                run_id=ctx.run_id,
-                config_hash=cfg_hash,
-                source_md5=md5,
-                prev_source_md5=prev_md5,
-            )
+            try:  # one bad station-year never aborts the stage; the previous silver file stays
+                previous = pl.read_parquet(prev_path) if prev_path.exists() else None
+                df = build_station_year(
+                    pl.read_parquet(bpath),
+                    previous,
+                    year,
+                    ctx.settings,
+                    next_year_exists=next_present,
+                )
+                write_silver(
+                    df,
+                    spath,
+                    run_id=ctx.run_id,
+                    config_hash=cfg_hash,
+                    source_md5=md5,
+                    prev_source_md5=prev_md5,
+                    next_year_present=next_present,
+                )
+            except Exception as exc:
+                log.error("silver %s %s failed: %s", station, year, exc)
+                summary.failed += 1
+                summary.failures.append(f"{station}/{year}: {exc!r}"[:300])
+                continue
             summary.built += 1
             summary.paths.append(spath)
     return summary

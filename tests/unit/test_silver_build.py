@@ -69,6 +69,7 @@ def test_write_silver_records_metadata(settings: Settings, tmp_path: Path) -> No
         "run_id": "r1",
         "source_md5": "m1",
         "prev_source_md5": "m0",
+        "next_year_present": "0",
     }
 
 
@@ -92,7 +93,7 @@ def test_year_boundary_slot_is_selected_once_across_files(settings: Settings) ->
         isd_row("2023-12-31T23:56:00", REPORT_TYPE="FM-15"),
     ]
     cur_rows = [isd_row("2024-01-01T00:00:00", REPORT_TYPE="FM-15")]
-    s23 = build_station_year(bronze_frame(prev_rows), None, 2023, settings)
+    s23 = build_station_year(bronze_frame(prev_rows), None, 2023, settings, next_year_exists=True)
     s24 = build_station_year(bronze_frame(cur_rows), bronze_frame(prev_rows), 2024, settings)
     both = pl.concat([s23, s24], how="diagonal_relaxed")
     assert both["row_key"].n_unique() == both.height  # every report stored exactly once
@@ -101,3 +102,36 @@ def test_year_boundary_slot_is_selected_once_across_files(settings: Settings) ->
     )
     assert jan1.height == 1
     assert jan1["time_utc"].item() == datetime(2024, 1, 1)  # closest report wins the slot
+
+
+def test_last_year_keeps_dec31_candidates_when_next_year_absent(settings: Settings) -> None:
+    """Review I2: a 23:56 Dec-31 row must not vanish when the next year's file will not exist."""
+    rows = [
+        isd_row("2024-12-31T21:00:00", REPORT_TYPE="FM-15"),
+        isd_row("2024-12-31T23:56:00", REPORT_TYPE="FM-15"),
+    ]
+    alone = build_station_year(bronze_frame(rows), None, 2024, settings, next_year_exists=False)
+    assert alone.height == 2
+    handed_on = build_station_year(bronze_frame(rows), None, 2024, settings, next_year_exists=True)
+    assert handed_on.height == 1  # the 23:56 row belongs to the 2025 file
+
+
+def test_longitude_sentinel_is_treated_as_missing(settings: Settings) -> None:
+    """Review I5: ISD longitude +999999 (999.999) must not shift local time by days."""
+    from datetime import date
+
+    rows = [
+        isd_row("2024-03-01T00:00:00", LONGITUDE="0.0"),
+        isd_row("2024-03-01T03:00:00", LONGITUDE="999.999"),
+    ]
+    out = build_station_year(bronze_frame(rows), None, 2024, settings)
+    assert out["lon"].to_list() == [0.0, None]
+    assert out["lmst_date"].to_list() == [date(2024, 3, 1), date(2024, 3, 1)]
+
+
+def test_no_valid_longitude_fails_clearly(settings: Settings) -> None:
+    from dcdr.silver.parse import MissingLongitudeError
+
+    rows = [isd_row("2024-03-01T00:00:00", LONGITUDE="999.999")]
+    with pytest.raises(MissingLongitudeError):
+        build_station_year(bronze_frame(rows), None, 2024, settings)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import polars as pl
 
 from dcdr.config import SamplingCfg
+from dcdr.silver.parse import lmst_shift
 
 _ORDER = [
     "station_id",
@@ -22,6 +23,10 @@ _DESC = [False, False, False, True, False, False, False, False]
 def select_synoptic(df: pl.DataFrame, cfg: SamplingCfg) -> pl.DataFrame:
     prio = {t: i for i, t in enumerate(cfg.priority)}
     df = df.with_columns(slot_time=(pl.col("time_utc") + pl.duration(minutes=90)).dt.truncate("3h"))
+    # the slot belongs to the LMST day of the SLOT time, not of whichever report fills it
+    df = df.with_columns(
+        slot_lmst_date=(pl.col("slot_time") + lmst_shift(pl.col("lon_used"))).dt.date()
+    )
     df = df.with_columns(
         slot_delta_min=(pl.col("time_utc") - pl.col("slot_time")).dt.total_seconds().abs() / 60,
         is_excluded_type=pl.col("report_type").is_in(cfg.exclude_types).fill_null(False),

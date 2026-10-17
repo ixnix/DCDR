@@ -131,13 +131,38 @@ def parse_reports(raw: pl.DataFrame) -> pl.DataFrame:
     return d.select(exprs)
 
 
+class MissingLongitudeError(ValueError):
+    """No usable longitude in a station-year, so local time cannot be computed."""
+
+
+def lmst_shift(lon: pl.Expr) -> pl.Expr:
+    """Offset from UTC to local mean solar time: lon/15 hours."""
+    return pl.duration(milliseconds=(lon * 240_000).round().cast(pl.Int64))
+
+
 def add_time_columns(df: pl.DataFrame) -> pl.DataFrame:
-    """Local mean solar time = UTC + lon/15 h (lon of each report; median lon if missing)."""
-    lon = pl.col("lon").fill_null(pl.col("lon").median())
-    shift_ms = (lon * 240_000).round().cast(pl.Int64)
-    df = df.with_columns(time_lmst=pl.col("time_utc") + pl.duration(milliseconds=shift_ms))
+    """Local mean solar time = UTC + lon/15 h, using each report's own longitude.
+
+    Out-of-range coordinates (ISD missing code +999999 reads as 999.999) become null; a missing
+    longitude falls back to the station-year median. Daily-summary (SOD) rows are stamped 23:59
+    local STANDARD time, which can land just after LMST midnight, so their summarised day is
+    date(time_lmst - 12 h).
+    """
+    df = df.with_columns(
+        lat=pl.when(pl.col("lat").is_between(-90, 90)).then(pl.col("lat")),
+        lon=pl.when(pl.col("lon").is_between(-180, 180)).then(pl.col("lon")),
+    )
+    df = df.with_columns(lon_used=pl.col("lon").fill_null(pl.col("lon").median()))
+    if df.height and df["lon_used"].null_count():
+        raise MissingLongitudeError(
+            "no valid LONGITUDE in this station-year (ISD missing 999.999?)"
+        )
+    df = df.with_columns(time_lmst=pl.col("time_utc") + lmst_shift(pl.col("lon_used")))
     lmst = pl.col("time_lmst")
     return df.with_columns(
         lmst_date=lmst.dt.date(),
         lmst_hour=lmst.dt.hour().cast(pl.Float64) + lmst.dt.minute() / 60 + lmst.dt.second() / 3600,
+        summary_lmst_date=pl.when(pl.col("report_type") == "SOD").then(
+            (lmst - pl.duration(hours=12)).dt.date()
+        ),
     )
