@@ -39,7 +39,7 @@ The project has two goals with equal weight:
 | D1 | Source: `s3://noaa-global-hourly-pds/{year}/{station}.csv` (public, anonymous, us-east-1) | Same CSV format as the legacy code; no local raw archive. Measured: 1.47 TB, 711,411 station-year files. |
 | D2 | **Stream** source files (download into memory → Parquet). No local CSV mirror. | User preference. Bronze provides a lossless copy at about 7% of the CSV size. |
 | D3 | All compute on the user's laptop (Apple M5, 10 cores, 16 GB) for A–C | Benchmarked: Polars parses at about 1.2 GB/s; the network (~13 MB/s) is the bottleneck, about 30 h for the full backfill |
-| D4 | Data root: `data/` in the repo by default (git-ignored); any location via `DCDR_DATA` or a profile. The author runs it on a portable SSD (`/Volumes/CrucialX8/dcdr`, exFAT) by choice; backups are Areca RAID snapshots. The data root is created if missing (user decision 2026-10-17). | Works out of the box after a clone; storage location is a user choice, not a rule |
+| D4 | Data root: `./data` relative to the working directory by default (git-ignored in the repo); any location via `DCDR_DATA` or a profile. The author runs it on a portable SSD (`/Volumes/CrucialX8/dcdr`, exFAT) by choice; backups are Areca RAID snapshots. The data root is created if missing (user decision 2026-10-17). | Works out of the box after a clone; storage location is a user choice, not a rule |
 | D5 | Stack: Python 3.12, uv, Polars, DuckDB, Parquet/GeoParquet, Pandera, Pydantic, Typer, pytest, ruff, mypy, GitHub Actions | See §4 |
 | D6 | Method choices are **explicit config options**. Old behaviour is reproducible via the `duisd_v1` profile for comparison (not validation). | User decision: no validation against v1 is needed |
 | D7 | Station products use **local mean solar time** (LMST = UTC + longitude/15 h); UTC is kept for merging | Dust has a diurnal cycle; daily products should follow the local day |
@@ -90,10 +90,10 @@ dcdr/
 │   │   └── sampling.py # synoptic-slot candidates, ranks, selection reasons
 │   ├── gold.py         # product registry; runs sql/*.sql in DuckDB; Python products (trends, Uth)
 │   ├── schemas.py      # Pandera contracts: bronze, silver, gold
+│   ├── sql/            # one file per gold table (shipped in the wheel)
+│   ├── default.yaml    # built-in defaults (shipped in the wheel)
 │   └── publish.py      # web export, releases (Hugging Face, Zenodo), release manifest
-├── sql/                # one file per gold table
-├── config/
-│   ├── default.yaml
+├── config/             # run inputs, resolved relative to the working directory
 │   ├── profiles/duisd_v1.yaml
 │   └── stations/       # regions.yaml, pilot_100.csv
 ├── scripts/select_pilot_stations.py
@@ -413,7 +413,7 @@ Station-level partial reads are guaranteed by **one file per station**, not by s
 
 ## 11. Configuration and provenance
 
-- `config/default.yaml` sections: `paths`, `ingest`, `parse`, `qc`, `classify`, `sampling`, `products`, `stations`, `publish`, `web`. Every threshold named in this spec is a config key with the stated default.
+- `src/dcdr/default.yaml` sections: `paths`, `ingest`, `parse`, `qc`, `classify`, `sampling`, `products`, `stations`, `publish`, `web`. Every threshold named in this spec is a config key with the stated default.
 - `config/profiles/duisd_v1.yaml` approximates legacy behaviour for comparisons: MW fields only; UTC days; first report in 3-hour bins aligned to midnight; RH > 90 screens all dust classes; no QC-code filtering; no visibility cap; haze window 24 h.
 - Each run writes `_state/runs/<run_id>/config.resolved.yaml` (all values after merging) and records `config_hash` (SHA-256 of the canonical resolved YAML), the git commit, the dirty flag, the command and per-stage counts in `_state/runs.parquet`.
 - `method_version`: a constant in `dcdr.silver`, bumped whenever parse, QC, classify or sampling logic changes. The silver `config_hash` covers only the sections that affect silver.

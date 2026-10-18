@@ -33,3 +33,8 @@ node_modules/
 
 # Microsoft Office lock files
 ~$*
+
+# Editor swap/backup files
+*.swp
+*.swo
+*~

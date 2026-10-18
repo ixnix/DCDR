@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from dcdr.config import REPO_ROOT, config_hash, load_settings, silver_config_hash
+from dcdr.config import config_hash, load_settings, silver_config_hash
 
 
 def test_defaults_load() -> None:
@@ -11,7 +11,14 @@ def test_defaults_load() -> None:
     assert s.qc.vis_cap_m == 10000
     assert s.classify.fields == ["MW", "AU", "AW"]
     assert s.parse.gust_od_types == [3, 4]
-    assert s.data_root == REPO_ROOT / "data"  # relative paths resolve against the repo root
+    assert s.paths.data_root == "data"
+
+
+def test_relative_data_root_resolves_against_working_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)  # pretend dcdr is run from another folder
+    assert load_settings().data_root == tmp_path.resolve() / "data"
 
 
 def test_profile_overrides_only_named_keys(tmp_path: Path) -> None:

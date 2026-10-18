@@ -83,7 +83,7 @@ class Settings(_Section):
     @property
     def data_root(self) -> Path:
         root = Path(self.paths.data_root).expanduser()
-        return root if root.is_absolute() else REPO_ROOT / root
+        return root if root.is_absolute() else Path.cwd() / root
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
