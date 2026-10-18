@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import hashlib
 import os
+from importlib.resources import files
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -12,7 +14,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CONFIG = REPO_ROOT / "config" / "default.yaml"
+DEFAULT_CONFIG = files("dcdr") / "default.yaml"
 SILVER_SECTIONS = ("parse", "qc", "classify", "sampling")
 
 
@@ -95,7 +97,7 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
 
 
 def load_settings(
-    config_path: Path = DEFAULT_CONFIG,
+    config_path: Path | Traversable = DEFAULT_CONFIG,
     profile: Path | None = None,
     overrides: dict[str, Any] | None = None,
 ) -> Settings:
