@@ -363,28 +363,27 @@ Per station × `window` ∈ {`all`, `baseline`}: annual `dusty_days` over qualif
 ### 8.2 Source set
 `is_source = true` (D10). Used only by sub-project E. Uth is computed only for these stations.
 
-### 8.3 Pilot selection (`scripts/select_pilot_stations.py`)
+### 8.3 Pilot selection (`notebooks/01_duisd_v1_dusty_stations.ipynb`)
 1. Inputs: `isd-history.csv` (refreshed from `noaa-isd-pds`), the S3 listing (years available per station), duISD v1 (Zenodo 10.5281/zenodo.4107346, used **only to rank** candidates), and the aridity raster.
 2. Regions (`config/stations/regions.yaml`). Each region is a lat/lon box (lat °N, lon °E) plus, where conventions need it, a country filter (ISD/FIPS codes): a station must be inside the box **and** in a listed country. Regions are tested in order, first match wins. Updated 2026-10-18 (user decisions): China and Mongolia are East Asia; Central Asia is the five Central Asian republics plus Afghanistan; South Asia added; Sudan is North Africa.
 
-   | Region | Box: lat; lon | Countries (FIPS) | Target n |
-   |---|---|---|---|
-   | North Africa (Sahara, Sahel) | 12 to 38; −18 to 39 | MO AG TS LY EG SU WI MR ML NG CD UV SG GA NI | 15 |
-   | Middle East | 12 to 42; 26 to 63 | SA IZ IR KU QA BA AE MU YM JO IS SY LE TU | 15 |
-   | Central Asia | 29 to 56; 46 to 88 | KZ UZ TX TI KG AF | 12 |
-   | South Asia | 5 to 37; 60 to 97 | PK IN BG NP | 8 |
-   | East Asia | 18 to 54; 73 to 135 | CH MG | 15 |
-   | Southern Africa (Namib, Kalahari) | −35 to −15; 10 to 33 | WA BC SF LT WZ | 8 |
-   | North America | 25 to 42; −125 to −100 | — | 10 |
-   | South America | −55 to −15; −75 to −55 | — | 8 |
-   | Australia | −40 to −15; 113 to 154 | — | 7 |
-   | Contrast (transport-affected, METAR-heavy) | Canary Islands/Cabo Verde, Korea/Japan, Caribbean, US METAR stations incl. Las Vegas `72386023169` | | 10 |
+   | Region | Box: lat; lon | Countries (FIPS) |
+   |---|---|---|
+   | North Africa (Sahara, Sahel) | 12 to 38; −18 to 39 | MO AG TS LY EG SU WI MR ML NG CD UV SG GA NI |
+   | Middle East | 12 to 42; 26 to 63 | SA IZ IR KU QA BA AE MU YM JO IS SY LE TU |
+   | Central Asia | 29 to 56; 46 to 88 | KZ UZ TX TI KG AF |
+   | South Asia | 5 to 37; 60 to 97 | PK IN BG NP |
+   | East Asia | 18 to 54; 73 to 135 | CH MG |
+   | Southern Africa (Namib, Kalahari) | −35 to −15; 10 to 33 | WA BC SF LT WZ |
+   | North America | 25 to 42; −125 to −100 | — |
+   | South America | −55 to −15; −75 to −55 | — |
+   | Australia | −40 to −15; 113 to 154 | — |
 
-   Targets now sum to 98 + 10 contrast; rebalance to 100 before the final list.
 3. Candidates: ≥ 10 valid years in **1991–2019** (a valid year has ≥ 6 months with ≥ 30 SYNOP present-weather reports), valid aridity. ISD records are patchy (Kuwait International has about 11 years in duISD v1); the notebook's sensitivity table shows the pool per threshold.
-4. Rank by duISD v1 mean yearly dust frequency over 1991–2019, shown alongside a raised-dust frequency that excludes code 06 (about 60% of all duISD dust reports). duISD v1 contains **SYNOP (FM-12) reports only**, so most North American stations (automated, no FM-12) are missing: rank the US Southwest with the fallback, counting dust codes in a 3-year sample scan of raw ISD (§15, V4). Exploratory shortlist (top 15 per region): `config/stations/duisd_v1_top15_by_region.csv`, from `notebooks/01_duisd_v1_dusty_stations.ipynb`.
-5. Greedy selection with ≥ 50 km minimum spacing within a region.
-6. Output `config/stations/pilot_100.csv` (`station_id, name, country, lat, lon, region, role, rank_metric, n_years, aridity_index`) plus a map. The user reviews and edits the list before ingest.
+4. Rank by duISD v1 mean yearly dust frequency over 1991–2019, **all dust codes including 06** (user decision 2026-10-18; a raised-dust frequency without 06 is shown for comparison). duISD v1 contains **SYNOP (FM-12) reports only**, so most North American stations (automated, no FM-12) are missing.
+5. **Dusty station:** mean dust frequency ≥ 1% of SYNOP reports (a proxy for roughly ≥ 14 dusty days a year). Up to **12 per region** (fewer where not enough pass the cut), greedy with ≥ 50 km spacing. Result: 88 dusty stations (12 in each of seven regions, Southern Africa 3, North America 1).
+6. **Contrast stations** (`config/stations/contrast.csv`, hand-picked, 12): downwind of the Sahara (Gran Canaria, Sal, Barbados, San Juan, Malta), of Asian sources (Seoul Gimpo, Fukuoka) and of Australian sources (Sydney); US automated METAR stations (Phoenix, El Paso, Las Vegas), which also stand in for the US Southwest that duISD v1 cannot rank; and a clean maritime control (Shannon).
+7. Output `config/stations/pilot_100.csv` (`station_id, name, country, lat, lon, region, aridity_index`; region `Contrast` for contrast stations), produced by `notebooks/01_duisd_v1_dusty_stations.ipynb`. The user reviews and edits the list before ingest.
 
 ## 9. Publishing (B)
 

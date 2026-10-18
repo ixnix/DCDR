@@ -2,56 +2,47 @@
 # Each region is a lat/lon box (degrees north / east, bounds inclusive) and, where conventions need it,
 # a country filter (ISD/FIPS codes): a station belongs to the region only if it is inside the box AND,
 # when `countries` is given, in one of those countries. Regions are tested in order; first match wins.
-# target_n = stations wanted per region in the pilot (plus 10 contrast stations chosen by hand:
-# Canary Islands/Cabo Verde, Korea/Japan, Caribbean, US METAR stations).
+# Pilot rule (notebooks/01): up to 12 stations per region with dust frequency >= 1%, plus the
+# hand-picked contrast stations in contrast.csv, 100 in total.
 regions:
   - name: North Africa
     note: Sahara and Sahel (UN M49 Northern Africa plus the Sahel countries)
     lat: [12, 38]
     lon: [-18, 39]
     countries: [MO, AG, TS, LY, EG, SU, WI, MR, ML, NG, CD, UV, SG, GA, NI]
-    target_n: 15
   - name: Middle East
     note: Arabian Peninsula, Levant, Iraq, Iran, Turkey
     lat: [12, 42]
     lon: [26, 63]
     countries: [SA, IZ, IR, KU, QA, BA, AE, MU, YM, JO, IS, SY, LE, TU]
-    target_n: 15
   - name: Central Asia
     note: the five Central Asian republics and Afghanistan
     lat: [29, 56]
     lon: [46, 88]
     countries: [KZ, UZ, TX, TI, KG, AF]
-    target_n: 12
   - name: South Asia
     note: Thar Desert, Indus and Ganges plains
     lat: [5, 37]
     lon: [60, 97]
     countries: [PK, IN, BG, NP]
-    target_n: 8
   - name: East Asia
     note: China (incl. Taklimakan) and Mongolia (Gobi)
     lat: [18, 54]
     lon: [73, 135]
     countries: [CH, MG]
-    target_n: 15
   - name: Southern Africa
     note: Namib and Kalahari (UN M49 Southern Africa)
     lat: [-35, -15]
     lon: [10, 33]
     countries: [WA, BC, SF, LT, WZ]
-    target_n: 8
   - name: North America
     note: US Southwest and northern Mexico
     lat: [25, 42]
     lon: [-125, -100]
-    target_n: 10
   - name: South America
     note: Patagonia, Monte, Chaco, Atacama
     lat: [-55, -15]
     lon: [-75, -55]
-    target_n: 8
   - name: Australia
     lat: [-40, -15]
     lon: [113, 154]
-    target_n: 7
