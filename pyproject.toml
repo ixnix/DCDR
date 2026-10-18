@@ -1,7 +1,7 @@
 [project]
 name = "dcdr"
 version = "0.1.0"
-description = "Dust Climate Data Record: quality-controlled dust events from NOAA ISD"
+description = "Dust Climate Data Record: quality-controlled dust dataset from NOAA ISD"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
