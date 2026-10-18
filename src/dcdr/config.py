@@ -13,7 +13,6 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = files("dcdr") / "default.yaml"
 SILVER_SECTIONS = ("parse", "qc", "classify", "sampling")
 

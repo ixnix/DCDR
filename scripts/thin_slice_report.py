@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import duckdb
 import matplotlib
@@ -10,11 +11,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from dcdr.config import REPO_ROOT, load_settings  # noqa: E402
+from dcdr.config import load_settings  # noqa: E402
 from dcdr.gold import current_gold_dir  # noqa: E402
 from dcdr.state import safe_listdir  # noqa: E402
 
 INK, MUTED, GRID, BAR = "#1f2328", "#59636e", "#d1d9e0", "#2f6fb0"
+REPO_ROOT = Path(__file__).resolve().parents[1]  # scripts/ only run from a checkout
 OUT = REPO_ROOT / "docs" / "figures" / "thin_slice_monthly_dusty_days.png"
 
 

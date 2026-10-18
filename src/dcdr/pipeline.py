@@ -12,7 +12,8 @@ from typing import Any
 
 import polars as pl
 
-from dcdr.config import REPO_ROOT, Settings, canonical_yaml, config_hash, silver_config_hash
+from dcdr import __version__
+from dcdr.config import Settings, canonical_yaml, config_hash, silver_config_hash
 from dcdr.gold import build_gold
 from dcdr.ingest import IngestSummary, bronze_path, ingest, make_store
 from dcdr.silver import METHOD_VERSION
@@ -28,6 +29,7 @@ from dcdr.state import (
 )
 
 log = logging.getLogger(__name__)
+PACKAGE_DIR = Path(__file__).resolve().parent  # a git checkout only when run from source
 
 
 @dataclass
@@ -50,7 +52,7 @@ class RunContext:
 
 def start_run(settings: Settings, command: str) -> RunContext:
     settings.data_root.mkdir(parents=True, exist_ok=True)
-    commit, dirty = git_revision(REPO_ROOT)
+    commit, dirty = git_revision(PACKAGE_DIR)
     ctx = RunContext(settings, new_run_id(), command, utcnow(), commit, dirty)
     atomic_write_bytes(
         ctx.state_dir / "runs" / ctx.run_id / "config.resolved.yaml",
@@ -71,6 +73,7 @@ def finish_run(ctx: RunContext, status: str, summary: dict[str, Any]) -> None:
             "status": status,
             "git_commit": ctx.git_commit,
             "git_dirty": ctx.git_dirty,
+            "dcdr_version": __version__,
             "config_hash": config_hash(ctx.settings),
             "summary": json.dumps(summary, default=str),
         },

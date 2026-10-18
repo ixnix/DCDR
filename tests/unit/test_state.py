@@ -84,3 +84,13 @@ def test_append_run_record_accumulates(tmp_path: Path) -> None:
     for rid in ("r1", "r2"):
         state.append_run_record(runs, {"run_id": rid, "command": "test", "status": "ok"})
     assert pl.read_parquet(runs)["run_id"].to_list() == ["r1", "r2"]
+
+
+def test_run_log_written_before_a_new_column_still_appends(tmp_path: Path) -> None:
+    runs = tmp_path / "runs.parquet"
+    old_schema = {k: v for k, v in state.RUNS_SCHEMA.items() if k != "dcdr_version"}
+    pl.DataFrame([{"run_id": "r0"}], schema=old_schema).write_parquet(runs)
+    state.append_run_record(runs, {"run_id": "r1", "dcdr_version": "0.1.0"})
+    df = pl.read_parquet(runs)
+    assert df.columns == list(state.RUNS_SCHEMA)
+    assert df["dcdr_version"].to_list() == [None, "0.1.0"]

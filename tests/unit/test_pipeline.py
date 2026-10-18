@@ -1,7 +1,10 @@
 from pathlib import Path
 
+import polars as pl
+
+from dcdr import __version__
 from dcdr.config import load_settings
-from dcdr.pipeline import parse_years, read_station_list, start_run
+from dcdr.pipeline import finish_run, parse_years, read_station_list, start_run
 
 
 def test_parse_years_forms() -> None:
@@ -21,3 +24,12 @@ def test_start_run_creates_missing_data_root(tmp_path: Path) -> None:
     s = load_settings(overrides={"paths": {"data_root": str(root)}})
     ctx = start_run(s, "test")
     assert (root / "_state" / "runs" / ctx.run_id / "config.resolved.yaml").exists()
+
+
+def test_run_record_names_package_version_and_commit(tmp_path: Path) -> None:
+    s = load_settings(overrides={"paths": {"data_root": str(tmp_path)}})
+    ctx = start_run(s, "test")
+    finish_run(ctx, "ok", {})
+    row = pl.read_parquet(tmp_path / "_state" / "runs.parquet").row(0, named=True)
+    assert row["dcdr_version"] == __version__
+    assert len(row["git_commit"]) == 40  # tests run from a git checkout
