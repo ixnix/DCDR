@@ -2,12 +2,12 @@ station_id,name,country,lat,lon,reason
 60030099999,GRAN CANARIA,SP,27.932,-15.387,Saharan dust downwind (Canary Islands)
 08594099999,AMILCAR CABRAL INTL (SAL),CV,16.741,-22.949,Saharan dust downwind (Cabo Verde)
 78954000408,GRANTLEY ADAMS INTL,BB,13.067,-59.483,Saharan dust after Atlantic transport (Barbados); ID used since 2005
-78526011641,LUIS MUNOZ MARIN INTL (SAN JUAN),US,18.433,-66.011,Saharan dust after Atlantic transport (Puerto Rico; METAR); ID used since 2005
 16597099999,LUQA,MT,35.857,14.478,Saharan dust downwind (central Mediterranean)
 47110099999,GIMPO (SEOUL),KS,37.558,126.791,Asian dust downwind (Korea)
-47808099999,FUKUOKA,JA,33.586,130.451,Asian dust downwind (Japan)
 94767099999,SYDNEY INTL,AS,-33.946,151.177,Australian dust downwind
 72278023183,PHOENIX SKY HARBOR INTL,US,33.428,-112.004,US Southwest; automated METAR (no SYNOP)
 72270023044,EL PASO INTL,US,31.812,-106.377,US Southwest; automated METAR (no SYNOP)
 72386023169,LAS VEGAS (HARRY REID INTL),US,36.072,-115.163,Arid but less dusty; automated METAR (no SYNOP)
 03962099999,SHANNON,EI,52.702,-8.925,Clean maritime control (essentially dust-free)
+58926099999,ZHANG PING,CH,25.300,117.400,Southern China clean control: never reported dust (flagDU False) with present weather in every SYNOP report
+47031199999,MEILAN (HAIKOU),CH,19.935,110.459,Southern China tropical control: never reported dust (flagDU False); METAR since 2004
