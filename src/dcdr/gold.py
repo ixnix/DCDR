@@ -5,15 +5,16 @@ from __future__ import annotations
 import json
 import shutil
 from dataclasses import dataclass
+from importlib.resources import files
 from pathlib import Path
 
 import duckdb
 
-from dcdr.config import REPO_ROOT, Settings, silver_config_hash
+from dcdr.config import Settings, silver_config_hash
 from dcdr.silver import METHOD_VERSION
 from dcdr.state import atomic_write_bytes, read_parquet_metadata, safe_listdir
 
-SQL_DIR = REPO_ROOT / "sql"
+SQL_DIR = files("dcdr") / "sql"
 
 
 @dataclass(frozen=True)
