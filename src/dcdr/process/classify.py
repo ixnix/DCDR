@@ -9,8 +9,8 @@ from __future__ import annotations
 import polars as pl
 
 from dcdr.config import ClassifyCfg, QcCfg
-from dcdr.silver.parse import AT_N, AU_N, AW_N, AX_N, AY_N, AZ_N, MV_N, MW_N
-from dcdr.silver.qc import code_flag
+from dcdr.process.parse import AT_N, AU_N, AW_N, AX_N, AY_N, AZ_N, MV_N, MW_N
+from dcdr.process.qc import code_flag
 
 RANK: dict[str, int] = {
     "none": 0,

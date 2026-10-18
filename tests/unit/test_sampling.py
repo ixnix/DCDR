@@ -4,7 +4,7 @@ from datetime import datetime
 import polars as pl
 
 from dcdr.config import Settings
-from dcdr.silver.sampling import select_synoptic
+from dcdr.process.sampling import select_synoptic
 
 
 def _frame(rows: list[tuple[str, str, bool, str]]) -> pl.DataFrame:

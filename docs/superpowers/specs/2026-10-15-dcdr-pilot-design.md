@@ -82,13 +82,13 @@ dcdr/
 │   ├── pipeline.py     # stage runner: plans work, applies the rebuild policy, writes run records
 │   ├── config.py       # Pydantic settings; profile merging; resolved config + hash
 │   ├── state.py        # source manifest + run records (_state/)
-│   ├── ingest.py       # S3 listing, streaming download, bronze writer
-│   ├── silver/
+│   ├── ingest.py       # ingest step → bronze: S3 listing, streaming download, bronze writer
+│   ├── process/        # process step → silver
 │   │   ├── parse.py    # ISD packed fields → typed columns; time fields
 │   │   ├── qc.py       # QC flags (never deletes), RH, visibility harmonization
 │   │   ├── classify.py # per-field weather-code tables → dust classes + evidence + rule id
 │   │   └── sampling.py # synoptic-slot candidates, ranks, selection reasons
-│   ├── gold.py         # product registry; runs sql/*.sql in DuckDB; Python products (trends, Uth)
+│   ├── aggregate.py    # aggregate step → gold: product registry; runs sql/*.sql in DuckDB (becomes aggregate/ in Plan 2)
 │   ├── schemas.py      # Pandera contracts: bronze, silver, gold
 │   ├── sql/            # one file per gold table (shipped in the wheel)
 │   ├── default.yaml    # built-in defaults (shipped in the wheel)
@@ -105,6 +105,8 @@ dcdr/
 ```
 
 Rule: a module becomes a package only when it grows past about 400 lines.
+
+**Naming rule (2026-10-18):** code and CLI commands are named by **action**, data by **layer**: `ingest` writes bronze, `process` writes silver, `aggregate` writes gold; later `enrich` joins environmental drivers onto gold station-days (sub-project D) and `forecast` serves sub-project E. Data folders, file metadata (`dcdr_layer`) and product names keep the medallion layer names.
 
 **Packaging rule (2026-10-18):** files the code needs to run (SQL, `default.yaml`) live inside `src/dcdr/` and are loaded with `importlib.resources`, so an installed wheel works anywhere. Run inputs (station lists, profiles) and machine settings (`data_root`) stay outside the package; relative paths resolve against the **working directory**, like git or dbt. No code locates the repository root.
 
@@ -418,7 +420,7 @@ Station-level partial reads are guaranteed by **one file per station**, not by s
 - `src/dcdr/default.yaml` sections: `paths`, `ingest`, `parse`, `qc`, `classify`, `sampling`, `products`, `stations`, `publish`, `web`. Every threshold named in this spec is a config key with the stated default.
 - `config/profiles/duisd_v1.yaml` approximates legacy behaviour for comparisons: MW fields only; UTC days; first report in 3-hour bins aligned to midnight; RH > 90 screens all dust classes; no QC-code filtering; no visibility cap; haze window 24 h.
 - Each run writes `_state/runs/<run_id>/config.resolved.yaml` (all values after merging) and records `config_hash` (SHA-256 of the canonical resolved YAML), `dcdr_version` (from package metadata; `pyproject.toml` is the single source), the git commit and dirty flag (read from the package folder, so `unknown` when installed rather than run from a checkout), the command and per-stage counts in `_state/runs.parquet`.
-- `method_version`: a constant in `dcdr.silver`, bumped whenever parse, QC, classify or sampling logic changes. The silver `config_hash` covers only the sections that affect silver.
+- `method_version`: a constant in `dcdr.process`, bumped whenever parse, QC, classify or sampling logic changes. The silver `config_hash` covers only the sections that affect silver.
 
 ## 12. Rebuild policy
 
@@ -466,8 +468,8 @@ Gold always rebuilds in full in the pilot, deliberately conservative. Incrementa
 
 - **CLI:**
   - `dcdr ingest`
-  - `dcdr build silver`
-  - `dcdr build gold`
+  - `dcdr process` (bronze → silver)
+  - `dcdr aggregate` (silver → gold)
   - `dcdr validate`
   - `dcdr export web`
   - `dcdr publish`
@@ -513,7 +515,7 @@ Gold always rebuilds in full in the pilot, deliberately conservative. Incrementa
 
 ## Appendix A: Decisions recorded for later sub-projects
 
-**D (environmental drivers):** gridded ERA5 (ARCO-ERA5 on GCS), MODIS/NDVI, soil moisture, per-decade aridity and trend (ERA5-Land or TerraClimate P/PET); join to stations; covariation and trend views on the website. Gridded precipitation replaces ISD precipitation for analysis.
+**D (environmental drivers):** step name `enrich` (module `enrich/`, with `collocate.py` matching station ↔ grid cell and UTC hours → LMST day, one module per driver source); driver downloads are separate `ingest` sources (e.g. `dcdr ingest era5`). Output: a gold `daily_drivers` table that doubles as the ML feature table. Sources: gridded ERA5 (ARCO-ERA5 on GCS), MODIS/NDVI, soil moisture, per-decade aridity and trend (ERA5-Land or TerraClimate P/PET); join to stations; covariation and trend views on the website. Gridded precipitation replaces ISD precipitation for analysis.
 
 **E (dust forecasting):**
 - **Scope:** **source stations only** (D10).

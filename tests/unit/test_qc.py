@@ -2,8 +2,8 @@ import polars as pl
 import pytest
 
 from dcdr.config import Settings
-from dcdr.silver.parse import parse_reports
-from dcdr.silver.qc import apply_qc, code_flag
+from dcdr.process.parse import parse_reports
+from dcdr.process.qc import apply_qc, code_flag
 from tests.fixtures.isd import bronze_frame, isd_row
 
 

@@ -5,7 +5,7 @@ import polars as pl
 from obstore.store import MemoryStore
 
 from dcdr.config import Settings
-from dcdr.pipeline import run_gold, run_ingest, run_silver, silver_path, start_run
+from dcdr.pipeline import run_aggregate, run_ingest, run_process, silver_path, start_run
 from tests.fixtures.isd import isd_row, make_isd_csv
 
 STATION = "40582099999"
@@ -32,15 +32,15 @@ def test_end_to_end_incremental(settings: Settings) -> None:
 
     ing = run_ingest(ctx, [STATION], [2024], store=store)
     assert ing.downloaded == 2  # 2024 plus 2023 for the haze look-back
-    sil = run_silver(ctx, [STATION], [2024])
+    sil = run_process(ctx, [STATION], [2024])
     assert sil.built == 1
-    daily = pl.read_parquet(run_gold(ctx, [STATION], [2024]) / "daily" / "part-000.parquet")
+    daily = pl.read_parquet(run_aggregate(ctx, [STATION], [2024]) / "daily" / "part-000.parquet")
     jan1 = daily.filter(pl.col("lmst_date") == date(2024, 1, 1)).row(0, named=True)
     assert jan1["dusty_day_synoptic"] and jan1["n_dust_slots_dust_haze"] == 1
 
     # Unchanged inputs: nothing is re-downloaded or rebuilt.
     assert run_ingest(ctx, [STATION], [2024], store=store).downloaded == 0
-    assert run_silver(ctx, [STATION], [2024]).built == 0
+    assert run_process(ctx, [STATION], [2024]).built == 0
 
     # A correction to the PREVIOUS year must rebuild this year's silver (look-back dependency).
     _put(
@@ -52,8 +52,8 @@ def test_end_to_end_incremental(settings: Settings) -> None:
         ],
     )
     assert run_ingest(ctx, [STATION], [2024], store=store).downloaded == 1
-    assert run_silver(ctx, [STATION], [2024]).built == 1
-    daily = pl.read_parquet(run_gold(ctx, [STATION], [2024]) / "daily" / "part-000.parquet")
+    assert run_process(ctx, [STATION], [2024]).built == 1
+    daily = pl.read_parquet(run_aggregate(ctx, [STATION], [2024]) / "daily" / "part-000.parquet")
     jan1 = daily.filter(pl.col("lmst_date") == date(2024, 1, 1)).row(0, named=True)
     assert not jan1["dusty_day_synoptic"]
 
@@ -79,7 +79,7 @@ def test_one_bad_station_year_does_not_abort_silver(settings: Settings, monkeypa
         return real(current, previous, year, settings_, **kw)
 
     monkeypatch.setattr(pipe, "build_station_year", flaky)
-    s = run_silver(ctx, [STATION, "72386023169"], [2024])
+    s = run_process(ctx, [STATION, "72386023169"], [2024])
     assert (s.built, s.failed) == (1, 1)
 
 
@@ -96,9 +96,9 @@ def test_previous_year_rebuilt_when_next_year_bronze_arrives(settings: Settings)
     )
     ctx = start_run(settings, "test")
     run_ingest(ctx, [STATION], [2023], store=store)  # 2024 bronze does not exist yet
-    run_silver(ctx, [STATION], [2023])
+    run_process(ctx, [STATION], [2023])
     assert pl.read_parquet(silver_path(ctx.root, 2023, STATION)).height == 2
     _jan1(store)
     run_ingest(ctx, [STATION], [2024], store=store)
-    assert run_silver(ctx, [STATION], [2023]).built == 1  # 2023 rebuilt because 2024 now exists
+    assert run_process(ctx, [STATION], [2023]).built == 1  # 2023 rebuilt because 2024 now exists
     assert pl.read_parquet(silver_path(ctx.root, 2023, STATION)).height == 1

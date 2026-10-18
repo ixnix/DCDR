@@ -5,7 +5,7 @@ from __future__ import annotations
 import polars as pl
 
 from dcdr.config import SamplingCfg
-from dcdr.silver.parse import lmst_shift
+from dcdr.process.parse import lmst_shift
 
 _ORDER = [
     "station_id",

@@ -51,7 +51,7 @@ def test_installed_dcdr_runs_outside_the_repo(wheel: Path, tmp_path: Path) -> No
         tmp_path,
         "python",
         "-c",
-        "from dcdr.config import load_settings; from dcdr.gold import SQL_DIR; "
+        "from dcdr.config import load_settings; from dcdr.aggregate import SQL_DIR; "
         "s = load_settings(); print(s.data_root); print(len((SQL_DIR / 'daily.sql').read_text()))",
     )
     assert check.returncode == 0, check.stderr
