@@ -106,6 +106,8 @@ dcdr/
 
 Rule: a module becomes a package only when it grows past about 400 lines.
 
+**Packaging rule (2026-10-18):** files the code needs to run (SQL, `default.yaml`) live inside `src/dcdr/` and are loaded with `importlib.resources`, so an installed wheel works anywhere. Run inputs (station lists, profiles) and machine settings (`data_root`) stay outside the package; relative paths resolve against the **working directory**, like git or dbt. No code locates the repository root.
+
 ## 6. Data layout and storage model
 
 Data root `DCDR_DATA` (default `<repo>/data`; may be `s3://…` later):
@@ -415,7 +417,7 @@ Station-level partial reads are guaranteed by **one file per station**, not by s
 
 - `src/dcdr/default.yaml` sections: `paths`, `ingest`, `parse`, `qc`, `classify`, `sampling`, `products`, `stations`, `publish`, `web`. Every threshold named in this spec is a config key with the stated default.
 - `config/profiles/duisd_v1.yaml` approximates legacy behaviour for comparisons: MW fields only; UTC days; first report in 3-hour bins aligned to midnight; RH > 90 screens all dust classes; no QC-code filtering; no visibility cap; haze window 24 h.
-- Each run writes `_state/runs/<run_id>/config.resolved.yaml` (all values after merging) and records `config_hash` (SHA-256 of the canonical resolved YAML), the git commit, the dirty flag, the command and per-stage counts in `_state/runs.parquet`.
+- Each run writes `_state/runs/<run_id>/config.resolved.yaml` (all values after merging) and records `config_hash` (SHA-256 of the canonical resolved YAML), `dcdr_version` (from package metadata; `pyproject.toml` is the single source), the git commit and dirty flag (read from the package folder, so `unknown` when installed rather than run from a checkout), the command and per-stage counts in `_state/runs.parquet`.
 - `method_version`: a constant in `dcdr.silver`, bumped whenever parse, QC, classify or sampling logic changes. The silver `config_hash` covers only the sections that affect silver.
 
 ## 12. Rebuild policy
@@ -457,7 +459,8 @@ Gold always rebuilds in full in the pilot, deliberately conservative. Incrementa
   - an **injected failure during a write** leaves the previous file valid;
   - a failed release leaves `latest` unchanged.
 - **Snapshot tests** (pilot): saved summary statistics per station (class counts, dusty days per year, qualifying years). Counts must match **exactly**; floating-point statistics within documented tolerances (relative 1e-9 for deterministic sums, 1e-3 for model fits). Changes need an explicit snapshot update in a reviewed commit.
-- **CI** (`ci.yml`): ruff, mypy, pytest (unit + integration) on every push.
+- **Packaging:** `tests/integration/test_packaging.py` builds the wheel, installs it in a throwaway environment and runs `dcdr` from a folder outside the repo.
+- **CI** (`ci.yml`): ruff, mypy, pytest (unit + integration + packaging) on every push.
 
 ## 14. Operations
 
