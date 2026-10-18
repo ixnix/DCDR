@@ -13,11 +13,11 @@ from typing import Any
 import polars as pl
 
 from dcdr import __version__
+from dcdr.aggregate import build_gold
 from dcdr.config import Settings, canonical_yaml, config_hash, silver_config_hash
-from dcdr.gold import build_gold
 from dcdr.ingest import IngestSummary, bronze_path, ingest, make_store
-from dcdr.silver import METHOD_VERSION
-from dcdr.silver.build import build_station_year, write_silver
+from dcdr.process import METHOD_VERSION
+from dcdr.process.build import build_station_year, write_silver
 from dcdr.state import (
     Manifest,
     append_run_record,
@@ -115,7 +115,7 @@ def run_ingest(
 
 
 @dataclass
-class SilverSummary:
+class ProcessSummary:
     built: int = 0
     skipped: int = 0
     missing_bronze: int = 0
@@ -147,10 +147,10 @@ def _silver_is_current(
     )
 
 
-def run_silver(
+def run_process(
     ctx: RunContext, stations: list[str], years: list[int], force: bool = False
-) -> SilverSummary:
-    summary = SilverSummary()
+) -> ProcessSummary:
+    summary = ProcessSummary()
     cfg_hash = silver_config_hash(ctx.settings)
     for station in stations:
         for year in years:
@@ -199,5 +199,5 @@ def all_silver_paths(root: Path, stations: list[str], years: list[int]) -> list[
     return [p for p in paths if p.exists()]
 
 
-def run_gold(ctx: RunContext, stations: list[str], years: list[int]) -> Path:
+def run_aggregate(ctx: RunContext, stations: list[str], years: list[int]) -> Path:
     return build_gold(ctx.settings, all_silver_paths(ctx.root, stations, years), ctx.run_id)

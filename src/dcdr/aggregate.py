@@ -1,4 +1,4 @@
-"""Gold layer: product registry, versioned full rebuilds and the CURRENT pointer (spec §6.1, §7.3)."""
+"""Aggregate step (silver → gold): product registry, versioned full rebuilds and the CURRENT pointer (spec §6.1, §7.3)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 import duckdb
 
 from dcdr.config import Settings, silver_config_hash
-from dcdr.silver import METHOD_VERSION
+from dcdr.process import METHOD_VERSION
 from dcdr.state import atomic_write_bytes, read_parquet_metadata, safe_listdir
 
 SQL_DIR = files("dcdr") / "sql"
@@ -81,7 +81,7 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     expected = (METHOD_VERSION, silver_config_hash(settings))
     if versions != {expected}:
         raise StaleSilverError(
-            f"silver is {versions.pop()}, code expects {expected}; rebuild silver"
+            f"silver is {versions.pop()}, code expects {expected}; re-run `dcdr process --force`"
         )
     gold_root = settings.data_root / "gold"
     out_dir = gold_root / "versions" / run_id

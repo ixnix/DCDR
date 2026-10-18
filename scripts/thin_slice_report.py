@@ -11,8 +11,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
+from dcdr.aggregate import current_gold_dir  # noqa: E402
 from dcdr.config import load_settings  # noqa: E402
-from dcdr.gold import current_gold_dir  # noqa: E402
 from dcdr.state import safe_listdir  # noqa: E402
 
 INK, MUTED, GRID, BAR = "#1f2328", "#59636e", "#d1d9e0", "#2f6fb0"

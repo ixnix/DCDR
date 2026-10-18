@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from dcdr.silver.parse import add_time_columns, parse_reports
+from dcdr.process.parse import add_time_columns, parse_reports
 from tests.fixtures.isd import bronze_frame, isd_row
 
 

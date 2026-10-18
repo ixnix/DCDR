@@ -15,8 +15,6 @@ from dcdr import __version__, pipeline
 from dcdr.config import DEFAULT_CONFIG, Settings, load_settings
 
 app = typer.Typer(help="DCDR pipeline command-line interface.", no_args_is_help=True)
-build_app = typer.Typer(help="Build one data layer.", no_args_is_help=True)
-app.add_typer(build_app, name="build")
 
 ConfigOpt = typer.Option(DEFAULT_CONFIG, "--config", help="Config YAML file.")
 ProfileOpt = typer.Option(None, "--profile", help="Profile YAML merged over the config.")
@@ -79,19 +77,19 @@ def ingest(
     _execute("ingest", config, profile, body)
 
 
-@build_app.command("silver")
-def build_silver(
+@app.command()
+def process(
     years: str = YearsOpt,
     stations: Path | None = StationsOpt,
     force: bool = typer.Option(False, "--force", help="Rebuild even if current."),
     config: Path = ConfigOpt,
     profile: Path | None = ProfileOpt,
 ) -> None:
-    """Build silver station-years from bronze (incremental unless --force)."""
+    """Process bronze into silver: parse, QC, classify dust, pick synoptic slots (incremental)."""
 
     def body(ctx: pipeline.RunContext) -> dict[str, Any]:
         ids = _station_ids(ctx.settings, stations)
-        s = pipeline.run_silver(ctx, ids, pipeline.parse_years(years), force=force)
+        s = pipeline.run_process(ctx, ids, pipeline.parse_years(years), force=force)
         return {
             "built": s.built,
             "skipped": s.skipped,
@@ -100,23 +98,23 @@ def build_silver(
             "failures": s.failures,
         }
 
-    _execute("build silver", config, profile, body)
+    _execute("process", config, profile, body)
 
 
-@build_app.command("gold")
-def build_gold_cmd(
+@app.command()
+def aggregate(
     years: str = YearsOpt,
     stations: Path | None = StationsOpt,
     config: Path = ConfigOpt,
     profile: Path | None = ProfileOpt,
 ) -> None:
-    """Rebuild gold products from silver into a new version and activate it."""
+    """Aggregate silver into gold products in a new version, check them and activate it."""
 
     def body(ctx: pipeline.RunContext) -> dict[str, Any]:
         ids = _station_ids(ctx.settings, stations)
-        return {"gold": str(pipeline.run_gold(ctx, ids, pipeline.parse_years(years)))}
+        return {"gold": str(pipeline.run_aggregate(ctx, ids, pipeline.parse_years(years)))}
 
-    _execute("build gold", config, profile, body)
+    _execute("aggregate", config, profile, body)
 
 
 @app.command()
@@ -127,13 +125,13 @@ def run(
     config: Path = ConfigOpt,
     profile: Path | None = ProfileOpt,
 ) -> None:
-    """Ingest, then build silver and gold."""
+    """Ingest, process and aggregate: bronze, then silver, then gold."""
 
     def body(ctx: pipeline.RunContext) -> dict[str, Any]:
         ids, yrs = _station_ids(ctx.settings, stations), pipeline.parse_years(years)
         ing = pipeline.run_ingest(ctx, ids, yrs)
-        sil = pipeline.run_silver(ctx, ids, yrs, force=force)
-        gold = pipeline.run_gold(ctx, ids, yrs)
+        sil = pipeline.run_process(ctx, ids, yrs, force=force)
+        gold = pipeline.run_aggregate(ctx, ids, yrs)
         return {
             "ingest": asdict(ing),
             "silver_built": sil.built,

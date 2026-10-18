@@ -1,9 +1,9 @@
 import polars as pl
 
 from dcdr.config import Settings, load_settings
-from dcdr.silver.classify import apply_haze_and_rh, classify_reports
-from dcdr.silver.parse import add_time_columns, parse_reports
-from dcdr.silver.qc import apply_qc
+from dcdr.process.classify import apply_haze_and_rh, classify_reports
+from dcdr.process.parse import add_time_columns, parse_reports
+from dcdr.process.qc import apply_qc
 from tests.fixtures.isd import bronze_frame, isd_row
 
 

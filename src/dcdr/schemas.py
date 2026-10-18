@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandera.polars as pa
 import polars as pl
 
-from dcdr.silver.classify import FINAL_CLASSES
+from dcdr.process.classify import FINAL_CLASSES
 
 SILVER_SCHEMA = pa.DataFrameSchema(
     {

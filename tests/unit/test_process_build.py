@@ -6,9 +6,9 @@ import pytest
 from polars.testing import assert_frame_equal
 
 from dcdr.config import Settings
+from dcdr.process import METHOD_VERSION
+from dcdr.process.build import build_station_year, write_silver
 from dcdr.schemas import SilverContractError, validate_silver
-from dcdr.silver import METHOD_VERSION
-from dcdr.silver.build import build_station_year, write_silver
 from dcdr.state import read_parquet_metadata
 from tests.fixtures.isd import bronze_frame, isd_row
 
@@ -130,7 +130,7 @@ def test_longitude_sentinel_is_treated_as_missing(settings: Settings) -> None:
 
 
 def test_no_valid_longitude_fails_clearly(settings: Settings) -> None:
-    from dcdr.silver.parse import MissingLongitudeError
+    from dcdr.process.parse import MissingLongitudeError
 
     rows = [isd_row("2024-03-01T00:00:00", LONGITUDE="999.999")]
     with pytest.raises(MissingLongitudeError):

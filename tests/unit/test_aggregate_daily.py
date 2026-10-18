@@ -4,9 +4,9 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+from dcdr.aggregate import MixedSilverVersionsError, build_gold, current_gold_dir
 from dcdr.config import Settings, load_settings, silver_config_hash
-from dcdr.gold import MixedSilverVersionsError, build_gold, current_gold_dir
-from dcdr.silver.build import build_station_year, write_silver
+from dcdr.process.build import build_station_year, write_silver
 from tests.fixtures.isd import bronze_frame, isd_row
 
 LON0 = {"LONGITUDE": "0.0"}  # LMST == UTC keeps expectations readable
@@ -147,7 +147,7 @@ def test_slot_counted_on_its_own_lmst_day(settings: Settings) -> None:
 
 def test_gold_refuses_silver_built_with_other_config(settings: Settings) -> None:
     """Review I4: gold must not silently use stale silver."""
-    from dcdr.gold import StaleSilverError
+    from dcdr.aggregate import StaleSilverError
 
     stale = _silver(settings, _slots("2024-01-01"), cfg_hash="not-the-current-hash")
     with pytest.raises(StaleSilverError):
