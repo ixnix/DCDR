@@ -30,10 +30,6 @@ from dcdr.state import (
 log = logging.getLogger(__name__)
 
 
-class DataRootUnavailable(RuntimeError):
-    """The data root's parent directory does not exist (e.g. the SSD is not mounted)."""
-
-
 @dataclass
 class RunContext:
     settings: Settings
@@ -53,10 +49,7 @@ class RunContext:
 
 
 def start_run(settings: Settings, command: str) -> RunContext:
-    root = settings.data_root
-    if not root.parent.exists():
-        raise DataRootUnavailable(f"{root.parent} does not exist — is the SSD mounted?")
-    root.mkdir(exist_ok=True)
+    settings.data_root.mkdir(parents=True, exist_ok=True)
     commit, dirty = git_revision(REPO_ROOT)
     ctx = RunContext(settings, new_run_id(), command, utcnow(), commit, dirty)
     atomic_write_bytes(
