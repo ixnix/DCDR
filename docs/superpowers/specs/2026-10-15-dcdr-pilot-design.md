@@ -365,20 +365,20 @@ Per station × `window` ∈ {`all`, `baseline`}: annual `dusty_days` over qualif
 
 ### 8.3 Pilot selection (`scripts/select_pilot_stations.py`)
 1. Inputs: `isd-history.csv` (refreshed from `noaa-isd-pds`), the S3 listing (years available per station), duISD v1 (Zenodo 10.5281/zenodo.4107346, used **only to rank** candidates), and the aridity raster.
-2. Regions (`config/stations/regions.yaml`). Country lists (ISD/FIPS codes) are applied first, then lat/lon boxes in order, first match wins (lat °N, lon °E). Updated 2026-10-18 (user decisions): all of China and Mongolia are East Asia; Central Asia is the five Central Asian republics plus Afghanistan; South Asia added.
+2. Regions (`config/stations/regions.yaml`). Each region is a lat/lon box (lat °N, lon °E) plus, where conventions need it, a country filter (ISD/FIPS codes): a station must be inside the box **and** in a listed country. Regions are tested in order, first match wins. Updated 2026-10-18 (user decisions): China and Mongolia are East Asia; Central Asia is the five Central Asian republics plus Afghanistan; South Asia added; Sudan is North Africa.
 
-   | Region | Definition | Target n |
-   |---|---|---|
-   | North Africa (Sahara, Sahel) | box lat 12 to 37, lon −18 to 35 | 15 |
-   | Middle East | box lat 12 to 40, lon 35 to 63 | 15 |
-   | Central Asia | countries KZ, UZ, TX, TI, KG, AF | 12 |
-   | South Asia | countries PK, IN, BG, NP | 8 |
-   | East Asia | countries CH, MG | 15 |
-   | Southern Africa | box lat −35 to −15, lon 10 to 30 | 8 |
-   | North America | box lat 25 to 42, lon −125 to −100 | 10 |
-   | South America | box lat −55 to −15, lon −75 to −55 | 8 |
-   | Australia | box lat −40 to −15, lon 113 to 154 | 7 |
-   | Contrast (transport-affected, METAR-heavy) | Canary Islands/Cabo Verde, Korea/Japan, Caribbean, US METAR stations incl. Las Vegas `72386023169` | 10 |
+   | Region | Box: lat; lon | Countries (FIPS) | Target n |
+   |---|---|---|---|
+   | North Africa (Sahara, Sahel) | 12 to 38; −18 to 39 | MO AG TS LY EG SU WI MR ML NG CD UV SG GA NI | 15 |
+   | Middle East | 12 to 42; 26 to 63 | SA IZ IR KU QA BA AE MU YM JO IS SY LE TU | 15 |
+   | Central Asia | 29 to 56; 46 to 88 | KZ UZ TX TI KG AF | 12 |
+   | South Asia | 5 to 37; 60 to 97 | PK IN BG NP | 8 |
+   | East Asia | 18 to 54; 73 to 135 | CH MG | 15 |
+   | Southern Africa (Namib, Kalahari) | −35 to −15; 10 to 33 | WA BC SF LT WZ | 8 |
+   | North America | 25 to 42; −125 to −100 | — | 10 |
+   | South America | −55 to −15; −75 to −55 | — | 8 |
+   | Australia | −40 to −15; 113 to 154 | — | 7 |
+   | Contrast (transport-affected, METAR-heavy) | Canary Islands/Cabo Verde, Korea/Japan, Caribbean, US METAR stations incl. Las Vegas `72386023169` | | 10 |
 
    Targets now sum to 98 + 10 contrast; rebalance to 100 before the final list.
 3. Candidates: ≥ 10 valid years in **1991–2019** (a valid year has ≥ 6 months with ≥ 30 SYNOP present-weather reports), valid aridity. ISD records are patchy (Kuwait International has about 11 years in duISD v1); the notebook's sensitivity table shows the pool per threshold.
