@@ -39,7 +39,7 @@ The project has two goals with equal weight:
 | D1 | Source: `s3://noaa-global-hourly-pds/{year}/{station}.csv` (public, anonymous, us-east-1) | Same CSV format as the legacy code; no local raw archive. Measured: 1.47 TB, 711,411 station-year files. |
 | D2 | **Stream** source files (download into memory → Parquet). No local CSV mirror. | User preference. Bronze provides a lossless copy at about 7% of the CSV size. |
 | D3 | All compute on the user's laptop (Apple M5, 10 cores, 16 GB) for A–C | Benchmarked: Polars parses at about 1.2 GB/s; the network (~13 MB/s) is the bottleneck, about 30 h for the full backfill |
-| D4 | Data root: `/Volumes/CrucialX8/dcdr` (2 TB exFAT SSD). Backups: Areca RAID snapshots. | Fast local storage; offline backups |
+| D4 | Data root: `data/` in the repo by default (git-ignored); any location via `DCDR_DATA` or a profile. The author runs it on a portable SSD (`/Volumes/CrucialX8/dcdr`, exFAT) by choice; backups are Areca RAID snapshots. The data root is created if missing (user decision 2026-10-17). | Works out of the box after a clone; storage location is a user choice, not a rule |
 | D5 | Stack: Python 3.12, uv, Polars, DuckDB, Parquet/GeoParquet, Pandera, Pydantic, Typer, pytest, ruff, mypy, GitHub Actions | See §4 |
 | D6 | Method choices are **explicit config options**. Old behaviour is reproducible via the `duisd_v1` profile for comparison (not validation). | User decision: no validation against v1 is needed |
 | D7 | Station products use **local mean solar time** (LMST = UTC + longitude/15 h); UTC is kept for merging | Dust has a diurnal cycle; daily products should follow the local day |
@@ -108,7 +108,7 @@ Rule: a module becomes a package only when it grows past about 400 lines.
 
 ## 6. Data layout and storage model
 
-Data root `DCDR_DATA` (default `/Volumes/CrucialX8/dcdr`; may be `s3://…` later):
+Data root `DCDR_DATA` (default `<repo>/data`; may be `s3://…` later):
 
 ```
 _state/sources.parquet                       # source manifest (§7.1.3)

@@ -1,6 +1,6 @@
 # DCDR default configuration. Every method choice in the spec is a key here.
 paths:
-  data_root: /Volumes/CrucialX8/dcdr
+  data_root: data  # relative = <repo>/data; set DCDR_DATA or a profile to use another disk
 ingest:
   bucket: noaa-global-hourly-pds
   region: us-east-1

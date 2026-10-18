@@ -11,5 +11,5 @@ uv run pytest
 uv run dcdr --help
 ```
 
-Data are written to `/Volumes/CrucialX8/dcdr` by default; set `DCDR_DATA` to override.
+Data are written to `data/` in the repo by default (git-ignored); set `DCDR_DATA` to use another location, e.g. an external drive.
 `legacy/` holds the original scripts and the NOAA ISD format document for reference only — it is never imported.

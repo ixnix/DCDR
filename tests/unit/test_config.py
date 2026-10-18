@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from dcdr.config import config_hash, load_settings, silver_config_hash
+from dcdr.config import REPO_ROOT, config_hash, load_settings, silver_config_hash
 
 
 def test_defaults_load() -> None:
@@ -11,7 +11,7 @@ def test_defaults_load() -> None:
     assert s.qc.vis_cap_m == 10000
     assert s.classify.fields == ["MW", "AU", "AW"]
     assert s.parse.gust_od_types == [3, 4]
-    assert str(s.data_root) == "/Volumes/CrucialX8/dcdr"
+    assert s.data_root == REPO_ROOT / "data"  # relative paths resolve against the repo root
 
 
 def test_profile_overrides_only_named_keys(tmp_path: Path) -> None:

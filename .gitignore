@@ -13,7 +13,7 @@ dist/
 build/
 *.egg-info/
 
-# Data never lives in git (it lives on /Volumes/CrucialX8/dcdr)
+# Data never lives in git (default data root is <repo>/data)
 data/
 *.parquet
 *.tif
