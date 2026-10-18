@@ -365,23 +365,25 @@ Per station × `window` ∈ {`all`, `baseline`}: annual `dusty_days` over qualif
 
 ### 8.3 Pilot selection (`scripts/select_pilot_stations.py`)
 1. Inputs: `isd-history.csv` (refreshed from `noaa-isd-pds`), the S3 listing (years available per station), duISD v1 (Zenodo 10.5281/zenodo.4107346, used **only to rank** candidates), and the aridity raster.
-2. Region boxes (`config/stations/regions.yaml`, first match wins; lat °N, lon °E):
+2. Regions (`config/stations/regions.yaml`). Country lists (ISD/FIPS codes) are applied first, then lat/lon boxes in order, first match wins (lat °N, lon °E). Updated 2026-10-18 (user decisions): all of China and Mongolia are East Asia; Central Asia is the five Central Asian republics plus Afghanistan; South Asia added.
 
-   | Region | Lat | Lon | Target n |
-   |---|---|---|---|
-   | North Africa (Sahara, Sahel) | 12 to 37 | −18 to 35 | 15 |
-   | Middle East | 12 to 40 | 35 to 63 | 15 |
-   | Central Asia | 35 to 50 | 50 to 80 | 12 |
-   | East Asia | 34 to 50 | 75 to 120 | 15 |
-   | Southern Africa | −35 to −15 | 10 to 30 | 8 |
-   | North America | 25 to 42 | −125 to −100 | 10 |
-   | South America | −55 to −15 | −75 to −55 | 8 |
-   | Australia | −40 to −15 | 113 to 154 | 7 |
-   | Contrast (transport-affected, METAR-heavy) | Canary Islands/Cabo Verde, Korea/Japan, Caribbean, US METAR stations incl. Las Vegas `72386023169` | — | 10 |
+   | Region | Definition | Target n |
+   |---|---|---|
+   | North Africa (Sahara, Sahel) | box lat 12 to 37, lon −18 to 35 | 15 |
+   | Middle East | box lat 12 to 40, lon 35 to 63 | 15 |
+   | Central Asia | countries KZ, UZ, TX, TI, KG, AF | 12 |
+   | South Asia | countries PK, IN, BG, NP | 8 |
+   | East Asia | countries CH, MG | 15 |
+   | Southern Africa | box lat −35 to −15, lon 10 to 30 | 8 |
+   | North America | box lat 25 to 42, lon −125 to −100 | 10 |
+   | South America | box lat −55 to −15, lon −75 to −55 | 8 |
+   | Australia | box lat −40 to −15, lon 113 to 154 | 7 |
+   | Contrast (transport-affected, METAR-heavy) | Canary Islands/Cabo Verde, Korea/Japan, Caribbean, US METAR stations incl. Las Vegas `72386023169` | 10 |
 
-3. Candidates: inside the box, ≥ 15 valid years since 1973 (a valid year has ≥ 6 months with ≥ 30 manual present-weather reports), valid aridity. *Changed from "≥ 30 years" on 2026-10-18:* ISD records are patchy (Kuwait International has about 11 years in duISD v1), and 30 qualifying years left the Middle East and North Africa with no candidates (sensitivity table in `notebooks/01_duisd_v1_dusty_stations.ipynb`).
-4. Rank by duISD v1 mean yearly dust frequency (shown alongside a raised-dust frequency that excludes code 06, which is about 60% of all duISD dust reports). **North America cannot be ranked from duISD v1** (it counts only manual reports; US airports are automated): use the fallback there, counting dust codes in a 3-year sample scan of raw ISD (§15, V4). Exploratory shortlist: `config/stations/duisd_v1_top10_by_region.csv`.
-5. Greedy selection with ≥ 200 km minimum spacing within a region.
+   Targets now sum to 98 + 10 contrast; rebalance to 100 before the final list.
+3. Candidates: ≥ 10 valid years in **1991–2019** (a valid year has ≥ 6 months with ≥ 30 SYNOP present-weather reports), valid aridity. ISD records are patchy (Kuwait International has about 11 years in duISD v1); the notebook's sensitivity table shows the pool per threshold.
+4. Rank by duISD v1 mean yearly dust frequency over 1991–2019, shown alongside a raised-dust frequency that excludes code 06 (about 60% of all duISD dust reports). duISD v1 contains **SYNOP (FM-12) reports only**, so most North American stations (automated, no FM-12) are missing: rank the US Southwest with the fallback, counting dust codes in a 3-year sample scan of raw ISD (§15, V4). Exploratory shortlist (top 15 per region): `config/stations/duisd_v1_top15_by_region.csv`, from `notebooks/01_duisd_v1_dusty_stations.ipynb`.
+5. Greedy selection with ≥ 50 km minimum spacing within a region.
 6. Output `config/stations/pilot_100.csv` (`station_id, name, country, lat, lon, region, role, rank_metric, n_years, aridity_index`) plus a map. The user reviews and edits the list before ingest.
 
 ## 9. Publishing (B)

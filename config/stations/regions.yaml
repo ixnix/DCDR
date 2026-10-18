@@ -1,7 +1,9 @@
-# Region boxes for pilot station selection (spec §8.3).
-# First match wins, in the order listed. lat: degrees north, lon: degrees east; bounds inclusive.
-# target_n = stations wanted per region in the 100-station pilot (plus 10 contrast stations,
-# chosen by hand: Canary Islands/Cabo Verde, Korea/Japan, Caribbean, US METAR stations).
+# Regions for pilot station selection (spec §8.3).
+# A region is defined by `countries` (ISD/FIPS country codes), a lat/lon box, or both.
+# Assignment: country lists first (a station in a listed country belongs to that region wherever it is),
+# then boxes in the order listed (first match wins). lat: degrees north, lon: degrees east; bounds inclusive.
+# target_n = stations wanted per region in the pilot (plus 10 contrast stations chosen by hand:
+# Canary Islands/Cabo Verde, Korea/Japan, Caribbean, US METAR stations).
 regions:
   - name: North Africa
     note: Sahara and Sahel
@@ -9,18 +11,21 @@ regions:
     lon: [-18, 35]
     target_n: 15
   - name: Middle East
+    note: box only; Afghanistan and Pakistan are taken first by their country lists
     lat: [12, 40]
     lon: [35, 63]
     target_n: 15
   - name: Central Asia
-    note: includes the western Tarim Basin (Kashgar, Hotan) west of 80°E
-    lat: [35, 50]
-    lon: [50, 80]
+    note: Kazakhstan, Uzbekistan, Turkmenistan, Tajikistan, Kyrgyzstan, Afghanistan
+    countries: [KZ, UZ, TX, TI, KG, AF]
     target_n: 12
+  - name: South Asia
+    note: Pakistan, India, Bangladesh, Nepal (Thar Desert, Indus and Ganges plains)
+    countries: [PK, IN, BG, NP]
+    target_n: 8
   - name: East Asia
-    note: Taklimakan east of 80°E, Gobi, Loess Plateau, northern China
-    lat: [34, 50]
-    lon: [75, 120]
+    note: all of China (incl. Taklimakan) and Mongolia (Gobi)
+    countries: [CH, MG]
     target_n: 15
   - name: Southern Africa
     note: Namib and Kalahari
