@@ -82,8 +82,17 @@ class Settings(_Section):
 
     @property
     def data_root(self) -> Path:
-        root = Path(self.paths.data_root).expanduser()
-        return root if root.is_absolute() else Path.cwd() / root
+        return _from_working_dir(self.paths.data_root)
+
+    @property
+    def station_list_path(self) -> Path:
+        return _from_working_dir(self.stations.station_list)
+
+
+def _from_working_dir(text: str) -> Path:
+    """User-supplied paths: absolute as given, relative to where dcdr is run (like git or dbt)."""
+    path = Path(text).expanduser()
+    return path if path.is_absolute() else Path.cwd() / path
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

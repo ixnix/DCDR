@@ -47,3 +47,13 @@ def test_hashes_are_stable_and_scoped() -> None:
     assert config_hash(moved) != config_hash(a)
     stricter = load_settings(overrides={"qc": {"rh_screen_pct": 95}})
     assert silver_config_hash(stricter) != silver_config_hash(a)
+
+
+def test_relative_station_list_resolves_against_working_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    s = load_settings()
+    assert s.station_list_path == tmp_path.resolve() / "config" / "stations" / "thin_slice.csv"
+    moved = load_settings(overrides={"stations": {"station_list": "/abs/list.csv"}})
+    assert moved.station_list_path == Path("/abs/list.csv")
