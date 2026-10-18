@@ -37,6 +37,7 @@ RUNS_SCHEMA: dict[str, Any] = {
     "status": pl.String,
     "git_commit": pl.String,
     "git_dirty": pl.Boolean,
+    "dcdr_version": pl.String,
     "config_hash": pl.String,
     "summary": pl.String,
 }
@@ -119,7 +120,10 @@ class Manifest:
 
 def append_run_record(runs_path: Path, record: dict[str, Any]) -> None:
     row = pl.DataFrame([{k: record.get(k) for k in RUNS_SCHEMA}], schema=RUNS_SCHEMA)
-    df = pl.concat([pl.read_parquet(runs_path), row]) if runs_path.exists() else row
+    if runs_path.exists():  # "diagonal" lets logs written before a new column still append
+        df = pl.concat([pl.read_parquet(runs_path), row], how="diagonal").select(list(RUNS_SCHEMA))
+    else:
+        df = row
     atomic_write_parquet(df.to_arrow(), runs_path)
 
 

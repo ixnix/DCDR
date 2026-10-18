@@ -1,3 +1,5 @@
 """DCDR: Dust Climate Data Record built from NOAA ISD."""
 
-__version__ = "0.1.0"
+from importlib.metadata import version
+
+__version__ = version("dcdr")  # single source of truth: pyproject.toml
