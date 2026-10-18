@@ -379,8 +379,8 @@ Per station × `window` ∈ {`all`, `baseline`}: annual `dusty_days` over qualif
    | Australia | −40 to −15 | 113 to 154 | 7 |
    | Contrast (transport-affected, METAR-heavy) | Canary Islands/Cabo Verde, Korea/Japan, Caribbean, US METAR stations incl. Las Vegas `72386023169` | — | 10 |
 
-3. Candidates: inside the box, ≥ 30 years with data since 1973, valid aridity.
-4. Rank by duISD v1 mean dust frequency. If its files can't be used for ranking, fall back to counting dust codes in a 3-year sample scan (§15, V4).
+3. Candidates: inside the box, ≥ 15 valid years since 1973 (a valid year has ≥ 6 months with ≥ 30 manual present-weather reports), valid aridity. *Changed from "≥ 30 years" on 2026-10-18:* ISD records are patchy (Kuwait International has about 11 years in duISD v1), and 30 qualifying years left the Middle East and North Africa with no candidates (sensitivity table in `notebooks/01_duisd_v1_dusty_stations.ipynb`).
+4. Rank by duISD v1 mean yearly dust frequency (shown alongside a raised-dust frequency that excludes code 06, which is about 60% of all duISD dust reports). **North America cannot be ranked from duISD v1** (it counts only manual reports; US airports are automated): use the fallback there, counting dust codes in a 3-year sample scan of raw ISD (§15, V4). Exploratory shortlist: `config/stations/duisd_v1_top10_by_region.csv`.
 5. Greedy selection with ≥ 200 km minimum spacing within a region.
 6. Output `config/stations/pilot_100.csv` (`station_id, name, country, lat, lon, region, role, rank_metric, n_years, aridity_index`) plus a map. The user reviews and edits the list before ingest.
 

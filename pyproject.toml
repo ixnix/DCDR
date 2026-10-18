@@ -28,6 +28,8 @@ dev = [
   "types-pyyaml>=6.0",
   "pre-commit>=4.0",
   "matplotlib>=3.9",
+  "jupyterlab>=4.6.4",
+  "plotly>=7.1.0",
 ]
 
 [build-system]

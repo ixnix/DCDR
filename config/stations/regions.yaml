@@ -1,0 +1,43 @@
+# Region boxes for pilot station selection (spec §8.3).
+# First match wins, in the order listed. lat: degrees north, lon: degrees east; bounds inclusive.
+# target_n = stations wanted per region in the 100-station pilot (plus 10 contrast stations,
+# chosen by hand: Canary Islands/Cabo Verde, Korea/Japan, Caribbean, US METAR stations).
+regions:
+  - name: North Africa
+    note: Sahara and Sahel
+    lat: [12, 37]
+    lon: [-18, 35]
+    target_n: 15
+  - name: Middle East
+    lat: [12, 40]
+    lon: [35, 63]
+    target_n: 15
+  - name: Central Asia
+    note: includes the western Tarim Basin (Kashgar, Hotan) west of 80°E
+    lat: [35, 50]
+    lon: [50, 80]
+    target_n: 12
+  - name: East Asia
+    note: Taklimakan east of 80°E, Gobi, Loess Plateau, northern China
+    lat: [34, 50]
+    lon: [75, 120]
+    target_n: 15
+  - name: Southern Africa
+    note: Namib and Kalahari
+    lat: [-35, -15]
+    lon: [10, 30]
+    target_n: 8
+  - name: North America
+    note: US Southwest and northern Mexico
+    lat: [25, 42]
+    lon: [-125, -100]
+    target_n: 10
+  - name: South America
+    note: Patagonia, Monte, Chaco, Atacama
+    lat: [-55, -15]
+    lon: [-75, -55]
+    target_n: 8
+  - name: Australia
+    lat: [-40, -15]
+    lon: [113, 154]
+    target_n: 7

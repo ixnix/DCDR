@@ -38,3 +38,6 @@ node_modules/
 *.swp
 *.swo
 *~
+
+# duISD v1 data (226 MB; public at Zenodo 10.5281/zenodo.4107346)
+legacy/duISDv1/
