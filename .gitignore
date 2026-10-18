@@ -41,3 +41,6 @@ node_modules/
 
 # duISD v1 data (226 MB; public at Zenodo 10.5281/zenodo.4107346)
 legacy/duISDv1/
+
+# Jupyter autosave backups
+.ipynb_checkpoints/
