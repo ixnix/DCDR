@@ -12,7 +12,7 @@ import polars as pl
 import typer
 
 from dcdr import __version__, pipeline
-from dcdr.config import DEFAULT_CONFIG, REPO_ROOT, Settings, load_settings
+from dcdr.config import DEFAULT_CONFIG, Settings, load_settings
 
 app = typer.Typer(help="DCDR pipeline command-line interface.", no_args_is_help=True)
 build_app = typer.Typer(help="Build one data layer.", no_args_is_help=True)
@@ -43,7 +43,7 @@ def main(
 
 
 def _station_ids(settings: Settings, stations: Path | None) -> list[str]:
-    return pipeline.read_station_list(stations or REPO_ROOT / settings.stations.station_list)
+    return pipeline.read_station_list(stations or settings.station_list_path)
 
 
 def _execute(
