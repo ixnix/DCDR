@@ -49,4 +49,4 @@ products:
   gold_keep_versions: 3  # old gold versions kept on disk (for rollback)
 
 stations:
-  station_list: config/stations/thin_slice.csv  # default for --stations (relative to working dir)
+  station_list: config/stations/pilot_100.csv  # default for --stations (relative to working dir)
