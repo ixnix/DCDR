@@ -1,3 +1,9 @@
+"""Decoding ISD packed fields (process/parse.py) and local solar time.
+
+Uses real-looking ISD strings: values are scaled, missing codes become null, malformed text sets
+`parse_status` bits, absent columns come out null, and LMST uses each report's own longitude.
+"""
+
 from datetime import date
 
 import pytest

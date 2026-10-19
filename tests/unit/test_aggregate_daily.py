@@ -1,3 +1,11 @@
+"""Gold `daily` table (aggregate.py + sql/daily.sql): one row per station per local day.
+
+Builds small silver station-years from fake ISD rows, runs the real gold build into a temporary
+data root, and checks the daily columns: slot counts, dust counts, DUP6, harmonic-mean
+visibility, day-to-day changes, daily-summary dating, which day a slot counts on, the CURRENT
+pointer with old-version pruning, and that gold refuses mixed or stale silver.
+"""
+
 from datetime import date
 from pathlib import Path
 

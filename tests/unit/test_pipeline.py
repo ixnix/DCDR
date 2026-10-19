@@ -1,3 +1,5 @@
+"""Stage runner helpers (pipeline.py): --years parsing, station lists, run start and run log."""
+
 from pathlib import Path
 
 import polars as pl

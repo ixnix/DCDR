@@ -1,3 +1,9 @@
+"""Synoptic sampling (process/sampling.py): one report per 3-hourly slot.
+
+Checks slot assignment and the +-30 min window, report-type priority before time distance, the
+weather-code tie-break, excluded summary types, and that row order never changes the result.
+"""
+
 import random
 from datetime import datetime
 

@@ -1,3 +1,11 @@
+"""Dust classification (process/classify.py): weather codes -> dust class per report.
+
+One test case per row of each code table (MW, AW, AU), plus the special rules: AW fog codes are
+never dust, "snow or sand" codes resolved by temperature, dust in the vicinity is evidence only,
+past-weather and daily-summary evidence, precedence between fields, QC rejection, and that a
+report without any weather field is "unknown" (not observed), never "none".
+"""
+
 import pytest
 
 from dcdr.config import Settings, load_settings

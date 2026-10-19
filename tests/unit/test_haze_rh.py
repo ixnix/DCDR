@@ -1,3 +1,9 @@
+"""Haze rule and humidity screen (classify.apply_haze_and_rh).
+
+Haze within the 24 h after a dust report becomes "dust_haze"; the window boundary is exclusive
+at exactly 24 h; a window of 0 switches the rule off; the RH screen hits haze-like classes only.
+"""
+
 import polars as pl
 
 from dcdr.config import Settings, load_settings

@@ -1,4 +1,14 @@
-"""Thin-slice diagnostics: per-station summary, field-family evidence and a monthly chart."""
+"""Thin-slice diagnostics: per-station summary, field-family evidence and a monthly chart.
+
+A one-off analysis script (not part of the pipeline): it reads the ACTIVE gold version and the
+silver files from the data root, prints two summary tables, and saves a bar chart of dusty days
+per month to docs/figures/. Run it after `dcdr run`:
+
+    uv run python scripts/thin_slice_report.py
+
+It uses DuckDB to query the Parquet files directly with SQL, without loading them into Python
+first; `.pl()` converts a query result into a Polars DataFrame for plotting.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +18,8 @@ from pathlib import Path
 import duckdb
 import matplotlib
 
+# "Agg" draws to image files only (no window), so the script also runs without a display.
+# It must be chosen before pyplot is imported, hence the import order (and the noqa markers).
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
@@ -15,18 +27,20 @@ from dcdr.aggregate import current_gold_dir  # noqa: E402
 from dcdr.config import load_settings  # noqa: E402
 from dcdr.state import safe_listdir  # noqa: E402
 
-INK, MUTED, GRID, BAR = "#1f2328", "#59636e", "#d1d9e0", "#2f6fb0"
+INK, MUTED, GRID, BAR = "#1f2328", "#59636e", "#d1d9e0", "#2f6fb0"  # chart colours
 REPO_ROOT = Path(__file__).resolve().parents[1]  # scripts/ only run from a checkout
 OUT = REPO_ROOT / "docs" / "figures" / "thin_slice_monthly_dusty_days.png"
 
 
 def main() -> int:
+    """Print the summaries and write the chart; return a shell exit code (0 = success)."""
     settings = load_settings()
     gold = current_gold_dir(settings)
     if gold is None:
         print("No active gold version — run `uv run dcdr run --years ...` first.")
         return 1
     daily = str(gold / "daily" / "part-000.parquet")
+    # Every silver file: silver/year=YYYY/<station>.parquet
     silver = [
         str(p)
         for ydir in safe_listdir(settings.data_root / "silver")
@@ -35,6 +49,7 @@ def main() -> int:
     ]
     con = duckdb.connect()
 
+    # 1. Per station: valid days, dusty days (two definitions) and dust slots by class.
     print("== Per-station daily summary (valid days only)")
     print(
         con.sql(f"""
@@ -47,6 +62,7 @@ def main() -> int:
         FROM '{daily}' GROUP BY station_id ORDER BY station_id""")
     )
 
+    # 2. Which weather-field family (the part of dust_rule_id before ":") decided each dusty slot.
     print("== Which field decided dust in selected slots (MW / AU / AW), and ambiguous counts")
     print(
         con.sql(f"""
@@ -57,6 +73,7 @@ def main() -> int:
         GROUP BY ALL ORDER BY ALL""")
     )
 
+    # 3. Chart: dusty days per month, one panel per station (shared axes for comparison).
     monthly = con.sql(f"""
         SELECT station_id, date_trunc('month', lmst_date) AS month,
                count(*) FILTER (WHERE valid_day AND dusty_day_synoptic) AS dusty_days
@@ -87,4 +104,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main())  # pass main()'s return value to the shell as the exit code

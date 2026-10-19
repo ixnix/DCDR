@@ -1,3 +1,10 @@
+"""Ingest (ingest.py) without the network: a fake in-memory S3 store stands in for NOAA.
+
+Covers listing, the re-download rules (new, changed, previously failed), MD5 verification,
+bronze writing, keeping the old bronze file when a download fails, and marking files that
+disappear upstream as "missing_upstream" instead of deleting anything.
+"""
+
 from datetime import UTC, datetime
 from pathlib import Path
 

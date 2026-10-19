@@ -1,3 +1,9 @@
+"""Smoke test against the real NOAA bucket (needs internet).
+
+Marked `network`, so it is skipped by default (see pyproject.toml addopts). Run it with:
+    uv run pytest -m network
+"""
+
 import pytest
 
 from dcdr.config import load_settings

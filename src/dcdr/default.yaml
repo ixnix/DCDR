@@ -1,33 +1,52 @@
 # DCDR default configuration. Every method choice in the spec is a key here.
+#
+# Loaded by config.load_settings() and validated by the classes in config.py (a typo or an unknown
+# key stops the run with an error). Override any key with `--profile my.yaml` (only the keys it
+# names), and the data location with the DCDR_DATA environment variable.
+# Changing a key under parse/qc/classify/sampling changes the silver config hash, so the next run
+# rebuilds silver; gold refuses silver built with different settings.
+
 paths:
   data_root: data  # relative to the working directory; set DCDR_DATA or a profile to use another disk
+
 ingest:
-  bucket: noaa-global-hourly-pds
+  bucket: noaa-global-hourly-pds  # NOAA's public S3 bucket: <year>/<station_id>.csv
   region: us-east-1
-  max_concurrency: 16
-  retries: 5
+  max_concurrency: 16  # parallel downloads
+  retries: 5  # attempts per file before it is marked failed
+
 parse:
-  gust_od_types: [3, 4]
+  gust_od_types: [3, 4]  # OD supplementary-wind types that are gusts (ISD format document)
+
 qc:
+  # ISD quality codes attached to each value. 0/1/4/5/9: passed NOAA's checks (4-7: ASOS/AWOS
+  # data); 2/6: suspect; 3/7: erroneous; A/C/I/M/P/R/U: accepted, corrected or inserted by
+  # NOAA's validators. Unknown codes are treated as suspect.
   codes_ok: ["0", "1", "4", "5", "9", "A", "C", "I", "M", "P", "R", "U"]
   codes_suspect: ["2", "6"]
   codes_erroneous: ["3", "7"]
-  accept: [ok]
-  vis_cap_m: 10000
-  rh_screen_pct: 90
-  rh_screen_classes: [suspended, haze, haze_or_suspended, dust_haze]
+  accept: [ok]  # flags a value may have and still be used (add "suspect" to be more lenient)
+  vis_cap_m: 10000  # cap visibility at 10 km (stations report "unlimited" differently)
+  rh_screen_pct: 90  # above this relative humidity ...
+  rh_screen_classes: [suspended, haze, haze_or_suspended, dust_haze]  # ... these classes are screened
+
 classify:
-  fields: [MW, AU, AW]
-  haze_window_h: 24
-  sand_min_t_c: 3.0
-  snow_max_t_c: 0.0
+  fields: [MW, AU, AW]  # present-weather families used (manual, METAR-style, automated)
+  haze_window_h: 24  # haze within 24 h after a dust report counts as dust (0 switches it off)
+  sand_min_t_c: 3.0  # "blowing snow or sand" codes count as sand at or above this temperature
+  snow_max_t_c: 0.0  # ... and as snow at or below this; in between they are flagged ambiguous
+
 sampling:
-  window_min: 30
-  exclude_types: [SOD, SOM]
+  window_min: 30  # a report within +-30 min of a synoptic hour (00, 03, ..., 21 UTC) is a candidate
+  exclude_types: [SOD, SOM]  # daily and monthly summaries are not observations at a time
+  # Report-type preference when several reports compete for a slot (SYNOP first, then
+  # merged SYNOP reports SY-*, METAR FM-15, older/automated formats, SPECI FM-16 last).
   priority: [FM-12, SY-MT, SY-SA, SY-AE, SY-AU, FM-15, SAO, AUTO, FM-16]
   synoptic_dust_source: selected
+
 products:
-  min_slots_per_day: 4
-  gold_keep_versions: 3
+  min_slots_per_day: 4  # a day is valid with >= 4 of 8 slots carrying a weather observation
+  gold_keep_versions: 3  # old gold versions kept on disk (for rollback)
+
 stations:
-  station_list: config/stations/thin_slice.csv
+  station_list: config/stations/thin_slice.csv  # default for --stations (relative to working dir)
