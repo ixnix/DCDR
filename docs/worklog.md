@@ -23,6 +23,10 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## 2026-10-19
 
+- Explained the iX effect as a selection bias (docs/science.md §5): under the old rule a day was
+  "valid" only if ≥ 4 slots carried a weather code, and at Zabol codes are mostly dust, so valid
+  days were mostly long dust days (357 days, 92 % dusty); 1,460 clear or short-episode days were
+  discarded.
 - **SYNOP iX rule** (user decision; `ed05e8e`, method 1.2.0). The raw SYNOP text in `REM` carries
   iX (WMO code table 1860). iX 2/5 = weather group omitted because nothing significant happened →
   observed, class none; iX 3/6 = not observed; iX 7 = automatic station → its AW codes read with
