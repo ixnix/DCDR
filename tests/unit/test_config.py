@@ -1,3 +1,7 @@
+"""Settings loading (config.py): defaults, profile overrides, unknown-key rejection, the
+DCDR_DATA variable, path resolution against the working directory, and hash stability.
+"""
+
 from pathlib import Path
 
 import pytest

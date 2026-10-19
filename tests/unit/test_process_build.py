@@ -1,3 +1,10 @@
+"""Building one silver station-year (process/build.py) end to end, in memory.
+
+Covers the haze look-back across New Year, duplicate collapsing, independence from input row
+order, bad dates, empty input, silver metadata, the silver contract, which file owns the
+31-December slot candidates, and longitude sentinels.
+"""
+
 import random
 from pathlib import Path
 

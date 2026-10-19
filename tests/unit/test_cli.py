@@ -1,3 +1,5 @@
+"""Command-line interface (cli.py), exercised in-process with Typer's CliRunner."""
+
 from typer.testing import CliRunner
 
 from dcdr import __version__

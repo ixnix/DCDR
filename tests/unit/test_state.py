@@ -1,3 +1,7 @@
+"""Run state (state.py): atomic writes (a failed write keeps the old file), Parquet metadata,
+safe folder listing, manifest upserts, run IDs and the run log (including older log files).
+"""
+
 import re
 from datetime import UTC, datetime
 from pathlib import Path

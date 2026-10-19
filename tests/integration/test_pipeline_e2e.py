@@ -1,3 +1,10 @@
+"""End-to-end pipeline runs (ingest -> process -> aggregate) on fake S3 data in a temp folder.
+
+Checks incremental behaviour: unchanged inputs are skipped, a changed source rebuilds only what
+it affects, one failing station-year does not stop the others, and a year is rebuilt when the
+next year's bronze arrives.
+"""
+
 from datetime import date
 
 import obstore as obs
