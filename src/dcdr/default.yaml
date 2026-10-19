@@ -35,6 +35,10 @@ classify:
   haze_window_h: 24  # haze within 24 h after a dust report counts as dust (0 switches it off)
   sand_min_t_c: 3.0  # "blowing snow or sand" codes count as sand at or above this temperature
   snow_max_t_c: 0.0  # ... and as snow at or below this; in between they are flagged ambiguous
+  # SYNOP iX indicator (WMO code table 1860), read from the raw message in REM: iX 2/5 = weather
+  # group omitted because nothing significant happened (observed: no dust); iX 3/6 = not observed;
+  # iX 7 = automatic station using WMO tables 4680/4531. false = ignore iX (missing = not observed).
+  synop_ix: true
 
 sampling:
   window_min: 30  # a report within +-30 min of a synoptic hour (00, 03, ..., 21 UTC) is a candidate

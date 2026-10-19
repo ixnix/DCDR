@@ -93,6 +93,11 @@ def parse_reports(raw: pl.DataFrame) -> pl.DataFrame:
         _raw(d, "LONGITUDE").cast(pl.Float64, strict=False).alias("lon"),
         _raw(d, "ELEVATION").cast(pl.Float64, strict=False).alias("elev"),
         _raw(d, "source_key").alias("source_key"),
+        # SYNOP iX indicator (WMO code table 1860) from the raw SYNOP message that ISD keeps in REM:
+        # "SYN" + 3-digit length + 5-digit WMO station number + space + the group iR iX h VV.
+        # E.g. "SYN08040829 12960 ..." -> iR=1, iX=2. Null for METAR remarks, for messages NOAA
+        # received only as BUFR ("SYN004BUFR"), and when the file has no REM column.
+        _raw(d, "REM").str.extract(r"^SYN\d{3}\d{5} [0-4/]([1-7])", 1).alias("syn_ix"),
         # --- WND: direction, dir QC, type, speed (x10), speed QC ---
         _num(_part(d, "WND", 0), ("999",)).alias("wind_dir"),
         _part(d, "WND", 1).alias("wind_dir_qc"),
