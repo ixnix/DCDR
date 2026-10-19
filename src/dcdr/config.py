@@ -84,6 +84,9 @@ class ClassifyCfg(_Section):
     haze_window_h: int  # look-back window (hours) for the haze-after-dust rule
     sand_min_t_c: float  # ambiguous "dust or snow" codes count as sand at or above this temp
     snow_max_t_c: float  # ... and as snow at or below this temp
+    synop_ix: (
+        bool  # read the SYNOP iX indicator: 2/5 = observed, nothing significant (see classify.py)
+    )
 
 
 class SamplingCfg(_Section):

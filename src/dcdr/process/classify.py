@@ -8,13 +8,19 @@ The idea in one paragraph
 A report can carry several weather fields at once (MW1..MW7, AU1..AU9, AW1..AW4). Each field's code
 is translated, with that field's own code table, into a dust class with a severity RANK (none 0 <
 haze 1 < ... < storm with thunder 8). The report's class is the most severe class found in any of
-its fields (the maximum rank). A report that carries NO usable weather field gets the class
-"unknown": a missing weather field means "not observed", never "no significant weather" (user
-decision 2026-10-17).
+its fields (the maximum rank).
+
+When a report carries NO usable weather field, the SYNOP iX indicator (WMO code table 1860, read
+from the raw message in REM) decides (user decision 2026-10-19, refining 2026-10-17):
+    iX 2 or 5   group omitted, no significant phenomenon -> observed: class "none"
+    iX 3 or 6   group omitted, no observation            -> not observed: class "unknown"
+    no SYNOP text (METAR, BUFR-only), or no iX             -> not observed: class "unknown"
+A missing weather field is never ASSUMED to mean "no significant weather"; only an explicit
+iX 2/5 says so. iX 7 also selects the code table: automatic station, WMO tables 4680/4531.
 
 Columns added (process pipeline steps 4-5 of 6)
 ----------------------------------------------
-classify_reports:  has_pw, dust_rank, dust_class_rule, dust_rule_id, pw_evidence,
+classify_reports:  has_pw, pw_status ("reported" / "nil_significant" / "not_observed"), dust_rank, dust_class_rule, dust_rule_id, pw_evidence,
                    flag_du / flag_susp / flag_bd / flag_ds (convenience flags from the rank),
                    flag_vicinity, flag_past, flag_ambiguous, flag_daily_dust (extra evidence that
                    does NOT change the class)
@@ -75,7 +81,14 @@ MW_TABLE = {
     "35": "storm_severe",
     "98": "storm_thunder",
 }
-AW_TABLE = {"04": "haze_or_suspended", "07": "blowing"}  # 30-35 are fog -> rank 0
+# AW = ISD's automated present-weather field. Two sources, two code tables:
+#  * AW from ISD's own automated observations follows the ISD format document's AW list, where
+#    05 = smoke and 07 = dust or sand raised by wind;
+#  * AW from a SYNOP report with iX = 7 follows WMO code table 4680, which has no 06-09 and where
+#    05 = haze, smoke or dust in suspension, visibility < 1 km.
+# In both, 30-35 are fog (rank 0).
+AW_TABLE = {"04": "haze_or_suspended", "07": "blowing"}  # ISD document AW list
+WMO_4680_TABLE = {"04": "haze_or_suspended", "05": "haze_or_suspended"}  # SYNOP with iX = 7
 # AW codes that mean blowing or drifting snow OR sand: which one is decided by temperature.
 AW_SNOW_OR_SAND = ["27", "28", "29"]
 MV_VICINITY = ["03", "04", "05", "07", "08"]  # MV codes for dust-related weather near the station
@@ -193,13 +206,32 @@ def classify_reports(df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg) -> pl.DataFr
     )
 
     # Step 3: dust rank of every usable field (null where the field is not usable).
+    # A SYNOP with iX = 7 comes from an automatic station using WMO table 4680, so its weather codes
+    # are read with that table, whichever field ISD stored them in (in practice: AW).
+    ix = pl.col("syn_ix")
+    ix7 = (ix == "7").fill_null(False) if cfg.synop_ix else pl.lit(False)
+
+    def rank_4680(code_col: str) -> pl.Expr:
+        """Rank under WMO 4680; 27-29 ("blowing snow or sand") count as dust only when warm."""
+        return (
+            pl.when(pl.col(code_col).is_in(AW_SNOW_OR_SAND) & pl.col("_sand"))
+            .then(pl.lit(RANK["blowing"], dtype=pl.Int8))
+            .otherwise(_table_rank(code_col, WMO_4680_TABLE))
+        )
+
     mw_rank = {
-        n: pl.when(ok).then(_table_rank(f"mw{n}_code", MW_TABLE)).cast(pl.Int8)
+        n: pl.when(ok & ix7)
+        .then(rank_4680(f"mw{n}_code"))
+        .when(ok)
+        .then(_table_rank(f"mw{n}_code", MW_TABLE))
+        .cast(pl.Int8)
         for n, ok in mw_ok.items()
     }
     aw_rank = {
         # AW 27-29 count as blowing dust/sand only when it is warm (_sand); otherwise the table.
-        n: pl.when(ok & pl.col(f"aw{n}_code").is_in(AW_SNOW_OR_SAND) & pl.col("_sand"))
+        n: pl.when(ok & ix7)
+        .then(rank_4680(f"aw{n}_code"))
+        .when(ok & pl.col(f"aw{n}_code").is_in(AW_SNOW_OR_SAND) & pl.col("_sand"))
         .then(pl.lit(RANK["blowing"]))
         .when(ok)
         .then(_table_rank(f"aw{n}_code", AW_TABLE))
@@ -225,8 +257,22 @@ def classify_reports(df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg) -> pl.DataFr
         "AW": pl.any_horizontal(list(aw_ok.values())),
     }
     fields = list(cfg.fields)  # which families count (config classify.fields)
-    # has_pw: the report carries at least one usable present-weather code ("was observed").
-    has_pw = pl.any_horizontal([fam_has[f] for f in fields]).fill_null(False)
+    # reported: the report carries at least one usable present-weather code.
+    reported = pl.any_horizontal([fam_has[f] for f in fields]).fill_null(False)
+    # nil_significant: a SYNOP whose iX says the weather group was omitted because NOTHING
+    # SIGNIFICANT happened (iX 2 = manned, 5 = automatic; WMO code table 1860). That is an
+    # observation of "no significant weather", so no dust. iX 3/6 (omitted: no observation) and
+    # reports without SYNOP text (METAR, BUFR-only) stay "not observed" (user decision 2026-10-19).
+    nil = ix.is_in(["2", "5"]).fill_null(False) if cfg.synop_ix else pl.lit(False)
+    # has_pw: weather was observed at this report (a code was reported, or explicitly nothing).
+    has_pw = reported | nil
+    pw_status = (
+        pl.when(reported)
+        .then(pl.lit("reported"))
+        .when(nil)
+        .then(pl.lit("nil_significant"))
+        .otherwise(pl.lit("not_observed"))
+    )
     rank = pl.max_horizontal([fam_rank[f] for f in fields]).fill_null(0).cast(pl.Int8)
     cls = rank.replace_strict(CLASS_BY_RANK, return_dtype=pl.String)
 
@@ -294,6 +340,7 @@ def classify_reports(df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg) -> pl.DataFr
 
     df = df.with_columns(
         has_pw=has_pw,
+        pw_status=pw_status,
         dust_rank=rank,
         dust_rule_id=rule,
         pw_evidence=pl.concat_list(evidence).list.drop_nulls(),
@@ -305,7 +352,7 @@ def classify_reports(df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg) -> pl.DataFr
     )
     r = pl.col("dust_rank")
     return df.with_columns(
-        # No usable weather field -> "unknown" (not observed), never "none".
+        # Not observed -> "unknown". "none" needs a reported code or an explicit iX "nothing".
         dust_class_rule=pl.when(pl.col("has_pw")).then(pl.col("_cls")).otherwise(pl.lit("unknown")),
         flag_du=(r >= RANK["suspended"]),  # any dust (suspended or stronger)
         flag_susp=(r == RANK["suspended"]),

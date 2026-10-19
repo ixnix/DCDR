@@ -63,6 +63,8 @@ CORE_COLUMNS = [
     "selection_reason",
     "is_synoptic_selected",
     "has_pw",
+    "pw_status",
+    "syn_ix",
     "dust_rank",
     "dust_class_rule",
     "dust_rule_id",

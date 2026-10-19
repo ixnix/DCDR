@@ -91,3 +91,25 @@ def test_daily_and_past_weather_fields() -> None:
     assert (r["at1_src"], r["at1_wea"], r["at1_qc"]) == ("AU", "07", "5")
     assert (r["ax1_code"], r["ax1_qc"], r["ax1_period_h"]) == ("07", "5", 24.0)
     assert (r["az1_code"], r["az1_qc"], r["az1_period_h"]) == ("2", "1", 6.0)
+
+
+@pytest.mark.parametrize(
+    "rem,expected",
+    [
+        (
+            "SYN08040829 12960 03406 10062 21002=",
+            "2",
+        ),  # Zabol: iR=1 iX=2 (omitted, nothing significant)
+        ("SYN06095322 47/// /2821 10282 7//44=", "7"),  # Rabbit Flat: automatic, tables 4680/4531
+        ("SYN07040417 32660 63513 10212=", "2"),
+        ("SYN07040829 /3960 03406=", "3"),  # iR missing ("/"), iX=3 (not observed)
+        ("SYN004BUFR", None),  # received as BUFR: no text, no iX
+        ("MET046METAR OIZB 010000Z 34012KT", None),  # METAR remark, not SYNOP
+    ],
+)
+def test_synop_ix_is_read_from_the_raw_message(rem: str, expected: str | None) -> None:
+    assert _one(REM=rem)["syn_ix"] == expected
+
+
+def test_synop_ix_is_null_without_remarks() -> None:
+    assert _one()["syn_ix"] is None

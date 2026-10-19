@@ -228,11 +228,15 @@ Each present-weather field has **its own code table** (verified against the ISD 
 | | 33, 34, 35 | `storm_severe` |
 | | 98 | `storm_thunder` |
 | | 04 (smoke) | `none` |
-| **AW** (automated, WMO 4680) | 04 | `haze_or_suspended` (haze, smoke *or* suspended dust; ambiguous) |
+| **AW** (automated; ISD document AW list) | 04 | `haze_or_suspended` (haze, smoke *or* suspended dust; ambiguous) |
 | | 07 | `blowing` |
 | | 27, 28, 29 | `blowing_snow_or_sand` → resolved by temperature (below) |
 | | 30–35 | **`none` (fog; not dust)** |
 | | 05 (smoke) | `none` |
+| **AW from a SYNOP with iX = 7** (WMO 4680, official table checked in the WMO Codes Registry, BUFR 0-20-003 values 100–199) | 04, 05 | `haze_or_suspended` (05 = visibility < 1 km) |
+| | 27, 28, 29 | snow or sand, resolved by temperature |
+| | 06–09 | not defined in WMO 4680 → `none` |
+| | 30–35 | `none` (fog) |
 | **AU** (METAR style; components intensity, descriptor, precipitation, obscuration, other) | other = 4 (SS) or 5 (DS) | `storm`; `storm_severe` if intensity = 3 (heavy); `storm_thunder` if descriptor = 7 (TS) |
 | | other = 1 (PO) | `whirls` |
 | | obscuration 5 (DU) or 6 (SA) with descriptor 5 (BL) or 4 (DR) | `blowing` |
@@ -249,13 +253,27 @@ Each present-weather field has **its own code table** (verified against the ISD 
 
 **Snow/sand resolution** (AW 27–29, AY 3): sand/dust if `t ≥ classify.sand_min_t_c` (default 3 °C) and no snow evidence in the same report (AU precipitation 03 or MW 70–79); snow if `t ≤ 0 °C`; otherwise `ambiguous`. Default thresholds are reviewed with diagnostics during the pilot (§15, V1).
 
-**Combining occurrences** within one report, by precedence: `storm_thunder > storm_severe > storm > whirls > blowing > suspended > haze_or_suspended > haze > none`. `vicinity`, `past_*` and `ambiguous` are recorded as evidence but **do not count as station dust by default** (`classify.count_vicinity: false`, `classify.count_past: false`). `unknown` = no usable present-weather field in the report.
+**Combining occurrences** within one report, by precedence: `storm_thunder > storm_severe > storm > whirls > blowing > suspended > haze_or_suspended > haze > none`. `vicinity`, `past_*` and `ambiguous` are recorded as evidence but **do not count as station dust by default** (`classify.count_vicinity: false`, `classify.count_past: false`). `unknown` = weather not observed (see the SYNOP iX rule below).
+
+**SYNOP iX rule** (user decision 2026-10-19; WMO code table 1860, confirmed against the official WMO Codes Registry, BUFR table 0-20-003 entries 508/509). For FM-12 reports, ISD keeps the raw SYNOP message in `REM` (`SYN` + length + WMO station number + `iR iX h VV` …); `parse.py` extracts `syn_ix`.
+
+| iX | Meaning (WMO) | DCDR treatment |
+|---|---|---|
+| 1, 4 | weather group included (tables 4677/4561); ISD stores it in MW/AY | classify MW as above |
+| **2, 5** | **group omitted: no significant phenomenon to report** | **observed, class `none`** (`pw_status = nil_significant`) |
+| **3, 6** | **group omitted: no observation, data not available** | **not observed, `unknown`** |
+| 7 | group included, automatic station, tables 4680/4531; ISD stores it in AW/AZ | classify AW with WMO 4680 |
+| none | METAR remark, BUFR-only message (`SYN004BUFR`), no REM | not observed when no weather field (unchanged) |
+
+Checked on the pilot_20 bronze (363k SYNOP messages): iX 1/4 → MW present 99–100 %; iX 2/3/5/6 → MW present ≤ 0.2 %; iX 7 → AW (ww = `//` when not reported). 17 % of messages are BUFR-only and carry no iX. Switch: `classify.synop_ix` (default true). The precise WMO regulation on when group 7 may be omitted (WMO-No. 306 Vol. I.1, FM 12 regulations) still has to be quoted from the Manual itself.
 
 **Silver classification columns:**
 - `pw_evidence`: list of `{field, code, class}`.
 - `dust_class_rule`: the combined class.
 - `dust_rule_id`: an identifier of the deciding table row.
-- `has_pw`: any usable present-weather field.
+- `has_pw`: weather observed, i.e. a usable present-weather field **or** iX 2/5.
+- `pw_status`: `reported`, `nil_significant` (iX 2/5) or `not_observed`.
+- `syn_ix`: the SYNOP iX digit (null if none).
 - Flags derived from `dust_class_rule`: `flag_du` (suspended, blowing, whirls, storm*), `flag_susp` (suspended), `flag_bd` (blowing, whirls; v1-compatible), `flag_ds` (storm*).
 - `flag_vicinity`, `flag_past`.
 
@@ -276,7 +294,7 @@ A report whose class is `haze` or `haze_or_suspended` becomes `dust_haze` if the
 
 ### 7.3 Silver → gold
 
-Gold is rebuilt **in full** for the pilot into `gold/versions/<run_id>/`, validated, then activated via `CURRENT`. Gold refuses to build if silver files have mixed `method_version` or `config_hash` values (`MixedSilverVersionsError`), or if that single version differs from the running code's `METHOD_VERSION` and silver config hash (`StaleSilverError`, final review I4). Each gold version records its silver lineage in `silver_version.json`. "Valid synoptic slot" = a selected report with `has_pw` true, i.e. carrying at least one usable **present-weather** code (MW/AU/AW). **A missing weather field always means "not observed", never "no significant weather"** (user decision, 2026-10-17): gaps can come from instrument outages, human error or protocol changes, even at stations that report weather occasionally. Past-weather and daily-summary fields add dust evidence but do not make a slot valid. "Valid day" = an LMST day with ≥ `products.min_slots_per_day` valid synoptic slots (default 4).
+Gold is rebuilt **in full** for the pilot into `gold/versions/<run_id>/`, validated, then activated via `CURRENT`. Gold refuses to build if silver files have mixed `method_version` or `config_hash` values (`MixedSilverVersionsError`), or if that single version differs from the running code's `METHOD_VERSION` and silver config hash (`StaleSilverError`, final review I4). Each gold version records its silver lineage in `silver_version.json`. "Valid synoptic slot" = a selected report with `has_pw` true: it carries at least one usable **present-weather** code (MW/AU/AW), or its SYNOP iX says the weather group was omitted because nothing significant happened (iX 2/5). **A missing weather field is never assumed to mean "no significant weather"** (user decision 2026-10-17): gaps can come from instrument outages, human error or protocol changes. **Only an explicit iX 2/5 says so** (user decision 2026-10-19, after the pilot_20 test showed most omitted groups carry iX = 2). Past-weather and daily-summary fields add dust evidence but do not make a slot valid. "Valid day" = an LMST day with ≥ `products.min_slots_per_day` valid synoptic slots (default 4).
 
 #### 7.3.1 `synoptic3h`
 The selected reports (one per station per slot), with UTC and LMST time, all parsed values, flags and classes.

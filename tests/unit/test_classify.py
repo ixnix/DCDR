@@ -154,3 +154,59 @@ def test_automated_past_weather_blowing_resolved_by_temperature(
 def test_missing_present_weather_is_not_observed(settings: Settings) -> None:
     r = _cls(settings, AY1="3,1,06,1")  # past weather only: present weather NOT observed
     assert (r["has_pw"], r["dust_class_rule"], r["flag_past"]) == (False, "unknown", True)
+
+
+# --- SYNOP iX indicator (WMO code table 1860; user decision 2026-10-19) -----------------------
+ZABOL_IX2 = "SYN08040829 12960 03406 10062 21002="  # weather group omitted: no significant weather
+IX3 = "SYN07040829 13960 03406 10062="  # weather group omitted: no observation
+IX7 = "SYN06095322 47/// /2821 10282 7//44="  # automatic station, tables 4680/4531
+
+
+def test_ix2_means_observed_with_no_significant_weather(settings: Settings) -> None:
+    r = _cls(settings, REM=ZABOL_IX2)
+    assert (r["has_pw"], r["dust_class_rule"], r["pw_status"]) == (True, "none", "nil_significant")
+
+
+def test_ix3_means_not_observed(settings: Settings) -> None:
+    r = _cls(settings, REM=IX3)
+    assert (r["has_pw"], r["dust_class_rule"], r["pw_status"]) == (False, "unknown", "not_observed")
+
+
+def test_reported_weather_wins_and_is_labelled(settings: Settings) -> None:
+    r = _cls(settings, MW1="06,1", REM=ZABOL_IX2)  # inconsistent message: trust the code
+    assert (r["dust_class_rule"], r["pw_status"]) == ("suspended", "reported")
+
+
+def test_without_synop_text_missing_weather_is_still_not_observed(settings: Settings) -> None:
+    for rem in ("SYN004BUFR", "MET046METAR OIZB 010000Z 34012KT"):
+        r = _cls(settings, REM=rem)
+        assert (r["has_pw"], r["dust_class_rule"], r["pw_status"]) == (
+            False,
+            "unknown",
+            "not_observed",
+        )
+
+
+@pytest.mark.parametrize(
+    "aw,rem,expected",
+    [
+        ("05,1", IX7, "haze_or_suspended"),  # WMO 4680: haze/smoke/dust in suspension, vis < 1 km
+        ("05,1", None, "none"),  # ISD's own AW list: 05 = smoke
+        ("07,1", IX7, "none"),  # WMO 4680 defines no code 07
+        ("07,1", None, "blowing"),  # ISD's own AW list: 07 = dust or sand raised by wind
+        ("04,1", IX7, "haze_or_suspended"),
+    ],
+)
+def test_aw_code_table_depends_on_the_synop_ix(
+    settings: Settings, aw: str, rem: str | None, expected: str
+) -> None:
+    fields = {"AW1": aw} | ({"REM": rem} if rem else {})
+    assert _cls(settings, **fields)["dust_class_rule"] == expected
+
+
+def test_synop_ix_rule_can_be_switched_off(settings: Settings) -> None:
+    off = settings.model_copy(
+        update={"classify": settings.classify.model_copy(update={"synop_ix": False})}
+    )
+    r = _cls(off, REM=ZABOL_IX2)
+    assert (r["has_pw"], r["dust_class_rule"]) == (False, "unknown")
