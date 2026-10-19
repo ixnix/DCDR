@@ -6,13 +6,14 @@ visibility, day-to-day changes, daily-summary dating, which day a slot counts on
 pointer with old-version pruning, and that gold refuses mixed or stale silver.
 """
 
+import os
 from datetime import date
 from pathlib import Path
 
 import polars as pl
 import pytest
 
-from dcdr.aggregate import MixedSilverVersionsError, build_gold, current_gold_dir
+from dcdr.aggregate import MixedSilverVersionsError, build_gold, current_gold_dir, prune_versions
 from dcdr.config import Settings, load_settings, silver_config_hash
 from dcdr.process.build import build_station_year, write_silver
 from tests.fixtures.isd import bronze_frame, isd_row
@@ -160,3 +161,34 @@ def test_gold_refuses_silver_built_with_other_config(settings: Settings) -> None
     stale = _silver(settings, _slots("2024-01-01"), cfg_hash="not-the-current-hash")
     with pytest.raises(StaleSilverError):
         build_gold(settings, [stale], "20260101T000000Z-aaaaaa")
+
+
+def test_pruning_survives_files_vanishing_during_delete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On exFAT, macOS deletes the hidden "._x" twin together with "x" (found on the SSD).
+
+    The fake unlink below deletes both files of a pair whichever is removed first, so the
+    second deletion always finds its file gone. Pruning must still succeed.
+    """
+    gold = tmp_path / "gold"
+    for rid in ("20260101T000000Z-aaaaaa", "20260102T000000Z-bbbbbb"):
+        daily = gold / "versions" / rid / "daily"
+        daily.mkdir(parents=True)
+        (daily / "part-000.parquet").write_text("x")
+        (daily / "._part-000.parquet").write_text("x")
+    (gold / "CURRENT").write_text("20260102T000000Z-bbbbbb")
+    real_unlink = os.unlink
+
+    def unlink_with_twin(path: str, *, dir_fd: int | None = None) -> None:
+        real_unlink(path, dir_fd=dir_fd)
+        head, base = os.path.split(os.fspath(path))
+        twin = base[2:] if base.startswith("._") else "._" + base
+        try:
+            real_unlink(os.path.join(head, twin), dir_fd=dir_fd)
+        except FileNotFoundError:
+            pass
+
+    monkeypatch.setattr(os, "unlink", unlink_with_twin)
+    prune_versions(gold, keep=1)
+    assert [p.name for p in (gold / "versions").iterdir()] == ["20260102T000000Z-bbbbbb"]

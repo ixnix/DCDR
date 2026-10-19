@@ -183,4 +183,14 @@ def prune_versions(gold_root: Path, keep: int) -> None:
     versions = [p for p in safe_listdir(gold_root / "versions") if p.is_dir()]
     stale = [p for p in versions if p.name != active][: max(0, len(versions) - keep)]
     for p in stale:
-        shutil.rmtree(p)
+        shutil.rmtree(p, onexc=_ignore_vanished)
+
+
+def _ignore_vanished(func: object, path: str, exc: BaseException) -> None:
+    """rmtree error handler: a file that is already gone is fine; any other error is raised.
+
+    On exFAT disks macOS stores metadata in hidden "._name" twins and deletes the twin together
+    with "name". rmtree lists a folder before deleting, so it later finds the twin missing.
+    """
+    if not isinstance(exc, FileNotFoundError):
+        raise exc
