@@ -143,8 +143,21 @@ Silver columns: `has_pw` (true if `reported` or `nil_significant`), `pw_status`,
 - Effect on Zabol 2020-2024: share of synoptic slots with weather observed rose from 0.21 to 0.98;
   valid days from 357 to 1,802; dusty share of valid days fell from an implausible 92 % to 43 %
   (156 dusty days a year). Chinese stations, which always include the weather group, were
-  unchanged. Before the rule, "valid" days were mostly days with significant weather, which
-  inflated dust frequencies and made countries with different reporting habits incomparable.
+  unchanged.
+- *Why the old rule inflated dust (a selection bias).* Of Zabol's ~14,400 synoptic slots, only
+  3,052 (21 %) carried a weather code; 11,096 (77 %) said "nothing significant" (iX 2). A code is
+  reported mostly when something happens, and at Zabol that is mostly dust (~88 % of reported
+  codes). Requiring ≥ 4 slots *with a code* therefore kept only days with long-lasting dust:
+
+  | Old rule | Days | Dusty | % dusty |
+  |---|---|---|---|
+  | "valid" (≥ 4 slots with a code) | 357 | 330 | 92 % |
+  | discarded | 1,460 | 441 | 30 % |
+
+  The discarded days were ~1,000 explicitly clear days and 441 shorter dust episodes. With iX,
+  clear slots count as observed and nearly every day is valid: 771 dusty of ~1,800 days. Stations
+  that always report a code (China) were never filtered this way, so the old rule also made
+  countries with different reporting habits incomparable.
 
 **Limitations.**
 - 17 % of SYNOP messages reached NOAA only as BUFR (`SYN004BUFR`): no text, no iX; they fall
