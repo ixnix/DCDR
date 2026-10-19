@@ -1,7 +1,12 @@
 # DCDR — Dust Climate Data Record
 
 Quality-controlled dust-event records from NOAA ISD surface observations.
-Design: `docs/superpowers/specs/2026-10-15-dcdr-pilot-design.md`.
+
+Documentation:
+- [Part 1, Engineering](docs/engineering.md): structure, commands, inputs, outputs, design.
+- [Part 2, Science](docs/science.md): how observations are interpreted, classified and aggregated, and why.
+- [Work log](docs/worklog.md): dated decisions, findings and open items.
+- Original design spec: `docs/superpowers/specs/2026-10-15-dcdr-pilot-design.md` (historical).
 
 ## Quick start
 
