@@ -61,6 +61,9 @@ PRODUCTS = [
             "n_slots_le_8": "SELECT count(*) FROM daily WHERE n_slots > 8",
             # Slots with weather codes are a subset of all slots.
             "pw_le_slots": "SELECT count(*) FROM daily WHERE n_slots_pw > n_slots",
+            # Inferred-nil slots are a subset of observed slots; explicit validity implies validity.
+            "inferred_le_pw": "SELECT count(*) FROM daily WHERE n_slots_nil_inferred > n_slots_pw",
+            "explicit_implies_valid": "SELECT count(*) FROM daily WHERE valid_day_explicit AND NOT valid_day",
             # valid_day must follow its definition exactly.
             "valid_day_consistent": (
                 "SELECT count(*) FROM daily WHERE valid_day <> (n_slots_pw >= getvariable('min_slots'))"

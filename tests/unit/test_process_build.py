@@ -77,6 +77,7 @@ def test_write_silver_records_metadata(settings: Settings, tmp_path: Path) -> No
         "source_md5": "m1",
         "prev_source_md5": "m0",
         "next_year_present": "0",
+        "nil_guard": "",
     }
 
 
@@ -142,3 +143,19 @@ def test_no_valid_longitude_fails_clearly(settings: Settings) -> None:
     rows = [isd_row("2024-03-01T00:00:00", LONGITUDE="999.999")]
     with pytest.raises(MissingLongitudeError):
         build_station_year(bronze_frame(rows), None, 2024, settings)
+
+
+def test_inferred_nil_needs_the_station_guard(settings: Settings, tmp_path: Path) -> None:
+    """Rule V3: a SYNOP with no code and no iX but with visibility is inferred nil only if the
+    station passes the guard; the guard decision is stored in the silver metadata."""
+    rows = [isd_row("2024-03-01T00:00:00", REM="SYN004BUFR")]
+    on = build_station_year(bronze_frame(rows), None, 2024, settings, nil_guard=True)
+    off = build_station_year(bronze_frame(rows), None, 2024, settings)
+    assert on["pw_status"].to_list() == ["nil_inferred"]
+    assert off["pw_status"].to_list() == ["not_observed"]
+    validate_silver(on)  # the contract accepts the new status
+    path = tmp_path / "s.parquet"
+    write_silver(
+        on, path, run_id="r", config_hash="h", source_md5="m", prev_source_md5="", nil_guard=True
+    )
+    assert read_parquet_metadata(path)["nil_guard"] == "1"

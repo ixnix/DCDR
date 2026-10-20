@@ -109,3 +109,38 @@ def test_previous_year_rebuilt_when_next_year_bronze_arrives(settings: Settings)
     run_ingest(ctx, [STATION], [2024], store=store)
     assert run_process(ctx, [STATION], [2023]).built == 1  # 2023 rebuilt because 2024 now exists
     assert pl.read_parquet(silver_path(ctx.root, 2023, STATION)).height == 1
+
+
+IX2 = "SYN08040582 12960 03406 10062="  # SYNOP: weather group omitted, nothing significant
+IX3 = "SYN08040582 13960 03406 10062="  # SYNOP: weather group omitted, not observed
+
+
+def test_inferred_nil_uses_the_stations_ix_years_and_follows_the_guard(settings: Settings) -> None:
+    """2023 has no iX (BUFR-only); 2024 shows the station's habit. Rule V3 fills 2023 while the
+    guard passes, and 2023 is rebuilt when new 2024 data makes the guard fail."""
+    store = MemoryStore()
+    rows24 = [
+        isd_row(f"2024-01-{d:02d}T{h:02d}:00:00", **LON0, REM=IX2)
+        for d in range(1, 11)
+        for h in range(0, 24, 3)
+    ]  # 80 reports: omitted group, visibility reported, iX 2
+    _put(
+        store,
+        2023,
+        [isd_row(f"2023-06-01T{h:02d}:00:00", **LON0, REM="SYN004BUFR") for h in range(0, 24, 3)],
+    )
+    _put(store, 2024, rows24)
+    ctx = start_run(settings, "test")
+    run_ingest(ctx, [STATION], [2023, 2024], store=store)
+    run_process(ctx, [STATION], [2023, 2024])
+    s23 = pl.read_parquet(silver_path(ctx.root, 2023, STATION))
+    assert set(s23["pw_status"]) == {"nil_inferred"}
+
+    # New 2024 data: 10 of 90 omitted groups with visibility were "not observed" -> guard fails.
+    rows24 += [isd_row(f"2024-02-01T{h:02d}:00:00", **LON0, REM=IX3) for h in range(0, 24, 3)]
+    rows24 += [isd_row(f"2024-02-02T{h:02d}:00:00", **LON0, REM=IX3) for h in (0, 3)]
+    _put(store, 2024, rows24)
+    run_ingest(ctx, [STATION], [2023, 2024], store=store)
+    assert run_process(ctx, [STATION], [2023, 2024]).built == 2  # 2023 rebuilt: its guard changed
+    s23 = pl.read_parquet(silver_path(ctx.root, 2023, STATION))
+    assert set(s23["pw_status"]) == {"not_observed"}

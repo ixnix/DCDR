@@ -5,8 +5,8 @@ dust, samples reports and aggregates them into daily records, and **why** each c
 Part 1 ([engineering.md](engineering.md)) covers the software; [worklog.md](worklog.md) records
 how and when each decision was made.
 
-> Living document. It describes the method **as implemented now** (method version **1.2.0**).
-> Planned steps are marked *planned*. Last updated: 2026-10-19.
+> Living document. It describes the method **as implemented now** (method version **1.3.0**).
+> Planned steps are marked *planned*. Last updated: 2026-10-20.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`)
 and the WMO *Manual on Codes* (WMO-No. 306) as published in the WMO Codes Registry
@@ -126,7 +126,8 @@ station number), WMO code table 1860:
 | **5** | automatic | **omitted: no significant phenomenon** | **observed, no dust** |
 | **6** | automatic | **omitted: no observation** | **not observed** |
 | 7 | automatic | included, tables **4680/4531** | classify with table 4680 (section 6.3) |
-| none | METAR, BUFR-only SYNOP, no text | | not observed when no weather field |
+| none (SYNOP) | BUFR-only SYNOP, older years | | **inferred nil** if visibility is reported and the station passes the guard (5.1); else not observed |
+| none (other) | METAR, SPECI, no text | | not observed when no weather field |
 
 Official confirmation: WMO Codes Registry, BUFR table 0-20-003: entry 508 "No significant
 phenomenon to report, present and past weather omitted" (= iX 2/5) and 509 "No observation, data
@@ -135,7 +136,8 @@ not available, present and past weather omitted" (= iX 3/6).
 `syn_ix` is read from `REM`: `SYN` + 3-digit length + 5-digit WMO number + space + `iR iX h VV`.
 Example: `SYN08040829 12960 03406 …` → station 40829 (Zabol), iR 1, **iX 2**.
 
-Silver columns: `has_pw` (true if `reported` or `nil_significant`), `pw_status`, `syn_ix`.
+Silver columns: `has_pw` (true if `reported`, `nil_significant` or `nil_inferred`), `pw_status`
+(`reported`, `nil_significant`, `nil_inferred`, `not_observed`), `syn_ix`.
 
 **Evidence** (pilot_20 bronze, 363k SYNOP messages):
 - iX 1/4 → manual weather code (MW) present in 99-100 % of reports; iX 2/3/5/6 → present in
@@ -170,7 +172,7 @@ Silver columns: `has_pw` (true if `reported` or `nil_significant`), `pw_status`,
 - Open: quote the exact WMO-No. 306 regulation on when group 7 may be omitted (expected: present
   weather 00-03 and past weather 0-2, i.e. haze and all dust codes must be reported).
 
-### 5.1 When iX is missing: inferring "nothing significant" (validated, not yet adopted)
+### 5.1 When iX is missing: inferring "nothing significant" (rule V3, adopted)
 
 Experiment: `notebooks/02_validate_inferred_nil.ipynb` (pilot_100, 2015-2024). Ground truth: SYNOP
 reports with an omitted weather group and a known iX (1.53 M "nothing significant", 0.49 M "not
@@ -187,8 +189,36 @@ observed"). iX was hidden and predicted from information available in every deca
 - Caveats: no truth before 2015 (assumes stable visibility-reporting practice); stations without
   any iX years get no guard; some Sudanese stations' clear reports lack visibility.
 
-Status: proposal awaiting user decision (would become `pw_status = nil_inferred`, reported
-separately from explicit `nil_significant`).
+**Adopted** (user decision 2026-10-20; method 1.3.0). Implementation:
+- `process/guard.py` computes the guard per station from **all** its bronze years on disk:
+  evidence = SYNOP (FM-12) reports with no weather code, visibility reported and iX 2/3/5/6;
+  pass if evidence ≥ 50 and the iX 3/6 share < 2 %; no decision (no inference) below 50.
+  (The notebook used leave-year-out evidence and no minimum; production uses all years plus the
+  minimum, slightly more conservative.)
+- `classify.py` marks qualifying reports `pw_status = nil_inferred` (observed, class none).
+  The flag is kept everywhere: silver keeps it per report, the silver metadata records the
+  station's guard (`nil_guard`), and gold reports `n_slots_nil_inferred` and
+  `valid_day_explicit` (validity from explicit observations only).
+- A station-year is rebuilt when its station's guard changes (e.g. new iX data arrive).
+- Settings: `classify.infer_nil`, `infer_nil_report_types` ([FM-12]), `nil_guard_max_share`
+  (0.02), `nil_guard_min_reports` (50).
+
+**Principle (user decision 2026-10-20): if it cannot be verified, it is "not observed".** The
+inference is used only where validated; stations without enough iX evidence get none.
+
+**BUFR-only reports.** BUFR is WMO's binary format for the same SYNOP content; when NOAA received a
+SYNOP only as BUFR, `REM` holds just `SYN004BUFR` (no text, no iX). Risk checked: if NOAA's decoder
+dropped weather codes from BUFR, V3 would wrongly call dusty reports clear. Evidence (pilot_100,
+2015-2024): BUFR-only SYNOPs carry a weather code in 28.3 % of reports vs 23.1 % for text, and the
+dust share among codes is the same (15.31 % vs 15.33 %); station by station and year by year the
+rates agree (e.g. Bachu and Tazhong changed practice in 2020: 13-34 % coded in both formats
+before, 100 % after). Stations where the formats disagree (Sydney; Australian automatic stations)
+get no inference (guard: no decision).
+
+**Effect on pilot_100 (2015-2024):** guard pass 80, fail 5 (Tidjikja, Khasab Port, Good Hope,
+Letlhakane, Carnarvon), no decision 13 (mostly Australian automatic and some Indian stations).
+Inference touches 44 of 98 stations; where it matters most, dust frequency falls toward
+plausible values (Nokkundi 325 → 155 dusty days/yr; Bachu 85 → 71).
 
 ## 6. Dust classification (`classify.py`)
 
@@ -311,6 +341,8 @@ One row per station per local (LMST) day.
 |---|---|---|
 | `n_slots`, `n_slots_pw` | selected slots on the day; of those, slots with weather observed | basis of validity |
 | `valid_day` | `n_slots_pw ≥ 4` (of 8) | a day can only be judged dusty or not if enough was observed |
+| `n_slots_nil_inferred` | observed slots whose "nothing significant" was inferred (rule V3) | keeps inference visible |
+| `valid_day_explicit` | `n_slots_pw − n_slots_nil_inferred ≥ 4` | validity without inference, for sensitivity checks |
 | `dusty_day_synoptic` | any selected slot dusty (**primary definition**) | comparable across stations and decades |
 | `dusty_day_any` | any report of the day dusty (all report types) | more sensitive; depends on reporting rate |
 | `past_weather_dust`, `daily_summary_dust` | past-weather or daily-summary dust evidence | evidence from other fields |
@@ -369,8 +401,7 @@ Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is be
 5. Station selection: require recent data and weather reporting.
 6. Does ISD keep the raw SYNOP text (and so iX) in older decades and at African stations?
    If not, older years keep the biased denominator.
-7. Adopt rule V3 (section 5.1) for reports without iX? Validated on 2015-2024; needs a decision
-   and a check of visibility reporting in older decades.
+7. Rule V3 adopted (5.1): check visibility reporting in older decades (V3 assumes it is stable).
 
 ## 12. References
 

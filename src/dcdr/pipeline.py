@@ -37,6 +37,7 @@ from dcdr.config import Settings, canonical_yaml, config_hash, silver_config_has
 from dcdr.ingest import IngestSummary, bronze_path, ingest, make_store
 from dcdr.process import METHOD_VERSION
 from dcdr.process.build import build_station_year, write_silver
+from dcdr.process.guard import station_guard
 from dcdr.state import (
     Manifest,
     append_run_record,
@@ -44,6 +45,7 @@ from dcdr.state import (
     git_revision,
     new_run_id,
     read_parquet_metadata,
+    safe_listdir,
     utcnow,
 )
 
@@ -170,7 +172,7 @@ def _bronze_md5(path: Path) -> str:
 
 
 def _silver_is_current(
-    path: Path, cfg_hash: str, md5: str, prev_md5: str, next_present: bool
+    path: Path, cfg_hash: str, md5: str, prev_md5: str, next_present: bool, guard: bool | None
 ) -> bool:
     """True if the silver file exists and was built from exactly the current inputs and method.
 
@@ -187,6 +189,7 @@ def _silver_is_current(
         and meta.get("source_md5") == md5
         and meta.get("prev_source_md5") == prev_md5
         and meta.get("next_year_present") == ("1" if next_present else "0")
+        and meta.get("nil_guard") == {True: "1", False: "0", None: ""}[guard]
     )
 
 
@@ -201,6 +204,19 @@ def run_process(
     summary = ProcessSummary()
     cfg_hash = silver_config_hash(ctx.settings)
     for station in stations:
+        # Station guard for inferred "nothing significant" (rule V3), from ALL bronze years of the
+        # station on disk (iX exists only in recent years; older years rely on that evidence).
+        years_on_disk = sorted(
+            p.name for p in safe_listdir(ctx.root / "bronze") if p.name.startswith("year=")
+        )
+        guard = station_guard(
+            [
+                p
+                for y in years_on_disk
+                if (p := ctx.root / "bronze" / y / f"{station}.parquet").exists()
+            ],
+            ctx.settings,
+        )
         for year in years:
             bpath = bronze_path(ctx.root, year, station)
             if not bpath.exists():
@@ -210,7 +226,9 @@ def run_process(
             next_present = bronze_path(ctx.root, year + 1, station).exists()
             md5, prev_md5 = _bronze_md5(bpath), _bronze_md5(prev_path)
             spath = silver_path(ctx.root, year, station)
-            if not force and _silver_is_current(spath, cfg_hash, md5, prev_md5, next_present):
+            if not force and _silver_is_current(
+                spath, cfg_hash, md5, prev_md5, next_present, guard
+            ):
                 summary.skipped += 1
                 summary.paths.append(spath)
                 continue
@@ -222,6 +240,7 @@ def run_process(
                     year,
                     ctx.settings,
                     next_year_exists=next_present,
+                    nil_guard=guard,
                 )
                 write_silver(
                     df,
@@ -231,6 +250,7 @@ def run_process(
                     source_md5=md5,
                     prev_source_md5=prev_md5,
                     next_year_present=next_present,
+                    nil_guard=guard,
                 )
             except Exception as exc:
                 log.error("silver %s %s failed: %s", station, year, exc)

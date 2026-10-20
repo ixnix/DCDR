@@ -15,7 +15,6 @@ open to review. Details of the current method: [science.md](science.md); of the 
 - [ ] Investigate stations with no dust in 2020-2024 despite high duISD ranks (Ashchysai, Shakawe,
       Good Hope): change of observing practice or real decline?
 - [ ] BUFR-only SYNOP (17 %, no iX): any source for the "omitted" information?
-- [ ] Decide whether to adopt rule V3 (`nil_inferred`) for reports without iX (validated 2026-10-20).
 - [ ] Check visibility reporting in older decades (V3 assumes it is stable).
 - [ ] Review humidity screen at humid dust sites and the `has_pw` sampling tie-break.
 - [ ] Plan 2: monthly/climatology gold products, station catalog, coverage, Uth, code-06 diagnostic.
@@ -25,6 +24,17 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## 2026-10-20
 
+- **Rule V3 implemented** (user decision; method 1.3.0; this commit). `process/guard.py` computes a
+  station guard from all bronze years; `classify.py` marks `pw_status = nil_inferred` (SYNOP, no
+  code, no iX, visibility reported, guard passes); silver metadata `nil_guard` triggers rebuilds;
+  gold adds `n_slots_nil_inferred` and `valid_day_explicit` plus two checks. 174 tests pass.
+  pilot_100 2015-2024 rebuilt (940 station-years, 0 failures): guard pass 80 / fail 5 / no
+  decision 13.
+- **User decision: "if it cannot be verified, it is not observed."** Added to CLAUDE.md.
+- **BUFR-only check:** BUFR is a transmission format, not a report type. NOAA decodes weather from
+  BUFR as well as from text (codes 28.3 % vs 23.1 %, dust share 15.31 % vs 15.33 %), so V3 applies
+  to BUFR-only SYNOPs; stations where formats disagree get no inference. Bachu and Tazhong changed
+  reporting practice in 2020 (weather group always included since).
 - **Data:** pilot_100 ingested and processed for 2015-2024 (931 downloads, 940 silver station-years,
   0 failures, 5.5 min), plus bronze for 1984-1985, 1995, 2005 (339 files).
 - **Finding: iX only exists since ~2015.** Raw SYNOP text with iX: 78-94 % of SYNOPs in 2015-2024,

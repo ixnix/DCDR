@@ -39,6 +39,15 @@ classify:
   # group omitted because nothing significant happened (observed: no dust); iX 3/6 = not observed;
   # iX 7 = automatic station using WMO tables 4680/4531. false = ignore iX (missing = not observed).
   synop_ix: true
+  # Rule V3 (validated in notebooks/02, precision 0.9998): a SYNOP with no weather code and no iX
+  # but with visibility reported is "nothing significant, inferred" (pw_status nil_inferred) if
+  # its station passes the guard: in the station's iX years, < 2 % of omitted groups with
+  # visibility were "not observed" (iX 3/6), judged on >= 50 such reports. Stations without
+  # enough iX evidence get no inference.
+  infer_nil: true
+  infer_nil_report_types: [FM-12]
+  nil_guard_max_share: 0.02
+  nil_guard_min_reports: 50
 
 sampling:
   window_min: 30  # a report within +-30 min of a synoptic hour (00, 03, ..., 21 UTC) is a candidate
