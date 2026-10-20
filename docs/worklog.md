@@ -24,6 +24,12 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## 2026-10-20
 
+- **Finding: SYNOP and METAR at the same time** (pilot_100 silver, 2015-2024): 27 % of SYNOPs
+  (908k, 37 stations) have a METAR at the identical timestamp. When both carry a code they agree
+  on dust 98.9 %, but SYNOP reports dust far more often (27,487 SYNOP-only vs 2,135 METAR-only vs
+  19,772 both); likely METAR coding rules (e.g. DU/HZ only with reduced visibility; to verify).
+  When SYNOP says "nothing significant" (iX 2/5), the METAR has no weather group in 99.4 %.
+  Current handling: sampling prefers SYNOP; dusty_day_any counts both.
 - **Rule V3 implemented** (user decision; method 1.3.0; this commit). `process/guard.py` computes a
   station guard from all bronze years; `classify.py` marks `pw_status = nil_inferred` (SYNOP, no
   code, no iX, visibility reported, guard passes); silver metadata `nil_guard` triggers rebuilds;
