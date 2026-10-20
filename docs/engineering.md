@@ -290,6 +290,7 @@ Tests use small synthetic ISD rows (`tests/fixtures/isd.py`) and an in-memory fa
 | Data written to `./data` instead of the SSD | `DCDR_DATA` not set in that shell | `export DCDR_DATA=...` (add to `~/.zshrc`) |
 | `StaleSilverError` from `aggregate` | silver built by other code/settings | `dcdr process --years ...` (or `--force`) |
 | A notebook shows as modified in git | JupyterLab re-saved it | `git restore <notebook>` if nothing changed |
+| `No magic bytes found at end of file '…/._x.parquet'` in a query | a glob `*.parquet` matched macOS `._` files on exFAT | use `[0-9]*.parquet` |
 
 ## 12. Roadmap (sub-projects)
 
