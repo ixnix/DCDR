@@ -1,10 +1,10 @@
 """Synoptic sampling (process/sampling.py): per 3-hourly slot, one report per source plus a primary.
 
 Checks slot assignment and the +-30 min window; that each source (SYNOP, METAR) gets its own
-selected report (the closest one that observed the weather); that the primary report is the SYNOP
-when it observed the weather and the METAR when the SYNOP did not (user decision 2026-10-20: an
-unobserved SYNOP must not hide a METAR); that SPECI and summaries never fill a slot; and that row
-order never changes the result.
+selected report (the closest one that observed the weather), so an unobserved SYNOP cannot hide a
+METAR's dust; that the primary report (weather variables) is the SYNOP whenever the slot has one
+and the METAR otherwise (user decisions 2026-10-20); that SPECI and summaries never fill a slot;
+and that row order never changes the result.
 """
 
 import random
@@ -70,8 +70,9 @@ def test_observed_synop_is_primary_over_a_closer_metar(settings: Settings) -> No
     assert _by_source(out) == {"synop": "synop", "metar": "metar"}  # both sources keep a report
 
 
-def test_unobserved_synop_yields_the_primary_to_an_observed_metar(settings: Settings) -> None:
-    """E.g. US SYNOPs with iX 1 but no weather group, while the METAR reports dust."""
+def test_synop_is_primary_whenever_present_even_if_unobserved(settings: Settings) -> None:
+    """User decision: weather variables come from the SYNOP whenever the slot has one, to avoid
+    mixing report types; the METAR still counts for dust (in gold)."""
     out = select_synoptic(
         _frame(
             [
@@ -81,8 +82,15 @@ def test_unobserved_synop_yields_the_primary_to_an_observed_metar(settings: Sett
         ),
         settings.sampling,
     )
-    assert _selected(out) == ["metar"]
+    assert _selected(out) == ["synop"]
     assert _by_source(out) == {"synop": "synop", "metar": "metar"}
+
+
+def test_metar_is_primary_when_the_slot_has_no_synop(settings: Settings) -> None:
+    out = select_synoptic(
+        _frame([("2024-01-01T02:51:00", "FM-15", True, "metar")]), settings.sampling
+    )
+    assert _selected(out) == ["metar"]
 
 
 def test_within_a_source_observed_beats_closer(settings: Settings) -> None:

@@ -5,7 +5,7 @@ Part 2 ([science.md](science.md)) explains how the observations are interpreted 
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-10-20 (method version 1.5.0).
+> Last updated: 2026-10-20 (method version 1.6.0).
 
 ---
 
@@ -140,7 +140,7 @@ Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
 - `config_hash`: SHA-256 (16 hex) of all resolved settings; stored in every run record.
 - `silver_config_hash`: hash of the silver sections only; stored in every silver file. If it
   changes, silver is rebuilt.
-- `METHOD_VERSION` (`src/dcdr/process/__init__.py`, currently **1.5.0**): bumped whenever
+- `METHOD_VERSION` (`src/dcdr/process/__init__.py`, currently **1.6.0**): bumped whenever
   processing logic changes; stored in every silver file. If it changes, silver is rebuilt.
 
 ## 6. Inputs
@@ -196,7 +196,7 @@ local time, dust class and evidence, synoptic selection. Core columns come first
 | Group | Columns |
 |---|---|
 | Identity, time | `station_id, time_utc, time_lmst, lmst_date, lmst_hour, summary_lmst_date, report_type, source, lat, lon, lon_used, elev` |
-| Sampling | `slot_time, slot_lmst_date, slot_delta_min, is_candidate, is_excluded_type, slot_source` (synop/metar), `source_rank, is_source_selected` (the slot's report for its source), `selection_rank, selection_reason, is_synoptic_selected` (the slot's primary report) |
+| Sampling | `slot_time, slot_lmst_date, slot_delta_min, is_candidate, is_excluded_type, slot_source` (synop/metar), `source_rank, is_source_selected` (the slot's report for its source), `selection_rank, selection_reason, is_synoptic_selected` (the slot's primary report: its SYNOP if any, else its METAR) |
 | Weather observed? | `has_pw`, `pw_status` (reported, nil_significant, nil_inferred, nil_metar, not_observed), `syn_ix`, `metar_auto`, `metar_wx` (missing, group, cavok, none) |
 | Dust | `dust_rank, dust_class_rule, dust_rule_id, dust_class_final, dust_haze, rh_screened, flag_du, flag_duhz, flag_susp, flag_bd, flag_ds, flag_vicinity, flag_past, flag_ambiguous, flag_daily_dust, pw_evidence` |
 | Weather values | `wsd, use_wsd, wind_dir, use_wind_dir, gust, use_gust, gust_src, vis_raw, vis_capped, use_vis, t, use_t, td, use_td, rh, slp, use_slp` |

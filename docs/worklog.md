@@ -7,7 +7,7 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## Open items
 
-- [ ] **Run the pipeline for method 1.5.0** (user): `dcdr process` rebuilds all silver (new method
+- [ ] **Run the pipeline for method 1.6.0** (user): `dcdr process` rebuilds all silver (new method
       version), then `dcdr aggregate`; per station compare `dusty_day`, `dusty_day_synop`,
       `dusty_day_metar` and `dusty_day_vis5`, and `n_slots_pw_synop` against `n_slots_pw`.
 - [ ] Decode dust in US remarks (`BLDU ALQDS`, `DSNT`, `VCBLDU`) as a "nearby/distant" flag.
@@ -26,6 +26,14 @@ open to review. Details of the current method: [science.md](science.md); of the 
 ---
 
 ## 2026-10-20
+
+- **Weather variables from the SYNOP whenever the slot has one** (method **1.6.0**, follows
+  2e7c56a; user decision). In 1.5.0 the primary report (wind, temperature, humidity, pressure,
+  visibility statistics) was the observed SYNOP, else the METAR, so an unobserved SYNOP gave way
+  to the METAR and a station's series could switch report types from slot to slot. Now the
+  primary report is the slot's SYNOP, observed or not, and the METAR only in slots without SYNOP.
+  Dust is unchanged (either source). *Ruling:* a value missing from that SYNOP stays missing (no
+  per-variable filling from the METAR). Tests: 2 new, 226 pass.
 
 - **SYNOP and METAR judged independently per slot** (method **1.5.0**, follows 26ed889;
   tests first, 224 pass).

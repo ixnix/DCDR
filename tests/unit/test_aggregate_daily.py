@@ -379,3 +379,27 @@ def test_weather_means_come_from_the_primary_report(settings: Settings) -> None:
     ]
     d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
     assert d["wsd_mean"] == pytest.approx(10.0)
+
+
+def test_weather_means_come_from_the_synop_even_when_only_the_metar_saw_dust(
+    settings: Settings,
+) -> None:
+    """User decision: SYNOP supplies the weather variables whenever the slot has one, so a
+    station's series does not switch report types; the METAR still makes the slot dusty."""
+    rows = [
+        isd_row(f"2024-06-05T{h:02d}:00:00", **LON0, MW1="02,1", WND="090,1,N,0100,1")
+        for h in range(0, 24, 3)
+        if h != 3
+    ] + [
+        isd_row("2024-06-05T03:00:00", **LON0, REM=US_SYNOP_NO_GROUP, WND="090,1,N,0100,1"),
+        isd_row(
+            "2024-06-05T02:51:00",
+            **LON0,
+            REPORT_TYPE="FM-15",
+            REM=METAR_BLDU,
+            AU1=BLDU_AU,
+            WND="090,1,N,0500,1",
+        ),
+    ]
+    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
+    assert d["dusty_day"] and d["wsd_mean"] == pytest.approx(10.0)

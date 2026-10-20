@@ -29,10 +29,12 @@ How a slot is filled (process pipeline step 6 of 6)
      slot_delta_min  closer to the slot time wins
      time_utc, source, row_key   final tie-breakers, so the result never depends on row order
    Rank 1 is that source's report for the slot (`source_rank`, `is_source_selected`).
-3. Across sources the same order, with the source order (SYNOP first) after has_pw, gives the
-   slot's PRIMARY report (`selection_rank` 1, `is_synoptic_selected`): the SYNOP if it observed the
-   weather, otherwise the METAR. Wind, temperature and visibility means use the primary report
-   only, so they are never double counted. `selection_reason` records why, for auditing.
+3. Across sources, the source order (SYNOP first) BEFORE has_pw gives the slot's PRIMARY report
+   (`selection_rank` 1, `is_synoptic_selected`): the slot's SYNOP whenever it has one, observed or
+   not, otherwise its METAR (user decision 2026-10-20). Wind, temperature, humidity, pressure and
+   visibility statistics use the primary report only, so they come from one report type per slot
+   and are never double counted (a station's series does not switch between SYNOP and METAR when
+   the METAR happens to observe the weather). `selection_reason` records why, for auditing.
 Every candidate keeps its ranks, so you can always see which reports competed and lost.
 """
 
@@ -47,10 +49,13 @@ from dcdr.process.parse import lmst_shift
 _TIEBREAK = ["slot_delta_min", "time_utc", "source", "row_key"]
 
 
-def _rank(df: pl.DataFrame, keys: list[str], group: list[str], name: str) -> pl.DataFrame:
-    """Row number per `group` after sorting by has_pw (True first), then `keys`, then tie-breakers."""
-    order = ["station_id", "slot_time", "has_pw", *keys, *_TIEBREAK]
-    desc = [False, False, True] + [False] * (len(keys) + len(_TIEBREAK))
+def _rank(
+    df: pl.DataFrame, keys: list[str], group: list[str], name: str, lead: list[str] | None = None
+) -> pl.DataFrame:
+    """Row number per `group` after sorting by `lead`, has_pw (True first), `keys`, tie-breakers."""
+    lead = lead or []
+    order = ["station_id", "slot_time", *lead, "has_pw", *keys, *_TIEBREAK]
+    desc = [False, False] + [False] * len(lead) + [True] + [False] * (len(keys) + len(_TIEBREAK))
     return (
         df.sort(order, descending=desc, nulls_last=True)
         .with_columns((pl.int_range(pl.len()).over(group) + 1).cast(pl.Int32).alias(name))
@@ -94,7 +99,7 @@ def select_synoptic(df: pl.DataFrame, cfg: SamplingCfg) -> pl.DataFrame:
         cand, ["_type_order"], ["station_id", "slot_time", "slot_source"], "source_rank"
     )
     overall = _rank(
-        cand, ["_source_order", "_type_order"], ["station_id", "slot_time"], "selection_rank"
+        cand, ["_type_order"], ["station_id", "slot_time"], "selection_rank", lead=["_source_order"]
     )
     # Attach the ranks back to all rows; non-candidates get null ranks.
     df = df.join(by_source, on="row_key", how="left").join(overall, on="row_key", how="left")
