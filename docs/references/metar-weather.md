@@ -9,9 +9,7 @@ Sources:
   verbatim. Page numbers: printed page (PDF page).
 - OFCM (2005). *Federal Meteorological Handbook No. 1: Surface Weather Observations and Reports*
   (FCM-H1-2005, September 2005), the US METAR/SPECI practice; local copy
-  `references/icams/FCM-H1-2005.pdf`. And OFCM (1995), FCM-H1-1995 (December 1995), the edition
-  that introduced METAR in the US; local copy `references/icams/fmh1.pdf`. US government works:
-  quoted verbatim. Page numbers: chapter-page (PDF page). Only published editions are used
+  `references/icams/FCM-H1-2005.pdf`. US government work: quoted verbatim. Page numbers: chapter-page (PDF page). Only published editions are used
   (user decision 2026-10-20).
 
 Index and checksums: [../references.md](../references.md).
@@ -61,7 +59,7 @@ What this means for DCDR:
   This fits the finding that SYNOP reports dust far more often than METAR (worklog 2026-10-20).
   US practice uses a higher limit, 7 statute miles (next section).
 
-## US practice: FMH-1 (2005; 1995 the same)
+## US practice: FMH-1 (2005)
 
 Present weather in METAR/SPECI, FCM-H1-2005 paragraph 12.6.8, pp. 12-5 to 12-6 (PDF 63–64):
 
@@ -96,10 +94,9 @@ Automation (FCM-H1-2005):
   stations" (AO1 without, AO2 with a precipitation discriminator), augmented or not. So `AO2`
   does not mean "no observer"; `AUTO` does.
 
-FCM-H1-1995 (PDF 56) has the same rules on the body versus Remarks, the visibility condition for
-obscurations, and SS/DS intensity. Its text layer is damaged on these pages (a shifted font
-encoding), so the "7" and the AUTO definition cannot be read from it by machine; quotes above are
-from 2005. The 2019 edition (FCM-H1-2019, published) would cover recent years; not yet obtained.
+The 2005 edition is cited for all years: the 2019 edition's official link is broken. The
+1995 edition (checked, then dropped as redundant) had the same rules on body versus Remarks,
+obscurations and DS/SS intensity, so the rules held throughout the METAR era.
 
 What this means for DCDR:
 - US METAR reports dust in the body only at visibility < 7 statute miles (~11 km); distant dust
