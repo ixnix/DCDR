@@ -7,9 +7,8 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## Open items
 
-- [ ] Download WMO-No. 306 *Manual on Codes* Vol. I.1 Part A (2019) from
-      https://library.wmo.int/idurl/4/35713 (the site blocks automated downloads) and quote the
-      FM 12 rule for omitting group 7wwW1W2.
+- [ ] Save FMH-1 (2019), FMH-2 (1988, changes 1-3) and FMH-12 from icams-portal.gov in a browser
+      (the host refuses scripts); then extract FMH-1's US METAR rules for DU/SA/HZ/BLDU/DS/SS.
 - [ ] Station selection: add a recent-data criterion (data and weather reports in ≥ 3 of the last
       5 years); replace Wadi Halfa, Abu Hamed, Papunya, Dongola, Rabbit Flat in pilot lists.
 - [ ] Investigate stations with no dust in 2020-2024 despite high duISD ranks (Ashchysai, Shakawe,
@@ -23,6 +22,27 @@ open to review. Details of the current method: [science.md](science.md); of the 
 ---
 
 ## 2026-10-20
+
+- **Official references saved** (user decision: local copies of official documents only; extract
+  the relevant parts into docs/, keep the full copies git-ignored). Full copies in `references/`,
+  re-created by `scripts/fetch_references.py`; index with checksums in `docs/references.md`;
+  extracts in `docs/references/` (SYNOP group 7 and iX, BUFR 0-20-003, METAR and ASOS).
+  WMO-No. 306 Vol. I.1 (2019) and I.2 (2025) downloaded by the user (library.wmo.int has a human
+  check). ICAMS (FMH-1, -2, -12) refused scripted downloads twice (HTTP 403): still to obtain.
+  Ruling: WMO material is summarised with short quotes (WMO allows short extracts with the
+  source); US federal documents are quoted verbatim (public domain).
+- **Resolved: the WMO rule for omitting group 7** (FM 12, Regulation 12.2.6, p. A–15): group 7 is
+  included only if weather of significance was observed; ww 00–03 / W 0–2 are not significant; when
+  omitted, iX tells "no observation" from "nothing significant". Our iX rule matches; BUFR 508/509
+  are the same two cases. Table 4680 wawa 27–29 (snow *or sand*) match `classify.rank_4680`.
+- **Finding: METAR rules that limit dust reporting** (WMO-No. 306 FM 15, table 4678):
+  DU, SA, HZ, FU only when visibility ≤ 5 000 m (15.8.12), unlike SYNOP ww 06/07; a missing w'w'
+  group means nothing to report (15.8.2) but nothing states it explicitly; `//` = not observed
+  (15.8.19); CAVOK = no significant weather (15.10). Fits SYNOP reporting dust far more often.
+- **Finding: ASOS (AUTO) never reports dust** (ASOS User's Guide 1998, §3.11): only FG, BR, FZFG,
+  HZ, and HZ is inferred from visibility < 7 mi and dew-point depression > 4 °F, not observed.
+  Consequence for the METAR rule (to implement): AUTO METAR = dust "not observed"; AUTO HZ must
+  not feed the haze rule.
 
 - **METAR first** (user decision): handle METAR before running all station-years; the user wants
   more US Southwest stations, which report mostly METAR.

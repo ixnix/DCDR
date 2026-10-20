@@ -169,8 +169,11 @@ Silver columns: `has_pw` (true if `reported`, `nil_significant` or `nil_inferred
   back to "not observed" when no code is present (e.g. Nokkundi, Pakistan).
 - METAR has no iX: an absent weather group in METAR stays "not observed" (explicit `CAVOK` or
   `NSW` could be used later).
-- Open: quote the exact WMO-No. 306 regulation on when group 7 may be omitted (expected: present
-  weather 00-03 and past weather 0-2, i.e. haze and all dust codes must be reported).
+- The rule (WMO-No. 306 Vol. I.1, FM 12, Regulation 12.2.6, p. A–15): group 7 is included only if
+  present or past weather of significance was observed (12.2.6.1); ww 00–03 and W1W2 0–2 are
+  without significance (12.2.6.2), so haze and every dust code must be reported; the group is
+  omitted when there was no observation or nothing significant, and iX says which (12.2.6.3).
+  Extract: [references/synop-weather-group.md](references/synop-weather-group.md).
 
 ### 5.1 When iX is missing: inferring "nothing significant" (rule V3, adopted)
 
@@ -394,7 +397,7 @@ Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is be
 
 ## 11. Open questions
 
-1. Exact WMO regulation for omitting group 7 (WMO-No. 306, FM 12) to be quoted.
+1. ~~Exact WMO regulation for omitting group 7~~: resolved, FM 12 Regulation 12.2.6 (section 5).
 2. BUFR-only SYNOP (17 %): recover "omitted" information from the BUFR original?
 3. METAR: use `CAVOK`/`NSW` as explicit "no significant weather"?
 4. Humidity screen at humid dust sites (6.6); `has_pw` before time distance in sampling (8).
@@ -405,10 +408,22 @@ Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is be
 
 ## 12. References
 
+Official code manuals and tables, with URLs and checksums of the local copies:
+[references.md](references.md).
+
 - NOAA NCEI. *Federal Climate Complex Data Documentation for Integrated Surface Data (ISD)*
   (ISD format document), `legacy/isd-format-document.pdf`.
 - WMO (2019). *Manual on Codes*, WMO-No. 306, Vol. I.1, Part A; code tables 1860, 4677, 4680,
   4561, 4531. WMO Codes Registry: https://codes.wmo.int (BUFR tables 0-20-003, 0-20-004).
+- WMO (2025). *Manual on Codes*, WMO-No. 306, Vol. I.2 (BUFR/CREX); code table 0 20 003.
+- WMO BUFR4 tables, release v46 (2026), https://github.com/wmo-im/BUFR4 (code table 0-20-003
+  embeds tables 4677 as 0-99 and 4680 as 100-199; 508/509 = nothing significant / no observation).
+- OFCM/ICAMS (2019). *Federal Meteorological Handbook No. 1: Surface Weather Observations and
+  Reports* (FCM-H1-2019): US METAR/SPECI practice.
+- OFCM (1988, changes 1-4). *Federal Meteorological Handbook No. 2: Surface Synoptic Codes*.
+- OFCM. *Federal Meteorological Handbook No. 12: United States Meteorological Codes and Coding
+  Practices*.
+- NOAA/FAA/US Navy/US Air Force (1998). *Automated Surface Observing System (ASOS) User's Guide*.
 - Alduchov, O. A., and R. E. Eskridge (1996). Improved Magnus form approximation of saturation
   vapor pressure. *J. Appl. Meteor.*, 35, 601-609.
 - Marsham, J. H., et al. (2011). The importance of the representation of deep convection for

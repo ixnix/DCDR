@@ -44,3 +44,6 @@ legacy/duISDv1/
 
 # Jupyter autosave backups
 .ipynb_checkpoints/
+
+# Official reference documents (re-created by scripts/fetch_references.py; index in docs/references.md)
+/references/
