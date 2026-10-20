@@ -6,8 +6,8 @@ for docs/references.md. A changed checksum means the publisher replaced the file
 
 Only official publishers are listed (WMO, ICAMS/OFCM, NOAA NWS). WMO-No. 306 (Manual on Codes)
 cannot be fetched here: library.wmo.int requires a human check, so it is downloaded by hand.
-The ICAMS host refused scripted requests (HTTP 403, 2026-10-20); if it still does, save those
-PDFs from a browser under the same names and re-run: existing files are only checksummed.
+The ICAMS handbooks (FMH-1, FMH-2) are saved by hand too: the ICAMS host refuses scripted
+requests (HTTP 403, 2026-10-20). docs/references.md lists the manual files with their checksums.
 
 Usage (from the repo root):  uv run python scripts/fetch_references.py
 Existing files are kept; delete one to download it again.
@@ -21,17 +21,10 @@ import time
 import urllib.request
 from pathlib import Path
 
-ICAMS = "https://www.icams-portal.gov/resources/ofcm/fmh"
 BUFR4 = "https://raw.githubusercontent.com/wmo-im/BUFR4/v46"  # WMO's official tables, release v46
 
 # (local path under references/, official URL, expected content type)
 DOCUMENTS = [
-    ("icams/fmh1_2019.pdf", f"{ICAMS}/FMH1/fmh1_2019.pdf", "application/pdf"),
-    ("icams/FCM-H2-1988.pdf", f"{ICAMS}/FMH2/FCM-H2-1988.pdf", "application/pdf"),
-    ("icams/fmh2-chg1and2.pdf", f"{ICAMS}/FMH2/fmh2-chg1and2.pdf", "application/pdf"),
-    ("icams/fmh2-chg3.pdf", f"{ICAMS}/FMH2/fmh2-chg3.pdf", "application/pdf"),
-    ("icams/fmh2-chg4.pdf", f"{ICAMS}/FMH2/fmh2-chg4.pdf", "application/pdf"),
-    ("icams/fmh12.pdf", f"{ICAMS}/FMH12/fmh12.pdf", "application/pdf"),
     ("nws/aum-toc.pdf", "https://www.weather.gov/media/asos/aum-toc.pdf", "application/pdf"),
     ("wmo/BUFRCREX_CodeFlag_en_20.csv", f"{BUFR4}/BUFRCREX_CodeFlag_en_20.csv", "text/"),
     (
@@ -57,7 +50,7 @@ def main(root: Path) -> int:
     for rel, url, ctype in DOCUMENTS:
         path = root / rel
         if not path.exists():
-            time.sleep(5)  # be polite: the ICAMS host throttles bursts of requests (HTTP 403)
+            time.sleep(5)  # be polite to the servers between downloads
             try:
                 data = fetch(url, ctype)
             except Exception as exc:  # report and continue with the other documents

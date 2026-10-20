@@ -7,8 +7,8 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## Open items
 
-- [ ] Save FMH-1 (2019), FMH-2 (1988, changes 1-3) and FMH-12 from icams-portal.gov in a browser
-      (the host refuses scripts); then extract FMH-1's US METAR rules for DU/SA/HZ/BLDU/DS/SS.
+- [ ] Record where the FMH-1 copy came from (file name says "draft v3.0", title page FCM-H1-2026);
+      confirm it is the issued edition or note it as a draft in references.md.
 - [ ] Station selection: add a recent-data criterion (data and weather reports in ≥ 3 of the last
       5 years); replace Wadi Halfa, Abu Hamed, Papunya, Dongola, Rabbit Flat in pilot lists.
 - [ ] Investigate stations with no dust in 2020-2024 despite high duISD ranks (Ashchysai, Shakawe,
@@ -23,7 +23,17 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## 2026-10-20
 
-- **Official references saved** (user decision: local copies of official documents only; extract
+- **FMH-1 (FCM-H1-2026) and FMH-2 (1988) saved by the user**; added to `docs/references.md`; the
+  ICAMS entries left the download script (manual only). US METAR rules extracted to
+  `docs/references/metar-weather.md`. Findings:
+  - US METAR codes an obscuration (DU, SA, HZ, BLDU, BLSA) in the body only when visibility is
+    < 7 statute miles (~11 km; WMO: ≤ 5 000 m); dust seen away from the station goes to Remarks.
+    A non-AUTO METAR without a weather group therefore says nothing about light dust at higher
+    visibility: it cannot be read as "nothing significant" for dust without validation.
+  - `AUTO` = no human involvement; a corrected report carries COR instead of AUTO. AO1/AO2 appear in
+    all reports of an automated station, augmented or not, so they do not identify AUTO reports.
+
+- **Official references saved** (3f91210; user decision: local copies of official documents only; extract
   the relevant parts into docs/, keep the full copies git-ignored). Full copies in `references/`,
   re-created by `scripts/fetch_references.py`; index with checksums in `docs/references.md`;
   extracts in `docs/references/` (SYNOP group 7 and iX, BUFR 0-20-003, METAR and ASOS).
