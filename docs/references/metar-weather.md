@@ -7,8 +7,10 @@ Sources:
 - NOAA, FAA, US Navy, US Air Force (1998). *Automated Surface Observing System (ASOS) User's
   Guide*. Local copy `references/nws/aum-toc.pdf`. US government work (public domain): quoted
   verbatim. Page numbers: printed page (PDF page).
-- *Pending:* OFCM/ICAMS (2019). *Federal Meteorological Handbook No. 1* (FCM-H1-2019), the US
-  METAR practice. The official host refused scripted downloads (HTTP 403, 2026-10-20).
+- ICAMS (2026). *Federal Meteorological Handbook No. 1: Surface Weather Observations and Reports*
+  (FCM-H1-2026, October 2026), the US METAR/SPECI practice. Local copy
+  `references/icams/FMH1_draft_v3.0.pdf` (the file name says "draft v3.0"; the title page does
+  not). US government work: quoted verbatim. Page numbers: chapter-page (PDF page).
 
 Index and checksums: [../references.md](../references.md).
 
@@ -55,7 +57,50 @@ What this means for DCDR:
 - DU, SA and HZ require visibility ≤ 5 000 m under WMO/ICAO rules, so METAR misses dust
   events that a SYNOP observer reports at higher visibility (ww 06/07 have no visibility limit).
   This fits the finding that SYNOP reports dust far more often than METAR (worklog 2026-10-20).
-  US practice (FMH-1) uses a different limit; to be checked when FMH-1 is available.
+  US practice uses a higher limit, 7 statute miles (next section).
+
+## US practice: FMH-1 (2026)
+
+Present weather in METAR/SPECI, paragraph 12.6.8, pp. 12-5 to 12-7 (PDF 65–67):
+
+> "Weather occurring at the point of observation (at the station) or in the vicinity of the
+> station shall be coded in the body of the report; weather observed but not occurring at the
+> point of observation (at the station) or in the vicinity of the station shall be coded in
+> Remarks."
+
+> "With the exceptions of volcanic ash, low drifting dust, low drifting sand, low drifting snow,
+> shallow fog, partial fog, and patches (of) fog, an obscuration shall be coded in the body of the
+> report if the surface visibility is less than 7 miles or considered operationally significant."
+
+- Intensity: none for BLDU, BLSA, BLSN; "Only moderate or heavy intensity shall be ascribed to
+  sandstorm (SS) and duststorm (DS)" (12.6.8.a(1)).
+- VC may be coded with PO, BLDU, BLSA, SS, DS (among others), without intensity (12.6.8.a(2)).
+- DR = raised to less than six feet; BL = six feet or more; both only with DU, SA, SN (12.6.8.b(2)).
+- Codes: DU widespread dust, SA sand, HZ haze (12.6.8.d(1)); PO dust/sand whirls, SS sandstorm,
+  DS duststorm (12.6.8.e(1)).
+
+Definitions, paragraphs 8.3.2–8.3.3, p. 8-2 (PDF 40): widespread dust is raised or suspended by
+the wind "at or far away from the station"; haze is extremely small dry particles giving the air
+an opalescent appearance (not dust-specific); a duststorm is strong winds and dust-filled air over
+an extensive area. No visibility threshold is given for DS/SS in this edition.
+
+Automation, 12.6.4 (PDF 62) and the glossary (PDF 83):
+- "The report modifier, AUTO, identifies the METAR/SPECI as a fully automated report with no human
+  intervention or oversight." A corrected report carries COR *in place of* AUTO.
+- An *augmented* report is prepared by the automated system "with certified observers signed on to
+  the system to add information to the report"; it has no AUTO.
+- AO1/AO2/AO3/AO4 in the remarks give the automated station type and appear in all reports from
+  automated stations, augmented or not (12.7.1(c), PDF 70). So `AO2` does not mean "no observer";
+  `AUTO` does.
+
+What this means for DCDR:
+- US METAR reports dust in the body only at visibility < 7 statute miles (~11 km); distant dust
+  goes to Remarks, which ISD does not decode into weather fields (to check in the raw REM text).
+- No w'w' group in a non-AUTO US METAR means no weather at or near the station with visibility
+  < 7 mi; DU or HZ at higher visibility is not reported, so it is not "nothing significant" for
+  light dust. SYNOP ww 06/07 have no visibility limit.
+- A corrected (COR) report from an unattended station may lack AUTO: use the station's other
+  reports that hour, or AO1/AO2 plus the absence of augmentation, to decide (to validate).
 
 ## ASOS: what an automatic US station reports
 
