@@ -7,8 +7,8 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## Open items
 
-- [ ] Record where the FMH-1 copy came from (file name says "draft v3.0", title page FCM-H1-2026);
-      confirm it is the issued edition or note it as a draft in references.md.
+- [ ] FMH-1: obtain the published 2019 edition (official ICAMS URL in references.md) for recent
+      years, and an official copy of the 2005 edition (ours is from a mirror, everyspec.com).
 - [ ] Station selection: add a recent-data criterion (data and weather reports in ≥ 3 of the last
       5 years); replace Wadi Halfa, Abu Hamed, Papunya, Dongola, Rabbit Flat in pilot lists.
 - [ ] Investigate stations with no dust in 2020-2024 despite high duISD ranks (Ashchysai, Shakawe,
@@ -22,6 +22,13 @@ open to review. Details of the current method: [science.md](science.md); of the 
 ---
 
 ## 2026-10-20
+
+- **Only published editions** (user decision): the FMH-1 2026 draft was removed and replaced by the
+  published FCM-H1-1995 and FCM-H1-2005; FMH-2 change 4 removed (a one-page notice). The METAR
+  extract now quotes FCM-H1-2005 (7ed9da7 had quoted the draft); the rules used are identical in
+  2005 and in the draft, and 1995 has the same body/Remarks, obscuration and DS/SS rules (its
+  text layer is damaged, so the "7 miles" cannot be machine-read there). The 2005 copy comes from
+  a third-party mirror (everyspec.com stamp), recorded as such in references.md.
 
 - **FMH-1 (FCM-H1-2026) and FMH-2 (1988) saved by the user**; added to `docs/references.md`; the
   ICAMS entries left the download script (manual only). US METAR rules extracted to

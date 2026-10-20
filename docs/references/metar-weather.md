@@ -7,10 +7,12 @@ Sources:
 - NOAA, FAA, US Navy, US Air Force (1998). *Automated Surface Observing System (ASOS) User's
   Guide*. Local copy `references/nws/aum-toc.pdf`. US government work (public domain): quoted
   verbatim. Page numbers: printed page (PDF page).
-- ICAMS (2026). *Federal Meteorological Handbook No. 1: Surface Weather Observations and Reports*
-  (FCM-H1-2026, October 2026), the US METAR/SPECI practice. Local copy
-  `references/icams/FMH1_draft_v3.0.pdf` (the file name says "draft v3.0"; the title page does
-  not). US government work: quoted verbatim. Page numbers: chapter-page (PDF page).
+- OFCM (2005). *Federal Meteorological Handbook No. 1: Surface Weather Observations and Reports*
+  (FCM-H1-2005, September 2005), the US METAR/SPECI practice; local copy
+  `references/icams/FCM-H1-2005.pdf`. And OFCM (1995), FCM-H1-1995 (December 1995), the edition
+  that introduced METAR in the US; local copy `references/icams/fmh1.pdf`. US government works:
+  quoted verbatim. Page numbers: chapter-page (PDF page). Only published editions are used
+  (user decision 2026-10-20).
 
 Index and checksums: [../references.md](../references.md).
 
@@ -59,9 +61,9 @@ What this means for DCDR:
   This fits the finding that SYNOP reports dust far more often than METAR (worklog 2026-10-20).
   US practice uses a higher limit, 7 statute miles (next section).
 
-## US practice: FMH-1 (2026)
+## US practice: FMH-1 (2005; 1995 the same)
 
-Present weather in METAR/SPECI, paragraph 12.6.8, pp. 12-5 to 12-7 (PDF 65–67):
+Present weather in METAR/SPECI, FCM-H1-2005 paragraph 12.6.8, pp. 12-5 to 12-6 (PDF 63–64):
 
 > "Weather occurring at the point of observation (at the station) or in the vicinity of the
 > station shall be coded in the body of the report; weather observed but not occurring at the
@@ -75,23 +77,29 @@ Present weather in METAR/SPECI, paragraph 12.6.8, pp. 12-5 to 12-7 (PDF 65–67)
 - Intensity: none for BLDU, BLSA, BLSN; "Only moderate or heavy intensity shall be ascribed to
   sandstorm (SS) and duststorm (DS)" (12.6.8.a(1)).
 - VC may be coded with PO, BLDU, BLSA, SS, DS (among others), without intensity (12.6.8.a(2)).
-- DR = raised to less than six feet; BL = six feet or more; both only with DU, SA, SN (12.6.8.b(2)).
-- Codes: DU widespread dust, SA sand, HZ haze (12.6.8.d(1)); PO dust/sand whirls, SS sandstorm,
-  DS duststorm (12.6.8.e(1)).
+- DR = raised to less than six feet; BL = six feet or more; both only with DU, SA, SN (12.6.8.b).
+- Codes: DU widespread dust, SA sand, HZ haze; PO dust/sand whirls, SS sandstorm, DS duststorm.
 
-Definitions, paragraphs 8.3.2–8.3.3, p. 8-2 (PDF 40): widespread dust is raised or suspended by
-the wind "at or far away from the station"; haze is extremely small dry particles giving the air
-an opalescent appearance (not dust-specific); a duststorm is strong winds and dust-filled air over
-an extensive area. No visibility threshold is given for DS/SS in this edition.
+Definitions, paragraphs 8.3.2–8.3.3 (PDF 39–40): widespread dust is raised or suspended by the
+wind and may have occurred at or far away from the station; haze is extremely small dry particles
+giving the air an opalescent appearance (not dust-specific); a duststorm is strong winds and
+dust-filled air over an extensive area. The glossary (Appendix A, PDF 80) defines blowing dust and
+blowing sand as reducing visibility to less than 7 statute miles.
 
-Automation, 12.6.4 (PDF 62) and the glossary (PDF 83):
-- "The report modifier, AUTO, identifies the METAR/SPECI as a fully automated report with no human
-  intervention or oversight." A corrected report carries COR *in place of* AUTO.
-- An *augmented* report is prepared by the automated system "with certified observers signed on to
-  the system to add information to the report"; it has no AUTO.
-- AO1/AO2/AO3/AO4 in the remarks give the automated station type and appear in all reports from
-  automated stations, augmented or not (12.7.1(c), PDF 70). So `AO2` does not mean "no observer";
-  `AUTO` does.
+Automation (FCM-H1-2005):
+- 12.6.4, p. 12-2 (PDF 60): "The report modifier, AUTO, identifies the METAR/SPECI as a fully
+  automated report with no human intervention or oversight." A corrected report carries COR in
+  place of AUTO.
+- Glossary (PDF 80): an *augmented report* is prepared by the automated system with certified
+  observers signed on to add information; it has no AUTO.
+- 12.7.1.c, p. 12-9 (PDF 67): AO1 or AO2 "shall be coded in all METAR/SPECI from automated
+  stations" (AO1 without, AO2 with a precipitation discriminator), augmented or not. So `AO2`
+  does not mean "no observer"; `AUTO` does.
+
+FCM-H1-1995 (PDF 56) has the same rules on the body versus Remarks, the visibility condition for
+obscurations, and SS/DS intensity. Its text layer is damaged on these pages (a shifted font
+encoding), so the "7" and the AUTO definition cannot be read from it by machine; quotes above are
+from 2005. The 2019 edition (FCM-H1-2019, published) would cover recent years; not yet obtained.
 
 What this means for DCDR:
 - US METAR reports dust in the body only at visibility < 7 statute miles (~11 km); distant dust
