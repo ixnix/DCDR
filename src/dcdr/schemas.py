@@ -33,7 +33,9 @@ SILVER_SCHEMA = pa.DataFrameSchema(
         "has_pw": pa.Column(pl.Boolean),  # weather observed: a code reported, or iX "nothing"
         "pw_status": pa.Column(
             pl.String,
-            pa.Check.isin(["reported", "nil_significant", "nil_inferred", "not_observed"]),
+            pa.Check.isin(
+                ["reported", "nil_significant", "nil_inferred", "nil_metar", "not_observed"]
+            ),
         ),
         "wsd": pa.Column(pl.Float64, nullable=True),  # wind speed, m/s (null = missing)
         "vis_capped": pa.Column(pl.Float64, nullable=True),  # visibility, m, capped

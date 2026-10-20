@@ -64,6 +64,15 @@ PRODUCTS = [
             # Inferred-nil slots are a subset of observed slots; explicit validity implies validity.
             "inferred_le_pw": "SELECT count(*) FROM daily WHERE n_slots_nil_inferred > n_slots_pw",
             "explicit_implies_valid": "SELECT count(*) FROM daily WHERE valid_day_explicit AND NOT valid_day",
+            # METAR slots and implied-nil METAR slots are subsets of all / observed slots.
+            "metar_le_slots": "SELECT count(*) FROM daily WHERE n_slots_metar > n_slots",
+            "nil_metar_le_pw": "SELECT count(*) FROM daily WHERE n_slots_nil_metar > n_slots_pw",
+            # dust at <= 5 km is dust; slots judged for it are a subset of observed slots.
+            "vis5_implies_dusty": "SELECT count(*) FROM daily WHERE dusty_day_vis5 AND NOT dusty_day_synoptic",
+            "pw_vis5_le_pw": "SELECT count(*) FROM daily WHERE n_slots_pw_vis5 > n_slots_pw",
+            "valid_vis5_consistent": (
+                "SELECT count(*) FROM daily WHERE valid_day_vis5 <> (n_slots_pw_vis5 >= getvariable('min_slots'))"
+            ),
             # valid_day must follow its definition exactly.
             "valid_day_consistent": (
                 "SELECT count(*) FROM daily WHERE valid_day <> (n_slots_pw >= getvariable('min_slots'))"
@@ -137,6 +146,8 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     con.read_parquet([_sql_path(p) for p in silver_paths], union_by_name=True).create_view("silver")
     # Make the valid-day threshold available to the SQL as getvariable('min_slots').
     con.execute(f"SET VARIABLE min_slots = {int(settings.products.min_slots_per_day)}")
+    # ... and the visibility limit of dusty_day_vis5 as getvariable('vis5_max_m').
+    con.execute(f"SET VARIABLE vis5_max_m = {float(settings.products.vis5_max_m)}")
     try:
         # Record which silver this gold version was built from (lineage).
         lineage = {"silver_method_version": expected[0], "silver_config_hash": expected[1]}

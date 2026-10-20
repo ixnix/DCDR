@@ -5,9 +5,9 @@ station_id,name,country,lat,lon,reason
 16597099999,LUQA,MT,35.857,14.478,Saharan dust downwind (central Mediterranean)
 47110099999,GIMPO (SEOUL),KS,37.558,126.791,Asian dust downwind (Korea)
 94767099999,SYDNEY INTL,AS,-33.946,151.177,Australian dust downwind
-72278023183,PHOENIX SKY HARBOR INTL,US,33.428,-112.004,US Southwest; automated METAR (no SYNOP)
-72270023044,EL PASO INTL,US,31.812,-106.377,US Southwest; automated METAR (no SYNOP)
-72386023169,LAS VEGAS (HARRY REID INTL),US,36.072,-115.163,Arid but less dusty; automated METAR (no SYNOP)
+72278023183,PHOENIX SKY HARBOR INTL,US,33.428,-112.004,US Southwest; ASOS METAR with observer (AO2, no AUTO) plus SYNOP 4-8 a day
+72270023044,EL PASO INTL,US,31.812,-106.377,US Southwest; ASOS METAR with observer (AO2, no AUTO) plus SYNOP 4-8 a day
+72386023169,LAS VEGAS (HARRY REID INTL),US,36.072,-115.163,Arid but less dusty; ASOS METAR with observer (AO2, no AUTO) plus SYNOP 4-8 a day
 03962099999,SHANNON,EI,52.702,-8.925,Clean maritime control (essentially dust-free)
 58926099999,ZHANG PING,CH,25.300,117.400,Southern China clean control: never reported dust (flagDU False) with present weather in every SYNOP report
 47031199999,MEILAN (HAIKOU),CH,19.935,110.459,Southern China tropical control: never reported dust (flagDU False); METAR since 2004

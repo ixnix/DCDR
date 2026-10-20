@@ -1,6 +1,7 @@
 -- Daily station product on the local mean solar time (LMST) day.
 -- Definitions: docs/superpowers/specs/2026-10-15-dcdr-pilot-design.md section 7.3.2.
--- Inputs: view `silver`; variable `min_slots` (valid-day threshold).
+-- Inputs: view `silver`; variables `min_slots` (valid-day threshold) and `vis5_max_m` (dust at
+-- or below this visibility counts for dusty_day_vis5).
 --
 -- Output: one row per station per LMST day (gold table `daily`).
 -- Run by aggregate.build_gold, which creates the `silver` view over all silver files and sets
@@ -22,6 +23,10 @@ WITH sel AS (
             ['suspended', 'blowing', 'whirls', 'storm', 'storm_severe', 'storm_thunder', 'dust_haze'],
             dust_class_final
         ) AS is_dusty,
+        -- Dust that reduced visibility to <= 5 km (dusty_day_vis5). A dusty report whose visibility
+        -- is unknown cannot be judged for this measure: vis5_unknown removes its slot from it.
+        is_dusty AND coalesce(use_vis, false) AND vis_raw <= getvariable('vis5_max_m') AS is_dusty_vis5,
+        is_dusty AND NOT coalesce(use_vis, false) AS vis5_unknown,
         -- DUP6: dust uplift potential with a 6 m/s threshold, U^3 (1 + Ut/U)(1 - Ut^2/U^2),
         -- a proxy for how strongly the wind can lift dust (0 at or below 6 m/s; null if no wind).
         CASE
@@ -41,7 +46,15 @@ sel_daily AS (
         count(*) FILTER (WHERE has_pw) AS n_slots_pw,  -- slots with a weather observation
         -- of those, "nothing significant" inferred by rule V3 (no code, no iX, visibility)
         count(*) FILTER (WHERE pw_status = 'nil_inferred') AS n_slots_nil_inferred,
+        -- of those, METAR with no weather group at > 5 km ("nothing significant, implied")
+        count(*) FILTER (WHERE pw_status = 'nil_metar') AS n_slots_nil_metar,
+        -- slots filled by a METAR or SPECI (only where no SYNOP was available): where these are
+        -- many, dusty_day_synoptic can miss light dust that METAR does not code above 5 km
+        count(*) FILTER (WHERE report_type IN ('FM-15', 'FM-16')) AS n_slots_metar,
         bool_or(is_dusty) AS dusty_day_synoptic,  -- the PRIMARY dusty-day definition
+        -- dust at <= 5 km visibility: caught alike by SYNOP and METAR (comparable measure)
+        coalesce(bool_or(is_dusty_vis5), false) AS dusty_day_vis5,
+        count(*) FILTER (WHERE has_pw AND NOT vis5_unknown) AS n_slots_pw_vis5,
         count(*) FILTER (WHERE dust_class_final = 'suspended') AS n_dust_slots_suspended,
         count(*) FILTER (WHERE dust_class_final = 'blowing') AS n_dust_slots_blowing,
         count(*) FILTER (WHERE dust_class_final = 'whirls') AS n_dust_slots_whirls,
@@ -80,7 +93,9 @@ all_daily AS (
             dust_class_final
         )) AS dusty_day_any,
         max(gust) FILTER (WHERE use_gust) AS gust_max,
-        bool_or(flag_past) AS past_weather_dust  -- past-weather codes (AY/AZ) resolved as sand
+        bool_or(flag_past) AS past_weather_dust,  -- past-weather codes (AY/AZ) resolved as sand
+        -- dust in the vicinity (METAR "VC", SYNOP MV codes), not at the station: a separate flag
+        bool_or(flag_vicinity) AS vicinity_dust_day
     FROM silver
     WHERE NOT is_excluded_type
     GROUP BY station_id, lmst_date
@@ -114,13 +129,20 @@ joined AS (
         -- Valid day: enough slots WITH a weather observation to judge whether it was dusty.
         coalesce(s.n_slots_pw, 0) >= getvariable('min_slots') AS valid_day,
         coalesce(s.n_slots_nil_inferred, 0) AS n_slots_nil_inferred,
-        -- validity from explicit observations only (codes and iX), without inferred slots
-        coalesce(s.n_slots_pw, 0) - coalesce(s.n_slots_nil_inferred, 0) >= getvariable('min_slots')
-            AS valid_day_explicit,
+        coalesce(s.n_slots_nil_metar, 0) AS n_slots_nil_metar,
+        coalesce(s.n_slots_metar, 0) AS n_slots_metar,
+        -- validity from explicit observations only (codes, iX, CAVOK), without inferred or
+        -- implied "nothing significant" slots
+        coalesce(s.n_slots_pw, 0) - coalesce(s.n_slots_nil_inferred, 0)
+            - coalesce(s.n_slots_nil_metar, 0) >= getvariable('min_slots') AS valid_day_explicit,
         coalesce(s.dusty_day_synoptic, false) AS dusty_day_synoptic,
+        coalesce(s.n_slots_pw_vis5, 0) AS n_slots_pw_vis5,
+        coalesce(s.n_slots_pw_vis5, 0) >= getvariable('min_slots') AS valid_day_vis5,
+        coalesce(s.dusty_day_vis5, false) AS dusty_day_vis5,
         coalesce(a.dusty_day_any, false) AS dusty_day_any,
         coalesce(a.past_weather_dust, false) AS past_weather_dust,
         coalesce(m.daily_summary_dust, false) AS daily_summary_dust,
+        coalesce(a.vicinity_dust_day, false) AS vicinity_dust_day,
         -- The most sensitive definition: dust from any report, past weather or daily summary.
         coalesce(a.dusty_day_any, false) OR coalesce(a.past_weather_dust, false)
             OR coalesce(m.daily_summary_dust, false) AS dusty_day_any_source,

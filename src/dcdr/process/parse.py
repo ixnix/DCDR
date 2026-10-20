@@ -34,6 +34,35 @@ AT_N, AX_N, AZ_N = 8, 6, 2
 PARSE_BITS = {"WND": 1, "VIS": 2, "TMP": 4, "DEW": 8, "SLP": 16}
 # Parts of an AU (automated present weather, METAR-style) group, in order.
 _AU_PARTS = ("int", "desc", "prec", "obsc", "other", "comb", "qc")
+# A METAR present-weather group (WMO code table 4678): optional intensity or VC, then two-letter
+# descriptors and phenomena. Deliberately broad (any order, several descriptors) so that
+# malformed groups such as "-TSBLSA" still count as weather: missing a group would wrongly turn
+# the report into "no weather group". Recent weather ("RESS") does not match ("RE" is not a code).
+METAR_WX_TOKEN = (
+    r"^(?:[+-]|VC)?(?:MI|BC|PR|DR|BL|SH|TS|FZ|DZ|RA|SN|SG|PL|GR|GS|UP|IC|BR|FG|FU|VA|DU|SA|HZ"
+    r"|PY|PO|SQ|FC|SS|DS)+$"
+)
+
+
+def metar_tokens(rem: pl.Expr) -> pl.Expr:
+    """The observed part of a METAR/SPECI message as a list of groups (null if REM is not one).
+
+    ISD keeps the message in REM as "MET" + 3-digit length + text, e.g.
+    "MET072METAR YBMA 082130Z AUTO 00000KT 9999 // SCT085 15/09 Q1017 RF00/0/000/0=";
+    US messages have a local date and time first: "MET10012/31/19 17:51:03 METAR KELP ...".
+    Dropped: the station identifier (first group), the remarks (from "RMK"), and the trend
+    forecast (from "NOSIG", "BECMG" or "TEMPO"), which are not observations of present weather.
+    """
+    body = (
+        rem.str.extract(
+            r"^MET\d{3}(?:\d{2}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} )?(?:METAR|SPECI) (?:COR )?(.*)$", 1
+        )
+        .str.replace(r"=\s*$", "")
+        .str.replace(r" RMK( .*)?$", "")
+        .str.replace(r" (?:NOSIG|BECMG|TEMPO)( .*)?$", "")
+        .str.strip_chars()
+    )
+    return body.str.split(" ").list.slice(1)
 
 
 def _raw(df: pl.DataFrame, col: str) -> pl.Expr:
@@ -72,6 +101,7 @@ def parse_reports(raw: pl.DataFrame) -> pl.DataFrame:
     which lets Polars compute them in parallel.
     """
     d = raw
+    tokens = metar_tokens(_raw(d, "REM"))  # observed METAR groups (null for non-METAR remarks)
     # Text parts of the core fields, kept as variables because both _num and _malformed use them.
     wnd_spd, vis, tmp, dew, slp = (
         _part(d, "WND", 3),
@@ -98,6 +128,20 @@ def parse_reports(raw: pl.DataFrame) -> pl.DataFrame:
         # E.g. "SYN08040829 12960 ..." -> iR=1, iX=2. Null for METAR remarks, for messages NOAA
         # received only as BUFR ("SYN004BUFR"), and when the file has no REM column.
         _raw(d, "REM").str.extract(r"^SYN\d{3}\d{5} [0-4/]([1-7])", 1).alias("syn_ix"),
+        # METAR/SPECI text (null when REM holds no METAR message): AUTO = fully automated, no
+        # human involvement (WMO FM 15.4); metar_wx = what the present-weather part says:
+        # "missing" ("//", not observable, FM 15.8.19), "group" (weather groups), "cavok"
+        # (CAVOK, FM 15.10), or "none" (no weather group: nothing reportable, FM 15.8.2).
+        tokens.list.contains("AUTO").alias("metar_auto"),
+        pl.when(tokens.list.contains("//"))
+        .then(pl.lit("missing"))
+        .when(tokens.list.eval(pl.element().str.contains(METAR_WX_TOKEN)).list.any())
+        .then(pl.lit("group"))
+        .when(tokens.list.contains("CAVOK"))
+        .then(pl.lit("cavok"))
+        .when(tokens.is_not_null())
+        .then(pl.lit("none"))
+        .alias("metar_wx"),
         # --- WND: direction, dir QC, type, speed (x10), speed QC ---
         _num(_part(d, "WND", 0), ("999",)).alias("wind_dir"),
         _part(d, "WND", 1).alias("wind_dir_qc"),

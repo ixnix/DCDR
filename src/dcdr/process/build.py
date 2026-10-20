@@ -65,6 +65,8 @@ CORE_COLUMNS = [
     "has_pw",
     "pw_status",
     "syn_ix",
+    "metar_auto",
+    "metar_wx",
     "dust_rank",
     "dust_class_rule",
     "dust_rule_id",

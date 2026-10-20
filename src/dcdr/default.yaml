@@ -48,6 +48,14 @@ classify:
   infer_nil_report_types: [FM-12]
   nil_guard_max_share: 0.02
   nil_guard_min_reports: 50
+  # METAR/SPECI (validated in notebooks/03; user decisions 2026-10-20). A METAR fills a slot only
+  # when no SYNOP does. AUTO reports and "//" are not observed (machines cannot detect dust);
+  # CAVOK is "nothing significant"; a non-AUTO METAR without a weather group is "nothing
+  # significant, implied" (pw_status nil_metar) only if visibility > 5 km: at <= 5 km WMO
+  # requires DU/SA/HZ/BR to be coded, so an empty group there means something went unnamed.
+  metar_rules: true
+  metar_report_types: [FM-15, FM-16]
+  metar_nil_min_vis_m: 5000
 
 sampling:
   window_min: 30  # a report within +-30 min of a synoptic hour (00, 03, ..., 21 UTC) is a candidate
@@ -59,6 +67,9 @@ sampling:
 
 products:
   min_slots_per_day: 4  # a day is valid with >= 4 of 8 slots carrying a weather observation
+  # dusty_day_vis5: dust that reduced visibility to <= 5 km (the METAR limit, WMO FM 15.8.12),
+  # caught equally by SYNOP and METAR; used to compare stations and years with mixed reports.
+  vis5_max_m: 5000
   gold_keep_versions: 3  # old gold versions kept on disk (for rollback)
 
 stations:
