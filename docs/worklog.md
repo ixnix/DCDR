@@ -15,9 +15,8 @@ open to review. Details of the current method: [science.md](science.md); of the 
 - [ ] Investigate stations with no dust in 2020-2024 despite high duISD ranks (Ashchysai, Shakawe,
       Good Hope): change of observing practice or real decline?
 - [ ] BUFR-only SYNOP (17 %, no iX): any source for the "omitted" information?
-- [ ] Decide on inferred-nil levels + validation experiment when iX is missing (proposal 2026-10-20).
-- [ ] Check iX availability (raw SYNOP text in REM) by decade and region, e.g. In Salah and
-      Dongola for 1995, 2005, 2015.
+- [ ] Decide whether to adopt rule V3 (`nil_inferred`) for reports without iX (validated 2026-10-20).
+- [ ] Check visibility reporting in older decades (V3 assumes it is stable).
 - [ ] Review humidity screen at humid dust sites and the `has_pw` sampling tie-break.
 - [ ] Plan 2: monthly/climatology gold products, station catalog, coverage, Uth, code-06 diagnostic.
 - [ ] Set up a GitHub remote; publish documentation (e.g. MkDocs) when stable.
@@ -26,6 +25,15 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## 2026-10-20
 
+- **Data:** pilot_100 ingested and processed for 2015-2024 (931 downloads, 940 silver station-years,
+  0 failures, 5.5 min), plus bronze for 1984-1985, 1995, 2005 (339 files).
+- **Finding: iX only exists since ~2015.** Raw SYNOP text with iX: 78-94 % of SYNOPs in 2015-2024,
+  0 % in 1985, 1995, 2005.
+- **Validation experiment** (user request; `notebooks/02_validate_inferred_nil.ipynb`): hiding iX,
+  "visibility reported" separates "nothing significant" (84.7 % have visibility) from "not
+  observed" (0.4 %). Best rule V3 (visibility reported + station guard): precision 0.9998, recall
+  0.84; dusty-days/yr median error 46.5 → 0. Code-habit rules recovered only ~20 %. Awaiting user
+  decision on adopting V3 (`nil_inferred`).
 - **Finding: reporting habit is detectable without iX.** Stations that leave out the weather group
   when nothing happens (iX 2 in 72-84 % of iX-bearing SYNOPs: Dammam, Zabol, Nasiriya, La Rioja,
   Catamarca; Nokkundi 53 %) almost never report codes 00-03 (0-7 %); stations that always include
