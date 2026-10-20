@@ -14,15 +14,26 @@ When a report carries NO usable weather field, the SYNOP iX indicator (WMO code 
 from the raw message in REM) decides (user decision 2026-10-19, refining 2026-10-17):
     iX 2 or 5   group omitted, no significant phenomenon -> observed: class "none"
     iX 3 or 6   group omitted, no observation            -> not observed: class "unknown"
-    no SYNOP text (METAR, BUFR-only), or no iX: a SYNOP with visibility reported at a station that
+    no SYNOP text (BUFR-only) or no iX: a SYNOP with visibility reported at a station that
                 passes the guard -> inferred nil: class "none" (pw_status "nil_inferred")
     otherwise                                              -> not observed: class "unknown"
 A missing weather field is never ASSUMED to mean "no significant weather"; only an explicit
 iX 2/5 says so. iX 7 also selects the code table: automatic station, WMO tables 4680/4531.
 
+METAR/SPECI (FM-15/16) follow their own code rules, read from the raw message (user decisions
+2026-10-20, validated in notebooks/03; full table in docs/science.md 5.2):
+    AUTO (fully automated) or "//"    -> not observed; their codes are not used (machines do not
+                                         detect dust; ASOS infers HZ from visibility and humidity)
+    CAVOK                             -> observed, nothing significant ("nil_significant")
+    no weather group, visibility > 5 km -> nothing significant, implied ("nil_metar")
+    no weather group, visibility <= 5 km or missing -> not observed (something went unnamed)
+    a weather group ISD did not decode -> not observed
+A METAR only fills a synoptic slot when no SYNOP does (sampling priority).
+
 Columns added (process pipeline steps 4-5 of 6)
 ----------------------------------------------
-classify_reports:  has_pw, pw_status ("reported" / "nil_significant" / "nil_inferred" / "not_observed"), dust_rank, dust_class_rule, dust_rule_id, pw_evidence,
+classify_reports:  has_pw, pw_status ("reported" / "nil_significant" / "nil_inferred" / "nil_metar" /
+                   "not_observed"), dust_rank, dust_class_rule, dust_rule_id, pw_evidence,
                    flag_du / flag_susp / flag_bd / flag_ds (convenience flags from the rank),
                    flag_vicinity, flag_past, flag_ambiguous, flag_daily_dust (extra evidence that
                    does NOT change the class)
@@ -261,8 +272,28 @@ def classify_reports(
         "AW": pl.any_horizontal(list(aw_ok.values())),
     }
     fields = list(cfg.fields)  # which families count (config classify.fields)
+    # METAR/SPECI rules (see module docstring). `metar_unusable`: an AUTO report or one whose
+    # weather is "//" -- its codes are not used at all, so it can be neither dust nor haze.
+    if cfg.metar_rules:
+        is_metar = (
+            pl.col("report_type").is_in(cfg.metar_report_types).fill_null(False)
+            & pl.col("metar_wx").is_not_null()
+        )
+        wx = pl.col("metar_wx")
+        auto = is_metar & pl.col("metar_auto").fill_null(False)
+        metar_unusable = auto | (is_metar & (wx == "missing"))
+        metar_cavok = is_metar & ~auto & (wx == "cavok")
+        metar_nil = (
+            is_metar
+            & ~auto
+            & (wx == "none")
+            & pl.col("use_vis").fill_null(False)
+            & (pl.col("vis_raw") > cfg.metar_nil_min_vis_m).fill_null(False)
+        )
+    else:
+        metar_unusable = metar_cavok = metar_nil = pl.lit(False)
     # reported: the report carries at least one usable present-weather code.
-    reported = pl.any_horizontal([fam_has[f] for f in fields]).fill_null(False)
+    reported = pl.any_horizontal([fam_has[f] for f in fields]).fill_null(False) & ~metar_unusable
     # nil_significant: a SYNOP whose iX says the weather group was omitted because NOTHING
     # SIGNIFICANT happened (iX 2 = manned, 5 = automatic; WMO code table 1860). That is an
     # observation of "no significant weather", so no dust. iX 3/6 (omitted: no observation) and
@@ -281,8 +312,12 @@ def classify_reports(
         if cfg.infer_nil and nil_guard
         else pl.lit(False)
     )
+    # METAR: CAVOK is an explicit "nothing significant" (WMO FM 15.10), like iX 2/5. A missing
+    # group is only implied (FM 15.8.2) and kept apart as "nil_metar".
+    nil = nil | (metar_cavok & ~reported)
+    metar_nil = metar_nil & ~reported
     # has_pw: weather was observed at this report (a code, an explicit or an inferred "nothing").
-    has_pw = reported | nil | inferred
+    has_pw = reported | nil | inferred | metar_nil
     pw_status = (
         pl.when(reported)
         .then(pl.lit("reported"))
@@ -290,9 +325,17 @@ def classify_reports(
         .then(pl.lit("nil_significant"))
         .when(inferred)
         .then(pl.lit("nil_inferred"))
+        .when(metar_nil)
+        .then(pl.lit("nil_metar"))
         .otherwise(pl.lit("not_observed"))
     )
-    rank = pl.max_horizontal([fam_rank[f] for f in fields]).fill_null(0).cast(pl.Int8)
+    rank = (
+        pl.when(metar_unusable)
+        .then(pl.lit(0))
+        .otherwise(pl.max_horizontal([fam_rank[f] for f in fields]))
+        .fill_null(0)
+        .cast(pl.Int8)
+    )
     cls = rank.replace_strict(CLASS_BY_RANK, return_dtype=pl.String)
 
     # dust_rule_id: which family produced the winning class, e.g. "MW:blowing" (null if none).
@@ -336,10 +379,13 @@ def classify_reports(
 
     # Extra evidence flags. These do NOT change the report's class; gold uses them separately.
     # Dust near (not at) the station: AU with "VC", or a dust-related MV code.
-    vicinity = pl.any_horizontal(
-        list(au_vic.values())
-        + [ok & pl.col(f"mv{n}_code").is_in(MV_VICINITY) for n, ok in mv_ok.items()]
-    ).fill_null(False)
+    vicinity = (
+        pl.any_horizontal(
+            list(au_vic.values())
+            + [ok & pl.col(f"mv{n}_code").is_in(MV_VICINITY) for n, ok in mv_ok.items()]
+        ).fill_null(False)
+        & ~metar_unusable
+    )
     # Past weather (AY 3, AZ 2) can be snow or sand: resolved by temperature like AW 27-29.
     past_codes = [ok & pl.col(f"ay{n}_code").is_in(AY_DUST_OR_SNOW) for n, ok in ay_ok.items()] + [
         ok & pl.col(f"az{n}_code").is_in(AZ_BLOWING) for n, ok in az_ok.items()

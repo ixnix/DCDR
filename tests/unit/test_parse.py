@@ -113,3 +113,84 @@ def test_synop_ix_is_read_from_the_raw_message(rem: str, expected: str | None) -
 
 def test_synop_ix_is_null_without_remarks() -> None:
     assert _one()["syn_ix"] is None
+
+
+# --- METAR/SPECI text (user decision 2026-10-20; rules in docs/science.md 5.2) ---------------
+# Only the observed part counts: remarks (RMK ...), trend forecasts (NOSIG, BECMG, TEMPO ...) and
+# recent weather (RE..) are not present weather. Strings follow real ISD REM values.
+@pytest.mark.parametrize(
+    "rem,auto,wx",
+    [
+        (
+            "MET072METAR YBMA 082130Z AUTO 00000KT 9999 // SCT085 15/09 Q1017 RF00/0/000/0=",
+            True,
+            "missing",
+        ),  # automatic, present weather not observable (WMO 15.8.19)
+        ("MET060METAR YBDV 170900Z AUTO 12006KT //// // ////// 16/M02 Q1018=", True, "missing"),
+        ("MET069METAR YPLM 270800Z AUTO 09009KT 9999 NCD 39/12 Q1010=", True, "none"),
+        ("MET073SPECI YPLM 070800Z AUTO 24019KT 0000 DU BKN045 26/12 Q1010=", True, "group"),
+        (
+            "MET072METAR LMML 211215Z 35006KT 270V050 9999 FEW012 SCT020 23/15 Q1007 NOSIG=",
+            False,
+            "none",
+        ),
+        (
+            "MET080METAR UATT 291630Z 13002MPS CAVOK 00/M04 Q1035 R13/0///60 NOSIG RMK QFE757/1009=",
+            False,
+            "cavok",
+        ),
+        (
+            "MET070METAR KELP 011851Z 12012G27KT 3SM BLDU CLR 30/02 A3027 RMK AO2 SLP176",
+            False,
+            "group",
+        ),
+        (
+            "MET060METAR KLAS 121256Z 22016G25KT 10SM VCBLDU FEW250 17/M08 A2967 RMK AO2",
+            False,
+            "group",
+        ),  # dust in the vicinity is still a weather group
+        (
+            "MET070METAR DAUI 240235Z 05025KT 1000 -TSBLSA FEW040CB 25/07 Q1010",
+            False,
+            "group",
+        ),  # malformed (two descriptors) but clearly weather
+        (
+            "MET060METAR OIZB 010300Z 34012KT 9999 NSC 30/10 Q1010 RESS",
+            False,
+            "none",
+        ),  # recent weather (past hour) is not present weather
+        (
+            "MET060METAR OIZB 010300Z 34012KT 9999 NSC 30/10 Q1010 TEMPO 3000 DU",
+            False,
+            "none",
+        ),  # a trend forecast is not an observation
+        (
+            "MET080METAR KELP 011851Z 25030G42KT 10SM CLR 27/M07 A2978 RMK AO2 BLDU ALQDS",
+            False,
+            "none",
+        ),  # dust only in the remarks: not in the body
+        ("MET040METAR COR OIZB 010300Z 34012KT 9999 FU 30/10 Q1010", False, "group"),
+        (
+            "MET10012/31/19 17:51:03 METAR KELP 010051Z 02009KT 10SM FEW220 09/M08 A3002 RMK AO2",
+            False,
+            "none",
+        ),  # US format: local date and time before the message
+        (
+            "MET15801/02/20 07:58:02 SPECI KELP 021458Z 27017G28KT 10SM -RA FEW012 A2970 RMK AO2",
+            False,
+            "group",
+        ),
+        ("SYN08040829 12960 03406 10062 21002=", None, None),  # SYNOP text
+        ("SYN004BUFR", None, None),
+    ],
+)
+def test_metar_text_is_read_from_the_raw_message(
+    rem: str, auto: bool | None, wx: str | None
+) -> None:
+    r = _one(REM=rem)
+    assert (r["metar_auto"], r["metar_wx"]) == (auto, wx)
+
+
+def test_metar_text_is_null_without_remarks() -> None:
+    r = _one()
+    assert (r["metar_auto"], r["metar_wx"]) == (None, None)

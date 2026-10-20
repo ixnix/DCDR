@@ -205,3 +205,66 @@ def test_daily_keeps_inferred_nil_slots_visible(settings: Settings) -> None:
     d = _daily(settings, [_silver(settings, rows, nil_guard=True)]).row(0, named=True)
     got = (d["n_slots_pw"], d["n_slots_nil_inferred"], d["valid_day"], d["valid_day_explicit"])
     assert got == (8, 8, True, False)
+
+
+# --- METAR slots, dust at <= 5 km, vicinity (user decisions 2026-10-20) ---------------------
+METAR_CLEAR = "MET000METAR KELP 010000Z 25010KT 10SM CLR 30/02 A3000"
+
+
+def test_metar_only_day_is_valid_and_counted_apart(settings: Settings) -> None:
+    """A METAR with no weather group at > 5 km fills a slot as "nothing significant, implied":
+    the day is valid, but not valid from explicit observations, and its METAR slots are counted."""
+    rows = _slots("2024-04-01", REPORT_TYPE="FM-15", REM=METAR_CLEAR, VIS="016093,1,N,1")
+    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
+    got = (
+        d["n_slots_pw"],
+        d["n_slots_nil_metar"],
+        d["n_slots_metar"],
+        d["valid_day"],
+        d["valid_day_explicit"],
+        d["valid_day_vis5"],
+        d["dusty_day_synoptic"],
+    )
+    assert got == (8, 8, 8, True, False, True, False)
+
+
+@pytest.mark.parametrize(
+    "dust_vis,dusty,dusty_vis5,n_pw_vis5",
+    [
+        ("008000,1,N,1", True, False, 8),  # dust at 8 km: dusty, but not dust at <= 5 km
+        ("003000,1,N,1", True, True, 8),  # dust at 3 km: both
+        ("005000,1,N,1", True, True, 8),  # 5 000 m is included ("5 000 metres or less")
+        ("999999,9,9,9", True, False, 7),  # dust, visibility unknown: slot left out of vis5
+    ],
+)
+def test_dusty_day_vis5_counts_dust_with_visibility_at_or_below_5km(
+    settings: Settings, dust_vis: str, dusty: bool, dusty_vis5: bool, n_pw_vis5: int
+) -> None:
+    rows = [
+        isd_row(
+            f"2024-05-01T{h:02d}:00:00",
+            **LON0,
+            MW1="07,1" if h == 0 else "02,1",
+            VIS=dust_vis if h == 0 else "016000,1,N,1",
+        )
+        for h in range(0, 24, 3)
+    ]
+    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
+    got = (d["dusty_day_synoptic"], d["dusty_day_vis5"], d["n_slots_pw_vis5"], d["valid_day_vis5"])
+    assert got == (dusty, dusty_vis5, n_pw_vis5, True)
+
+
+def test_vicinity_dust_day_is_a_separate_flag(settings: Settings) -> None:
+    rows = _slots(
+        "2024-04-02",
+        REPORT_TYPE="FM-15",
+        REM="MET000METAR KLAS 020000Z 22016KT 10SM VCBLDU FEW250 17/M08 A2967",
+        AU1="4,5,00,5,0,1,1",  # VC (in the vicinity) BL DU
+        VIS="016093,1,N,1",
+    )
+    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
+    assert (d["vicinity_dust_day"], d["dusty_day_synoptic"], d["dusty_day_any"]) == (
+        True,
+        False,
+        False,
+    )

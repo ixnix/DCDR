@@ -258,3 +258,104 @@ def test_inference_can_be_switched_off(settings: Settings) -> None:
         update={"classify": settings.classify.model_copy(update={"infer_nil": False})}
     )
     assert _cls_g(off, True)["pw_status"] == "not_observed"
+
+
+# --- METAR/SPECI present weather (user decisions 2026-10-20; docs/science.md 5.2) -------------
+# A METAR only fills a slot when no SYNOP does (sampling priority). Rules per report:
+#   AUTO (any content) or "//"          -> not observed (machines cannot detect dust)
+#   weather group, decoded by ISD       -> reported (dust at any visibility; visibility = strength)
+#   weather group ISD could not decode  -> not observed
+#   CAVOK                               -> nothing significant (explicit, WMO 15.10)
+#   no group, visibility > 5 km         -> nothing significant, implied (pw_status "nil_metar")
+#   no group, visibility <= 5 km/missing-> not observed (something reduced visibility, unnamed)
+def _metar(body: str, report_type: str = "FM-15", **fields: str) -> dict:
+    return _cls(load_settings(), REPORT_TYPE=report_type, REM=f"MET000METAR {body}", **fields)
+
+
+NOGROUP = "OIZB 010300Z 34012KT 9999 NSC 30/10 Q1010"
+SUSPENDED_AU = "0,0,00,5,0,1,1"  # AU: obscuration DU (widespread dust)
+HAZE_AU = "0,0,00,7,0,1,1"  # AU: obscuration HZ
+
+
+@pytest.mark.parametrize(
+    "vis,status",
+    [
+        ("010000,1,N,1", "nil_metar"),
+        ("006000,1,N,1", "nil_metar"),
+        ("005000,1,N,1", "not_observed"),  # DU/HZ/BR would have had to be coded at <= 5 km
+        ("004000,1,N,1", "not_observed"),
+        ("999999,9,9,9", "not_observed"),  # visibility missing
+        ("010000,3,N,3", "not_observed"),  # visibility rejected by QC
+    ],
+)
+def test_metar_without_weather_group_depends_on_visibility(vis: str, status: str) -> None:
+    r = _metar(NOGROUP, VIS=vis)
+    assert (r["pw_status"], r["has_pw"]) == (status, status == "nil_metar")
+    assert r["dust_class_rule"] == ("none" if status == "nil_metar" else "unknown")
+
+
+def test_speci_follows_the_metar_rules() -> None:
+    assert _metar(NOGROUP, report_type="FM-16")["pw_status"] == "nil_metar"
+
+
+def test_cavok_is_explicit_nothing_significant() -> None:
+    r = _metar("OIZB 010300Z 34012KT CAVOK 30/10 Q1010", VIS="999999,9,9,9")
+    assert (r["pw_status"], r["dust_class_rule"]) == ("nil_significant", "none")
+
+
+def test_metar_with_slashes_is_not_observed() -> None:
+    r = _metar("YBMA 082130Z AUTO 00000KT 9999 // SCT085 15/09 Q1017")
+    assert (r["pw_status"], r["has_pw"]) == ("not_observed", False)
+
+
+@pytest.mark.parametrize("au", [SUSPENDED_AU, HAZE_AU])
+def test_auto_metar_codes_are_not_used(au: str) -> None:
+    """ASOS reports no dust and infers HZ from visibility and humidity (ASOS guide 3.11); AUTO
+    dust codes in the data are implausible (e.g. SA with visibility 9999)."""
+    r = _metar("ZWSH 021800Z AUTO 34005MPS 9999 SA 19/13 Q1016", AU1=au)
+    assert (r["pw_status"], r["dust_rank"], r["dust_class_rule"], r["flag_du"]) == (
+        "not_observed",
+        0,
+        "unknown",
+        False,
+    )
+
+
+def test_auto_metar_without_group_is_not_observed() -> None:
+    assert _metar("YPLM 270800Z AUTO 09009KT 9999 NCD 39/12 Q1010")["pw_status"] == "not_observed"
+
+
+def test_metar_dust_counts_at_any_visibility() -> None:
+    """User decision: the weather group says dust; visibility only tells its strength."""
+    r = _metar(
+        "KELP 011851Z 12012G27KT 6SM BLDU CLR 30/02 A3027", AU1="0,5,00,5,0,1,1", VIS="009656,1,N,1"
+    )
+    assert (r["pw_status"], r["dust_class_rule"]) == ("reported", "blowing")
+
+
+def test_metar_group_isd_could_not_decode_is_not_observed() -> None:
+    r = _metar("GAGO 031600Z 09034KT 9999 TSDU FEW030 44/13 Q1007")
+    assert (r["pw_status"], r["has_pw"]) == ("not_observed", False)
+
+
+def test_metar_haze_stays_haze_for_the_haze_rule() -> None:
+    r = _metar("OIZB 010300Z 34012KT 4000 HZ 30/10 Q1010", AU1=HAZE_AU, VIS="004000,1,N,1")
+    assert (r["pw_status"], r["dust_class_rule"]) == ("reported", "haze")
+
+
+def test_metar_rules_apply_only_to_metar_report_types() -> None:
+    r = _cls(load_settings(), REPORT_TYPE="FM-12", REM=f"MET000METAR {NOGROUP}")
+    assert r["pw_status"] == "not_observed"
+
+
+def test_metar_rules_can_be_switched_off() -> None:
+    s = load_settings()
+    off = s.model_copy(update={"classify": s.classify.model_copy(update={"metar_rules": False})})
+    no_group = _cls(off, REPORT_TYPE="FM-15", REM=f"MET000METAR {NOGROUP}")
+    auto = _cls(
+        off,
+        REPORT_TYPE="FM-15",
+        REM="MET000METAR ZWSH 021800Z AUTO 34005MPS 9999 SA",
+        AU1=SUSPENDED_AU,
+    )
+    assert (no_group["pw_status"], auto["dust_class_rule"]) == ("not_observed", "suspended")

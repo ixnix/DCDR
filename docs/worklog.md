@@ -7,7 +7,12 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## Open items
 
-- [ ] **Decision: METAR without a weather group** (notebook 03; options in the 2026-10-20 entry).
+- [ ] **Run the pipeline for method 1.4.0** (user): `dcdr process` rebuilds all silver (new method
+      version), then `dcdr aggregate`; compare `dusty_day_synoptic` with `dusty_day_vis5` and look
+      at `n_slots_metar` per station.
+- [ ] Validate US METARs against their SYNOPs (METAR at :51, SYNOP at :00: pair within minutes).
+- [ ] Decode dust in US remarks (`BLDU ALQDS`, `DSNT`, `VCBLDU`) as a "nearby/distant" flag.
+- [ ] Niamey: why its METARs miss dust at <= 5 km in 5.8 % of SYNOP dust cases.
 - [ ] FMH-1: replace the 2005 mirror copy (everyspec.com) with an ICAMS/NOAA copy if one appears.
 - [ ] Station selection: add a recent-data criterion (data and weather reports in ≥ 3 of the last
       5 years); replace Wadi Halfa, Abu Hamed, Papunya, Dongola, Rabbit Flat in pilot lists.
@@ -22,6 +27,40 @@ open to review. Details of the current method: [science.md](science.md); of the 
 ---
 
 ## 2026-10-20
+
+- **METAR rules implemented** (method **1.4.0**; tests first: 41 new, 215 pass). Full rule tables
+  for every report type: science.md 5.3. Decisions:
+  - *User decisions:* SYNOP is primary and METAR a supplement: a METAR fills a slot only when no
+    SYNOP does, and the SYNOP is the truth when both exist (already how sampling ranks). METAR
+    dust counts **at any visibility** (the group says dust; visibility tells its strength). `HZ`
+    is haze first, then the 24-hour haze rule. Vicinity dust (`VC`) stays out of the dust counts
+    and becomes the daily flag `vicinity_dust_day` (370 VC METARs in 3.18 M; would add 80 days at
+    Las Vegas, 33 at El Paso, 0 elsewhere). Gold adds `dusty_day_vis5` (dust with visibility
+    <= 5 km, caught alike by SYNOP and METAR; for comparing stations and years with different
+    report mixes; for SYNOP the 5 km limit is a derived threshold, table 4677 has none) and
+    `n_slots_metar`. AUTO and `//` are not observed; CAVOK and no group above 5 km are
+    "nothing significant".
+  - *Rulings:* AUTO METAR codes are not used at all (the 157 AUTO dust reports are implausible:
+    `SA` at 9 999 m at Kashi, `DU` at 0 m at Learmonth), so ASOS `HZ` cannot feed the haze rule. No
+    group at <= 5 km or with unknown visibility = not observed (an obscuration should have been
+    coded). CAVOK = `nil_significant` (explicit); no group > 5 km = new status `nil_metar`
+    (implied), excluded from `valid_day_explicit`. A group ISD did not decode = not observed.
+    Weather groups are detected broadly (any table-4678 letter pairs; e.g. `-TSBLSA`), so a
+    missed group can only give "not observed". Dusty slots with unknown visibility are left out
+    of `valid_day_vis5`.
+  - Code: `parse.py` (`metar_tokens`, `metar_auto`, `metar_wx`; US messages carry a local date and
+    time before `METAR`, found when checking El Paso), `classify.py` (status rules),
+    `sql/daily.sql` (`n_slots_nil_metar`, `n_slots_metar`, `dusty_day_vis5`, `n_slots_pw_vis5`,
+    `valid_day_vis5`, `vicinity_dust_day`), five new gold checks, settings
+    `classify.metar_rules`, `metar_report_types`, `metar_nil_min_vis_m`, `products.vis5_max_m`.
+  - Check on real bronze (in memory, nothing written): El Paso 2020 METARs 8 547 `nil_metar`, 230
+    reported; Zabol 2020 5 692 CAVOK, 1 676 `nil_metar`; Learmonth 2020 all AUTO METARs not observed.
+- **Correction: the US Southwest stations are not METAR-only.** Phoenix, El Paso and Las Vegas
+  send SYNOPs at :00 (El Paso 8 a day; Phoenix and Las Vegas 4 a day in 2016 and 2020, 8 in 2024)
+  besides METARs at :51. Notebook 03 found no same-minute pairs and called them METAR-only; fixed
+  in the notebook text, science.md, and the notes in `config/stations/contrast.csv`. METAR fills
+  about half of Phoenix's 2020 slots.
+- **Docs fix:** science.md 5.2 had been inserted after section 10 (39e741a); moved under section 5.
 
 - **Notebook 03: METAR present weather validated** (`notebooks/03_metar_present_weather.ipynb`;
   pilot_100 2015-2024, 3.18 M METAR/SPECI, 680 k paired with a SYNOP that observed the weather).

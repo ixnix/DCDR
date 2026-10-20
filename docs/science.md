@@ -5,7 +5,7 @@ dust, samples reports and aggregates them into daily records, and **why** each c
 Part 1 ([engineering.md](engineering.md)) covers the software; [worklog.md](worklog.md) records
 how and when each decision was made.
 
-> Living document. It describes the method **as implemented now** (method version **1.3.0**).
+> Living document. It describes the method **as implemented now** (method version **1.4.0**).
 > Planned steps are marked *planned*. Last updated: 2026-10-20.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`)
@@ -127,7 +127,7 @@ station number), WMO code table 1860:
 | **6** | automatic | **omitted: no observation** | **not observed** |
 | 7 | automatic | included, tables **4680/4531** | classify with table 4680 (section 6.3) |
 | none (SYNOP) | BUFR-only SYNOP, older years | | **inferred nil** if visibility is reported and the station passes the guard (5.1); else not observed |
-| none (other) | METAR, SPECI, no text | | not observed when no weather field |
+| none (other) | METAR, SPECI | | own rules: AUTO, `//`, CAVOK, no group by visibility (5.2, 5.3) |
 
 Official confirmation: WMO Codes Registry, BUFR table 0-20-003: entry 508 "No significant
 phenomenon to report, present and past weather omitted" (= iX 2/5) and 509 "No observation, data
@@ -136,8 +136,9 @@ not available, present and past weather omitted" (= iX 3/6).
 `syn_ix` is read from `REM`: `SYN` + 3-digit length + 5-digit WMO number + space + `iR iX h VV`.
 Example: `SYN08040829 12960 03406 …` → station 40829 (Zabol), iR 1, **iX 2**.
 
-Silver columns: `has_pw` (true if `reported`, `nil_significant` or `nil_inferred`), `pw_status`
-(`reported`, `nil_significant`, `nil_inferred`, `not_observed`), `syn_ix`.
+Silver columns: `has_pw` (true if `reported`, `nil_significant`, `nil_inferred` or `nil_metar`),
+`pw_status` (`reported`, `nil_significant`, `nil_inferred`, `nil_metar`, `not_observed`), `syn_ix`,
+and for METAR `metar_auto`, `metar_wx` (5.2).
 
 **Evidence** (pilot_20 bronze, 363k SYNOP messages):
 - iX 1/4 → manual weather code (MW) present in 99-100 % of reports; iX 2/3/5/6 → present in
@@ -167,8 +168,8 @@ Silver columns: `has_pw` (true if `reported`, `nil_significant` or `nil_inferred
   rule cannot apply; see 5.1.
 - 17 % of SYNOP messages reached NOAA only as BUFR (`SYN004BUFR`): no text, no iX; they fall
   back to "not observed" when no code is present (e.g. Nokkundi, Pakistan).
-- METAR has no iX: an absent weather group in METAR stays "not observed" (current method). See
-  5.2 for what the codes and the data say, and the open decision.
+- METAR has no iX; its own code rules decide (5.2), e.g. a missing weather group counts as
+  "nothing significant" only with visibility above 5 km.
 - The rule (WMO-No. 306 Vol. I.1, FM 12, Regulation 12.2.6, p. A–15): group 7 is included only if
   present or past weather of significance was observed (12.2.6.1); ww 00–03 and W1W2 0–2 are
   without significance (12.2.6.2), so haze and every dust code must be reported; the group is
@@ -222,6 +223,168 @@ get no inference (guard: no decision).
 Letlhakane, Carnarvon), no decision 13 (mostly Australian automatic and some Indian stations).
 Inference touches 44 of 98 stations; where it matters most, dust frequency falls toward
 plausible values (Nokkundi 325 → 155 dusty days/yr; Bachu 85 → 71).
+
+### 5.2 METAR and SPECI (adopted; method 1.4.0)
+
+**Role (user decision 2026-10-20).** SYNOP is the primary source; METAR is a supplement. Sampling
+fills each 3-hourly slot from a SYNOP whenever one exists (section 8). A METAR or SPECI fills a
+slot only when no SYNOP does: night gaps, stations with fewer SYNOPs (Phoenix and Las Vegas sent 4 SYNOPs a day in 2016 and 2020, 8 in
+2024), and METAR-only stations. When a SYNOP and
+a METAR at the same time disagree, the SYNOP is the truth. Every report, METAR included, still
+feeds `dusty_day_any`.
+
+**What the code rules say** (extracts with page citations:
+[references/metar-weather.md](references/metar-weather.md)):
+- WMO FM 15: the weather group w'w' is omitted when nothing can be reported with code table 4678
+  (15.8.2); an automatic system that cannot observe weather writes `//` (15.8.19); `CAVOK` means
+  visibility of 10 km or more and no significant weather (15.10); DU, SA, HZ and FU are coded only at
+  visibility of 5 000 m or less (15.8.12). `AUTO` marks a report with no human involvement (15.4).
+- US practice (FMH-1, 2005): obscurations (DU, SA, HZ, BLDU, BLSA) are coded only below 7 statute
+  miles (11.27 km); weather away from the station goes to the remarks; `AO1`/`AO2` mark an
+  automated station in every report, with or without an observer, so only `AUTO` means "no
+  observer".
+- ASOS (User's Guide 1998, §3.11): never reports dust, sand or smoke; its `HZ` is inferred from
+  visibility and dew-point depression, not seen.
+
+**Validation** (`notebooks/03_metar_present_weather.ipynb`; pilot_100 2015-2024: 3.18 M
+METAR/SPECI, 680 k at the same minute as a SYNOP that observed the weather):
+- When the SYNOP reports dust, the METAR reports it in 95-96 % if its visibility is <= 5 km and in
+  11 % above 5 km. SYNOP code 06 is mostly reported at visibility above 5 km.
+- A non-AUTO METAR without a weather group: with visibility 5 to < 10 km the SYNOP saw dust in
+  44 % (light dust METAR is not allowed to code); with visibility >= 10 km in 0.8 % overall, but
+  14.7 % at Barbados and 6.6 % at Niamey (transported dust, code 06).
+- Counting only dust with visibility <= 5 km, a METAR without a group missed such dust in <= 0.6 %
+  at 20 of 21 stations (Niamey 5.8 %).
+- AUTO METARs (mainly Australian automatic stations) carry `//` in 93 %; the 157 that carry dust are
+  implausible (`SA` with visibility 9 999 m at Kashi; `DU` with visibility 0 m at Learmonth).
+- The US stations' METARs (at :51) never share a minute with their SYNOPs (at :00), so they are
+  not in the paired sample (open item: pair within minutes).
+
+**Rules adopted** (user decisions 2026-10-20 unless marked *ruling*):
+1. `AUTO` METAR/SPECI: not observed, and none of its codes is used, so an ASOS `HZ` cannot feed the
+   haze rule. (*Ruling* on the codes, from the ASOS guide and the implausible AUTO dust above.)
+2. `//`: not observed.
+3. A weather group: classified from ISD's decoded fields like any report. **Dust counts at any
+   visibility**: the observer reported dust; visibility only tells its strength. `VC` dust ("in the
+   vicinity", 8-16 km away) is not dust at the station but sets the vicinity flag. `HZ` is haze and
+   goes through the haze rule (6.5).
+4. A weather group that ISD did not decode (e.g. the malformed `TSDU`): not observed (*ruling*:
+   it cannot be classified).
+5. `CAVOK`: observed, nothing significant (`nil_significant`), explicit like iX 2/5.
+6. No weather group, visibility > 5 km with good QC: "nothing significant, implied"
+   (`pw_status = nil_metar`). Counted apart; `valid_day_explicit` ignores it.
+7. No weather group, visibility <= 5 km, missing or rejected: not observed (*ruling*: at <= 5 km
+   WMO requires an obscuration to be coded, so something went unnamed; the SYNOP saw dust in
+   15-33 % of these).
+
+Parsing (*rulings*): only the observed part of the message counts; the station identifier, the
+remarks (`RMK ...`), trend forecasts (`NOSIG`, `BECMG`, `TEMPO ...`) and recent weather (`RE..`)
+are ignored. A weather group is any token built from table-4678 letter pairs (deliberately broad,
+so malformed groups such as `-TSBLSA` still count as weather; an unrecognised group can only lead
+to "not observed", never to "no dust"). US messages start with a local date and time. Silver
+columns: `metar_auto`, `metar_wx` (`missing`, `group`, `cavok`, `none`; null without METAR text).
+Settings: `classify.metar_rules`, `metar_report_types` ([FM-15, FM-16]), `metar_nil_min_vis_m`
+(5000).
+
+**Known limitation: light dust in METAR slots.** SYNOP codes 06 and 07 have no visibility limit
+(WMO table 4677; the automatic table 4680 splits only at 1 km), but METAR codes dust only at
+<= 5 km (US: < 7 mi). In slots filled by a METAR, light dust above 5 km is mostly missed, so
+`dusty_day_synoptic` is a lower bound where many slots come from METAR. Two daily columns handle
+this (user decision): `n_slots_metar` shows how many of the day's slots came from a METAR, and
+`dusty_day_vis5` counts only dust with visibility <= 5 km, which SYNOP and METAR catch alike. For
+SYNOP the 5 km limit is applied with the visibility of the same report: it is a threshold we derive
+to match METAR, not a SYNOP rule. Use `dusty_day_vis5` to compare stations or years with
+different report mixes (e.g. a SYNOP station with a METAR station, or a station before and after a
+switch to METAR); use `dusty_day_synoptic` for complete counts at SYNOP stations.
+
+**Vicinity dust.** `VC` dust groups are rare (370 of 3.18 M METARs) but concentrated: they would
+add 80 dust days at Las Vegas (40 dust days at the station in 2015-2024) and 33 at El Paso. They
+are kept out of the dust counts and reported as the daily flag `vicinity_dust_day` (user decision),
+together with SYNOP vicinity codes (MV).
+
+**Not used yet.** Dust mentioned only in the remarks (US `BLDU ALQDS`, `BLDU DSNT SW`, `VCBLDU`;
+Malta `DU`): ISD does not decode it; 2 632 reports, 1 178 of them at El Paso.
+
+### 5.3 Rule tables: every report type and situation
+
+`pw_status` decides whether a report observed the weather (`has_pw`): `reported`,
+`nil_significant`, `nil_inferred` and `nil_metar` count as observed; `not_observed` does not.
+"Dusty" = a dust class (suspended, blowing, whirls, storms) or `dust_haze`.
+
+**Which report fills a 3-hourly slot** (section 8):
+
+| Reports within ±30 min of the slot | Fills the slot |
+|---|---|
+| a SYNOP (FM-12) | the SYNOP, even one that observed nothing; a METAR never overrides it |
+| no FM-12; a merged SYNOP record (SY-MT, SY-SA, SY-AE, SY-AU) | that record |
+| none of these; a METAR (FM-15) | the METAR: one that observed weather first, then the closest in time |
+| then SAO, AUTO, SPECI (FM-16), other types | in that order |
+| only daily or monthly summaries (SOD, SOM) | no slot |
+
+**SYNOP (FM-12)**
+
+| # | Situation | `pw_status` | Dust class | Notes |
+|---|---|---|---|---|
+| S1 | weather code present, iX 1/4 or no iX | reported | from the field's table (MW: 4677) | 6.2 |
+| S2 | weather code present, iX 7 (automatic) | reported | from WMO 4680: 04/05 haze_or_suspended, 27-29 blowing if warm | 6.3, 6.4 |
+| S3 | code present but iX 2/5 (inconsistent) | reported | the code wins | |
+| S4 | no code, iX 2/5 | nil_significant | none | 5 |
+| S5 | no code, iX 3/6 | not_observed | unknown | 5 |
+| S6 | no code, no iX (BUFR-only, older years), visibility reported, station guard passes | nil_inferred | none | rule V3, 5.1 |
+| S7 | no code, no iX, otherwise | not_observed | unknown | |
+| S8 | code 05 (haze) | reported | haze; dust_haze if dust in the previous 24 h | 6.5 |
+| S9 | dust code; visibility <= 5 km / > 5 km / unknown | reported | dusty | `dusty_day_vis5`: dust / not dust / slot left out |
+| S10 | vicinity code (MV 03, 04, 05, 07, 08) | (as the rest) | not dust at the station | `vicinity_dust_day` |
+| S11 | RH > 90 % with suspended, haze or dust_haze | reported | screened (not dusty) | 6.6 |
+
+**METAR (FM-15) and SPECI (FM-16)**
+
+| # | Situation | Example | `pw_status` | Dust | `dusty_day_vis5` |
+|---|---|---|---|---|---|
+| M1 | AUTO, weather `//` | `AUTO 9999 //` | not_observed | unknown | — |
+| M2 | AUTO, no group | `AUTO 9999 NCD` | not_observed | unknown | — |
+| M3 | AUTO with a group (dust, HZ, rain) | `AUTO 6SM HZ` | not_observed | unknown (codes not used) | — |
+| M4 | non-AUTO, `//` | `9999 //` | not_observed | unknown | — |
+| M5 | no group, visibility > 5 km | `10SM CLR`, `9999 FEW020` | nil_metar | none | no dust |
+| M6 | no group, visibility <= 5 km | `4000 SCT030` | not_observed | unknown | — |
+| M7 | no group, visibility missing or rejected | `//// SCT030` | not_observed | unknown | — |
+| M8 | `CAVOK` | `CAVOK` | nil_significant | none | no dust |
+| M9 | dust group, visibility <= 5 km | `3SM BLDU`, `4000 DU`, `0400 +DS` | reported | dusty | dust |
+| M10 | dust group, visibility > 5 km | `6SM BLDU`, `8000 DU` | reported | dusty | no dust |
+| M11 | dust only in the vicinity | `VCBLDU`, `VCSS`, `VCPO` | reported | none | no dust; `vicinity_dust_day` |
+| M12 | haze | `5000 HZ` | reported | haze; dust_haze if dust in the previous 24 h | dust if dust_haze at <= 5 km |
+| M13 | other weather only | `2SM BR`, `-RA`, `TS` | reported | none | no dust |
+| M14 | dust and other weather | `TSRA BLDU 3000` | reported | dusty | by visibility |
+| M15 | group ISD did not decode | `TSDU` | not_observed | unknown | — |
+| M16 | recent weather only | `RESS`, `REDU` | ignored: the rest of the message decides | | |
+| M17 | trend forecast | `TEMPO 3000 DU`, `BECMG`, `NOSIG` | ignored | | |
+| M18 | dust only in the remarks | `RMK BLDU ALQDS` | ignored (not decoded by ISD; open item) | | |
+| M19 | corrected report | `METAR COR ...` | as non-AUTO (`COR` replaces `AUTO` in the US: a rare unattended report may slip through) | | |
+| M20 | no METAR text in `REM` | | reported if ISD has a code, else not_observed | | |
+
+**Other report types** (meanings from the ISD format document, GEOPHYSICAL-REPORT-TYPE):
+
+| Type | Meaning | Treatment |
+|---|---|---|
+| SY-MT, SY-SA, SY-AE, SY-AU | SYNOP merged with METAR, airways, aero or automatic report | slot priority right after FM-12; code → reported, no code → not observed (rule V3 applies to FM-12 only) |
+| SAO | airways report (US, older) | after METAR; code → reported, else not observed |
+| AUTO | report from an automatic station | after SAO; codes read with ISD's AW list (6.3); no code → not observed |
+| SOD, SOM | summary of day / month (US ASOS/AWOS) | no slot; daily dust codes (AT, AX) → `daily_summary_dust` |
+| any other type | e.g. FM-13 SHIP, CRN, MESONET (not in the pilot data) | lowest slot priority; code → reported, else not observed |
+
+Pilot data, bronze 2020: FM-12 343 587, FM-15 305 980, FM-16 9 093, SOD 1 335, SOM 36, SY-MT 12.
+
+**Where each case ends up in the daily table** (section 9):
+
+| Column | Counts |
+|---|---|
+| `n_slots_pw`, `valid_day` | slots whose report observed the weather (reported, nil_significant, nil_inferred, nil_metar) |
+| `valid_day_explicit` | the same without nil_inferred (S6) and nil_metar (M5) |
+| `dusty_day_synoptic` | a selected slot is dusty (any visibility) |
+| `dusty_day_vis5`, `n_slots_pw_vis5`, `valid_day_vis5` | a selected slot is dusty with visibility <= 5 km; dusty slots with unknown visibility are left out |
+| `n_slots_metar`, `n_slots_nil_metar` | slots filled by a METAR or SPECI; of those, M5 |
+| `dusty_day_any` | any report of the day dusty (all types, selected or not) |
+| `vicinity_dust_day` | any report with vicinity dust (M11, S10) |
 
 ## 6. Dust classification (`classify.py`)
 
@@ -295,6 +458,7 @@ Haze alone is not dust (smoke, pollution). A haze or haze_or_suspended report be
 `dust_haze` (dusty) if the same station reported dust (rank ≥ suspended) within the previous 24 h,
 window (t − 24 h, t]. Setting `classify.haze_window_h` (0 switches it off).
 *Why:* haze after a dust event is usually the dust settling or lingering.
+`HZ` in an AUTO METAR is not used at all (5.2): ASOS infers it from visibility and humidity.
 
 ### 6.6 Humidity screen
 If relative humidity > 90 %, the classes suspended, haze, haze_or_suspended and dust_haze become
@@ -331,10 +495,15 @@ Rules:
   tie-breakers. Rank 1 is selected; every candidate keeps its rank and a `selection_reason`.
 
 Example: Zabol 2023 has 8,226 METAR and 2,840 SYNOP; nearly all slots are filled by SYNOP.
+Phoenix 2020 has 4 SYNOPs a day, so METARs fill about half of its slots (1,474 of 2,928).
 
-*To review:* `has_pw` ranks before time distance. At METAR-only stations this can prefer a later
-report that mentions weather (e.g. dust) over a closer one without, possibly raising dust
-frequency.
+Because report type ranks first, SYNOP is always the primary source and a METAR only fills a slot
+without SYNOP (user decision 2026-10-20). A consequence: a SYNOP that observed nothing (iX 3/6)
+still wins over a METAR at the same slot that did observe the weather.
+
+*To review:* `has_pw` ranks before time distance. Among METARs this can prefer a later report
+that observed weather over a closer one that did not. With the METAR rules most METARs now count
+as observed (5.2), so the effect is smaller than before 1.4.0.
 
 ## 9. Daily aggregation (gold `daily`, `sql/daily.sql`)
 
@@ -345,8 +514,13 @@ One row per station per local (LMST) day.
 | `n_slots`, `n_slots_pw` | selected slots on the day; of those, slots with weather observed | basis of validity |
 | `valid_day` | `n_slots_pw ≥ 4` (of 8) | a day can only be judged dusty or not if enough was observed |
 | `n_slots_nil_inferred` | observed slots whose "nothing significant" was inferred (rule V3) | keeps inference visible |
-| `valid_day_explicit` | `n_slots_pw − n_slots_nil_inferred ≥ 4` | validity without inference, for sensitivity checks |
-| `dusty_day_synoptic` | any selected slot dusty (**primary definition**) | comparable across stations and decades |
+| `n_slots_nil_metar` | observed slots from a METAR with no weather group at > 5 km (5.2) | keeps the implied "nothing" visible |
+| `n_slots_metar` | slots filled by a METAR or SPECI (no SYNOP available) | where `dusty_day_synoptic` may miss light dust |
+| `valid_day_explicit` | `n_slots_pw − n_slots_nil_inferred − n_slots_nil_metar ≥ 4` | validity without inferred or implied "nothing", for sensitivity checks |
+| `dusty_day_synoptic` | any selected slot dusty, at any visibility (**primary definition**) | all dust the observers reported |
+| `dusty_day_vis5` | any selected slot dusty with visibility ≤ 5 km (5.2) | caught alike by SYNOP and METAR: compare stations and years with different report mixes |
+| `n_slots_pw_vis5`, `valid_day_vis5` | observed slots, leaving out dusty slots of unknown visibility; `≥ 4` | denominator of `dusty_day_vis5` |
+| `vicinity_dust_day` | any report with dust in the vicinity (METAR `VC`, SYNOP MV codes) | dust near, not at, the station; kept apart |
 | `dusty_day_any` | any report of the day dusty (all report types) | more sensitive; depends on reporting rate |
 | `past_weather_dust`, `daily_summary_dust` | past-weather or daily-summary dust evidence | evidence from other fields |
 | `dusty_day_any_source` | `dusty_day_any` or either evidence flag | most sensitive |
@@ -359,7 +533,8 @@ One row per station per local (LMST) day.
 | `d_t_mean`, `d_slp_mean` | change from the previous day, only between two consecutive valid days | fronts often bring dust |
 
 Analyses of dust frequency use **valid days only** (e.g. dusty days per year =
-365 × dusty valid days / valid days). A day known only from a daily summary has no row.
+365 × dusty valid days / valid days); `dusty_day_vis5` goes with `valid_day_vis5`. A day known
+only from a daily summary has no row. Rule tables for every report type: section 5.3.
 
 *Planned:* monthly and annual products, coverage, station catalog, climatology, diurnal cycle,
 trends, wind threshold Uth (source stations only), code-06 diagnostic.
@@ -386,7 +561,8 @@ Method (`notebooks/01_duisd_v1_dusty_stations.ipynb`):
 5. Dusty station: score ≥ 1 % (roughly ≥ 14 dusty days a year); up to 12 per region, ≥ 50 km
    apart → 88 stations.
 6. Contrast stations (12, hand-picked): downwind of the Sahara, Asian and Australian sources;
-   US METAR-only stations (ASOS, augmented by observers: AO2, no AUTO); clean controls (Shannon; Zhang Ping and Haikou in southern China,
+   US Southwest airports (ASOS augmented by observers: AO2, never AUTO; hourly METAR at :51 plus
+   SYNOP at :00, 4 or 8 a day); clean controls (Shannon; Zhang Ping and Haikou in southern China,
    which never reported dust **and** do report weather). `flagDU = False` alone is not enough:
    stations that never report weather have it too.
 7. `pilot_20`: the 2-3 dustiest per region (88 → 20) for end-to-end tests.
@@ -395,37 +571,13 @@ Known issue (pilot_20 test, 2026-10-19): Wadi Halfa, Abu Hamed and Papunya have 
 2020-2024; Dongola has no weather codes; Rabbit Flat (automatic) rarely reports weather; Ashchysai,
 Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is being considered.
 
-### 5.2 METAR without a weather group (validated; decision pending)
-
-The code rules (extracts: [references/metar-weather.md](references/metar-weather.md)):
-WMO FM 15 omits the w'w' group when nothing can be reported with table 4678 (15.8.2), writes `//`
-when an automatic system cannot observe weather (15.8.19), and allows DU, SA, HZ, FU only at
-visibility <= 5 000 m (15.8.12); US practice (FMH-1 2005) codes obscurations below 7 statute miles
-and puts weather away from the station in the remarks; `AUTO` = no human involvement; ASOS never
-reports dust.
-
-Validation (notebook 03, pilot_100 2015-2024): 680 k METARs at the same minute as a SYNOP that
-observed the weather.
-- When the SYNOP reports dust and the METAR visibility is <= 5 km, the METAR reports dust in
-  95-96 %; above 5 km in 11 %. SYNOP code 06 is mostly reported at visibility above 5 km.
-- A non-AUTO METAR with no group and visibility 5 to < 10 km coincides with SYNOP dust in 44 %:
-  not a "nothing significant". With visibility >= 10 km or `CAVOK` (candidate rule M1): SYNOP dust
-  in 0.79 % overall, but 14.7 % at Barbados, 6.6 % at Niamey (transported dust, code 06) and 2.7 %
-  at Aktyubinsk; <= 0.5 % elsewhere. M1 would need a station guard, which METAR-only stations
-  (US Southwest) cannot have.
-- Counting only dust with visibility <= 5 km (the METAR definition), a no-group METAR missed such
-  dust in <= 0.6 % at 20 of 21 stations (Niamey 5.8 %).
-- AUTO METARs (mainly Australia) almost always carry `//`; they never count as dust observations.
-- US remarks carry dust that ISD does not decode (`BLDU ALQDS`, `BLDU DSNT`, `VCBLDU`): 2 632 reports,
-  twice the body dust reports at El Paso.
-
 ## 11. Open questions
 
 1. ~~Exact WMO regulation for omitting group 7~~: resolved, FM 12 Regulation 12.2.6 (section 5).
 2. BUFR-only SYNOP (17 %): recover "omitted" information from the BUFR original?
-3. METAR without a weather group (5.2): stay "not observed", rule M1 with a station guard, or a
-   second, visibility-limited dust definition (dust at <= 5 km) that METAR can observe? US remarks
-   dust: decode it?
+3. ~~METAR without a weather group~~: resolved (5.2, method 1.4.0). Still open: decode dust in
+   US remarks as a "nearby/distant" flag; why Niamey's METARs miss dust at <= 5 km (5.8 %);
+   validate US METARs against their SYNOPs (METAR at :51, SYNOP at :00).
 4. Humidity screen at humid dust sites (6.6); `has_pw` before time distance in sampling (8).
 5. Station selection: require recent data and weather reporting.
 6. Does ISD keep the raw SYNOP text (and so iX) in older decades and at African stations?
