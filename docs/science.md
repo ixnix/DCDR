@@ -5,7 +5,7 @@ dust, samples reports and aggregates them into daily records, and **why** each c
 Part 1 ([engineering.md](engineering.md)) covers the software; [worklog.md](worklog.md) records
 how and when each decision was made.
 
-> Living document. It describes the method **as implemented now** (method version **1.5.0**).
+> Living document. It describes the method **as implemented now** (method version **1.6.0**).
 > Planned steps are marked *planned*. Last updated: 2026-10-20.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`)
@@ -224,12 +224,15 @@ Letlhakane, Carnarvon), no decision 13 (mostly Australian automatic and some Ind
 Inference touches 44 of 98 stations; where it matters most, dust frequency falls toward
 plausible values (Nokkundi 325 → 155 dusty days/yr; Bachu 85 → 71).
 
-### 5.2 METAR and SPECI (adopted; methods 1.4.0 and 1.5.0)
+### 5.2 METAR and SPECI (adopted; methods 1.4.0-1.6.0)
 
-**Role (user decisions 2026-10-20; method 1.5.0).** SYNOP and METAR are judged independently in
-each 3-hourly slot: the slot is **dusty if either reports dust**, and observed if either observed
-the weather. When the SYNOP observed the weather it is the primary input and the METAR a
-supplement; when the SYNOP observed nothing, the METAR fills the gap. Each source contributes at
+**Role (user decisions 2026-10-20; methods 1.5.0 and 1.6.0).** SYNOP and METAR are judged
+independently in each 3-hourly slot: the slot is **dusty if either reports dust**, and observed if
+either observed the weather. When the SYNOP observed the weather it is the primary input and the
+METAR a supplement; when the SYNOP observed nothing, the METAR fills the gap for dust. Wind,
+temperature, humidity, pressure and visibility always come from the slot's **SYNOP whenever it has
+one** (observed or not), and from the METAR only in slots without SYNOP, so a station's series
+does not switch report types from slot to slot (1.6.0). Each source contributes at
 most one report per slot (the closest that observed the weather), so a busy airport gets no extra
 chances; SPECI never fill a slot (they are sent because conditions changed, often when dust
 arrives) but count in `dusty_day_any`. Section 8 has the sampling; 5.3 the tables.
@@ -329,15 +332,17 @@ Malta `DU`): ISD does not decode it; 2 632 reports, 1 178 of them at El Paso.
 | METAR | FM-15, SAO, AUTO | the same rule |
 | none | SPECI (FM-16), SOD, SOM, any other type | never used for slots (SPECI and others still count in `dusty_day_any`) |
 
-| SYNOP in the slot | METAR in the slot | Slot dusty? | Slot observed? | Primary report (wind, T, visibility) |
+| SYNOP in the slot | METAR in the slot | Slot dusty? | Slot observed? | Primary report (wind, T, pressure, visibility) |
 |---|---|---|---|---|
 | observed, dust | any | yes | yes | SYNOP |
 | observed, no dust | dust | **yes** (either is enough) | yes | SYNOP |
 | observed, no dust | no dust or not observed | no | yes | SYNOP |
-| not observed (iX 3/6, iX 1 without group, no code) | dust | **yes** | yes | METAR |
-| not observed | no dust | no | yes | METAR |
+| not observed (iX 3/6, iX 1 without group, no code) | dust | **yes** | yes | SYNOP |
+| not observed | no dust | no | yes | SYNOP |
 | not observed | not observed or none | no | no | SYNOP |
-| none | observed | as the METAR | yes | METAR |
+| none | any | as the METAR | as the METAR | METAR |
+
+A missing value in the slot's SYNOP (e.g. no wind) stays missing; it is not taken from the METAR.
 
 **SYNOP (FM-12)**
 
@@ -514,9 +519,11 @@ Rules (method 1.5.0; user decisions 2026-10-20):
   Summaries (SOD, SOM) and SPECI are never candidates.
 - Per source, one report per slot: weather observed (`has_pw`) first, then the type order, then
   the closest in time, then fixed tie-breakers (`source_rank`, `is_source_selected`).
-- The slot's **primary** report (`is_synoptic_selected`): the same order with SYNOP before METAR
-  after `has_pw`, i.e. the SYNOP if it observed the weather, otherwise the METAR. It supplies wind,
-  temperature, humidity, pressure and visibility statistics, which are never double counted.
+- The slot's **primary** report (`is_synoptic_selected`): the slot's SYNOP whenever it has one,
+  observed or not, otherwise its METAR (1.6.0). It supplies wind, temperature, humidity, pressure
+  and visibility statistics, which therefore come from one report type per slot and are never
+  double counted. *Why:* taking them from whichever report observed the weather (1.5.0) would mix
+  SYNOP and METAR values within a station's series (different instruments, times and rounding).
 - Gold combines the two sources per slot: dusty if either reports dust (table in 5.3).
 - Every candidate keeps its ranks and a `selection_reason`.
 
