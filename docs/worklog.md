@@ -15,6 +15,8 @@ open to review. Details of the current method: [science.md](science.md); of the 
 - [ ] Investigate stations with no dust in 2020-2024 despite high duISD ranks (Ashchysai, Shakawe,
       Good Hope): change of observing practice or real decline?
 - [ ] BUFR-only SYNOP (17 %, no iX): any source for the "omitted" information?
+- [ ] Check iX availability (raw SYNOP text in REM) by decade and region, e.g. In Salah and
+      Dongola for 1995, 2005, 2015.
 - [ ] Review humidity screen at humid dust sites and the `has_pw` sampling tie-break.
 - [ ] Plan 2: monthly/climatology gold products, station catalog, coverage, Uth, code-06 diagnostic.
 - [ ] Set up a GitHub remote; publish documentation (e.g. MkDocs) when stable.
@@ -23,6 +25,11 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## 2026-10-19
 
+- **Uth insight** (user hypothesis, confirmed on Zabol): the v1 denominator (reports with a weather
+  code) makes calm conditions look dusty (30-43 % at 0-6 m/s), hiding the wind threshold; with
+  all observed reports the curve is 2-3 % below 8 m/s and ~50 % at 12-14 m/s. Likely cause of the
+  v1 Uth failure at Saharan stations; fit Uth on raised dust (07+). Open: is iX available in
+  older ISD decades and at African stations?
 - Explained the iX effect as a selection bias (docs/science.md §5): under the old rule a day was
   "valid" only if ≥ 4 slots carried a weather code, and at Zabol codes are mostly dust, so valid
   days were mostly long dust days (357 days, 92 % dusty); 1,460 clear or short-episode days were

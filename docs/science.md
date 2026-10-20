@@ -306,6 +306,14 @@ Analyses of dust frequency use **valid days only** (e.g. dusty days per year =
 *Planned:* monthly and annual products, coverage, station catalog, climatology, diurnal cycle,
 trends, wind threshold Uth (source stations only), code-06 diagnostic.
 
+**Implication for Uth (threshold wind).** Uth is estimated from how the dusty fraction rises with
+wind speed, so the denominator must include clear-weather reports. With only reports carrying a
+weather code (duISD v1's denominator), Zabol 2020-2024 looks 30-43 % dusty even at 0-6 m/s and
+no threshold appears; with all observed reports (iX rule) it is 2-3 % below 8 m/s, about 50 % at
+12-14 m/s and 95 % above 16 m/s, a clear threshold curve. This likely explains why the v1 Uth
+method failed at Saharan stations. Fit Uth on **raised dust** (codes 07 and up): suspended dust
+(06) is often transported and reported at low local winds (e.g. Harmattan, Sudan).
+
 ## 10. Station selection (pilot)
 
 Method (`notebooks/01_duisd_v1_dusty_stations.ipynb`):
@@ -336,6 +344,8 @@ Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is be
 3. METAR: use `CAVOK`/`NSW` as explicit "no significant weather"?
 4. Humidity screen at humid dust sites (6.6); `has_pw` before time distance in sampling (8).
 5. Station selection: require recent data and weather reporting.
+6. Does ISD keep the raw SYNOP text (and so iX) in older decades and at African stations?
+   If not, older years keep the biased denominator.
 
 ## 12. References
 
