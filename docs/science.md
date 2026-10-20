@@ -160,12 +160,35 @@ Silver columns: `has_pw` (true if `reported` or `nil_significant`), `pw_status`,
   countries with different reporting habits incomparable.
 
 **Limitations.**
+- **iX exists only in recent years.** In pilot_100, the raw SYNOP text (and so iX) is present in
+  78-94 % of SYNOP reports in 2015-2024 and in 0 % in 1985, 1995 and 2005. Before ~2015 the iX
+  rule cannot apply; see 5.1.
 - 17 % of SYNOP messages reached NOAA only as BUFR (`SYN004BUFR`): no text, no iX; they fall
   back to "not observed" when no code is present (e.g. Nokkundi, Pakistan).
 - METAR has no iX: an absent weather group in METAR stays "not observed" (explicit `CAVOK` or
   `NSW` could be used later).
 - Open: quote the exact WMO-No. 306 regulation on when group 7 may be omitted (expected: present
   weather 00-03 and past weather 0-2, i.e. haze and all dust codes must be reported).
+
+### 5.1 When iX is missing: inferring "nothing significant" (validated, not yet adopted)
+
+Experiment: `notebooks/02_validate_inferred_nil.ipynb` (pilot_100, 2015-2024). Ground truth: SYNOP
+reports with an omitted weather group and a known iX (1.53 M "nothing significant", 0.49 M "not
+observed"). iX was hidden and predicted from information available in every decade.
+
+- In SYNOP, visibility (VV) is in the same group as iX. Visibility is reported in 84.7 % of
+  "nothing significant" reports but in only 0.4 % of "not observed" ones.
+- **Rule V3:** no weather code and no iX → "nothing significant" if visibility is reported (good
+  QC) **and** the station's iX years show "not observed although visibility reported" in < 2 %
+  of such reports (station guard; excludes e.g. Tidjikja, Good Hope, Letlhakane).
+- Precision 0.9998, recall 0.84. Dusty days per year (iX hidden): median absolute error 46.5
+  days/yr without inference, 0 with V3. Rules based on the share of codes 00-03 were precise but
+  recovered only ~20 %.
+- Caveats: no truth before 2015 (assumes stable visibility-reporting practice); stations without
+  any iX years get no guard; some Sudanese stations' clear reports lack visibility.
+
+Status: proposal awaiting user decision (would become `pw_status = nil_inferred`, reported
+separately from explicit `nil_significant`).
 
 ## 6. Dust classification (`classify.py`)
 
@@ -346,10 +369,8 @@ Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is be
 5. Station selection: require recent data and weather reporting.
 6. Does ISD keep the raw SYNOP text (and so iX) in older decades and at African stations?
    If not, older years keep the biased denominator.
-7. When iX is missing: infer "nothing significant" from the station's reporting habit (stations
-   that leave out the group almost never report codes 00-03), a valid visibility and possibly
-   high visibility; validate against station-years that have iX before adopting (proposal
-   2026-10-20, see worklog).
+7. Adopt rule V3 (section 5.1) for reports without iX? Validated on 2015-2024; needs a decision
+   and a check of visibility reporting in older decades.
 
 ## 12. References
 

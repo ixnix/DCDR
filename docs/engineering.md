@@ -66,7 +66,7 @@ DCDR/
 │   ├── sql/daily.sql           the gold `daily` table, in SQL (run by DuckDB)
 │   └── schemas.py              the silver data contract
 ├── config/stations/            run inputs: station lists and region definitions
-├── notebooks/                  analyses (01: pilot station selection from duISD v1)
+├── notebooks/                  analyses (01: pilot station selection; 02: validating inferred "nothing significant")
 ├── scripts/                    one-off scripts (thin_slice_report.py)
 ├── tests/                      pytest: unit/, integration/, fixtures/
 ├── docs/                       this documentation, design spec, figures
