@@ -60,10 +60,14 @@ classify:
 sampling:
   window_min: 30  # a report within +-30 min of a synoptic hour (00, 03, ..., 21 UTC) is a candidate
   exclude_types: [SOD, SOM]  # daily and monthly summaries are not observations at a time
-  # Report-type preference when several reports compete for a slot (SYNOP first, then
-  # merged SYNOP reports SY-*, METAR FM-15, older/automated formats, SPECI FM-16 last).
-  priority: [FM-12, SY-MT, SY-SA, SY-AE, SY-AU, FM-15, SAO, AUTO, FM-16]
-  synoptic_dust_source: selected
+  # Slot sources (user decision 2026-10-20). Each slot takes at most ONE report per source: the
+  # closest one that observed the weather (types listed first are preferred). A slot is dusty if
+  # either source reports dust; its primary report (wind, temperature, visibility means) is the
+  # SYNOP if it observed the weather, otherwise the METAR. SPECI (FM-16) never fill a slot: they
+  # are sent because conditions changed, often when dust arrives; they count in dusty_day_any.
+  sources:
+    synop: [FM-12, SY-MT, SY-SA, SY-AE, SY-AU]
+    metar: [FM-15, SAO, AUTO]
 
 products:
   min_slots_per_day: 4  # a day is valid with >= 4 of 8 slots carrying a weather observation

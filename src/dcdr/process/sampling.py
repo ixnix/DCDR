@@ -1,24 +1,39 @@
-"""Synoptic-slot candidates, deterministic ranking and selection (spec §7.2.7).
+"""Synoptic-slot candidates, deterministic ranking and selection (spec §7.2.7; revised 1.5.0).
 
 Why sample at all
 -----------------
 Stations report at very different rates: a SYNOP station every 3 hours, a busy airport every 30
 minutes plus extra "special" reports when the weather changes (often exactly when dust arrives).
 Counting dust in ALL reports would make airports look dustier simply because they report more.
-So, like duISD v1, we pick ONE report per 3-hourly synoptic slot (00, 03, ..., 21 UTC) and base the
-main dusty-day statistic on those 8 slots per day: the same sampling at every station and decade.
+So, like duISD v1, dust is judged in 3-hourly synoptic slots (00, 03, ..., 21 UTC), 8 per day, the
+same at every station and decade.
+
+Two sources per slot (user decision 2026-10-20, method 1.5.0)
+--------------------------------------------------------------
+SYNOP and METAR are judged independently: a slot is dusty if EITHER reports dust. Before 1.5.0 a
+slot took a single report, SYNOP first, so a SYNOP that observed nothing (e.g. US SYNOPs with iX 1
+but no weather group) hid the dust in the METAR next to it. Now each source (config
+`sampling.sources`) contributes at most one report per slot, and gold combines them (sql/daily.sql).
+At most one per source keeps a busy airport from getting more chances to catch dust than a
+SYNOP-only station. SPECI belong to no source: they are event-driven and count only in
+`dusty_day_any`.
 
 How a slot is filled (process pipeline step 6 of 6)
 --------------------------------------------------
 1. Each report is assigned to its nearest slot. It is a CANDIDATE if it is within +-30 minutes of
-   the slot time (config `sampling.window_min`) and not a daily/monthly summary.
-2. Candidates for the same station and slot are ranked by, in order:
-     report type priority (SYNOP FM-12 first, see config `sampling.priority`)
-     has_pw         reports that carry a weather code beat those that don't
-     slot_delta_min closer to the slot time wins
+   the slot time (config `sampling.window_min`), not a daily/monthly summary, and its type belongs
+   to a source (`slot_source`: "synop" or "metar").
+2. Within each (station, slot, source), candidates are ranked by
+     has_pw          reports that observed the weather first
+     type order      the order of types in the source's list (e.g. FM-12 before SY-MT)
+     slot_delta_min  closer to the slot time wins
      time_utc, source, row_key   final tie-breakers, so the result never depends on row order
-3. Rank 1 is selected (`is_synoptic_selected`); `selection_reason` records why, for auditing.
-Every candidate keeps its rank, so you can always see which reports competed and lost.
+   Rank 1 is that source's report for the slot (`source_rank`, `is_source_selected`).
+3. Across sources the same order, with the source order (SYNOP first) after has_pw, gives the
+   slot's PRIMARY report (`selection_rank` 1, `is_synoptic_selected`): the SYNOP if it observed the
+   weather, otherwise the METAR. Wind, temperature and visibility means use the primary report
+   only, so they are never double counted. `selection_reason` records why, for auditing.
+Every candidate keeps its ranks, so you can always see which reports competed and lost.
 """
 
 from __future__ import annotations
@@ -28,24 +43,27 @@ import polars as pl
 from dcdr.config import SamplingCfg
 from dcdr.process.parse import lmst_shift
 
-# Sort order used for ranking candidates (see the module docstring), and the direction of each
-# column: only `has_pw` is descending (True before False); everything else ascending.
-_ORDER = [
-    "station_id",
-    "slot_time",
-    "priority_rank",
-    "has_pw",
-    "slot_delta_min",
-    "time_utc",
-    "source",
-    "row_key",
-]
-_DESC = [False, False, False, True, False, False, False, False]
+# Tie-breakers after the leading keys, in order; all ascending.
+_TIEBREAK = ["slot_delta_min", "time_utc", "source", "row_key"]
+
+
+def _rank(df: pl.DataFrame, keys: list[str], group: list[str], name: str) -> pl.DataFrame:
+    """Row number per `group` after sorting by has_pw (True first), then `keys`, then tie-breakers."""
+    order = ["station_id", "slot_time", "has_pw", *keys, *_TIEBREAK]
+    desc = [False, False, True] + [False] * (len(keys) + len(_TIEBREAK))
+    return (
+        df.sort(order, descending=desc, nulls_last=True)
+        .with_columns((pl.int_range(pl.len()).over(group) + 1).cast(pl.Int32).alias(name))
+        .select("row_key", name)
+    )
 
 
 def select_synoptic(df: pl.DataFrame, cfg: SamplingCfg) -> pl.DataFrame:
-    """Mark the one selected report per station and 3-hourly slot; keep every row."""
-    prio = {t: i for i, t in enumerate(cfg.priority)}  # {"FM-12": 0, "SY-MT": 1, ...}
+    """Mark, per station and 3-hourly slot, one report per source and the primary report."""
+    # Report type -> its source, the source's preference order, and the type's order in its list.
+    source_of = {t: s for s, types in cfg.sources.items() for t in types}
+    source_order = {s: i for i, s in enumerate(cfg.sources)}  # {"synop": 0, "metar": 1}
+    type_order = {t: i for types in cfg.sources.values() for i, t in enumerate(types)}
     # Nearest slot: shift by +90 min, then round DOWN to a multiple of 3 h. E.g. 04:20 -> 05:50
     # -> 03:00, and 04:40 -> 06:10 -> 06:00. So the slot is the closest of 00, 03, ..., 21 UTC.
     df = df.with_columns(slot_time=(pl.col("time_utc") + pl.duration(minutes=90)).dt.truncate("3h"))
@@ -53,42 +71,47 @@ def select_synoptic(df: pl.DataFrame, cfg: SamplingCfg) -> pl.DataFrame:
     df = df.with_columns(
         slot_lmst_date=(pl.col("slot_time") + lmst_shift(pl.col("lon_used"))).dt.date()
     )
+    rt = pl.col("report_type")
     df = df.with_columns(
         slot_delta_min=(pl.col("time_utc") - pl.col("slot_time")).dt.total_seconds().abs() / 60,
-        is_excluded_type=pl.col("report_type").is_in(cfg.exclude_types).fill_null(False),
-        # Report types not in the priority list get the lowest priority (after all listed ones).
-        priority_rank=pl.col("report_type")
-        .replace_strict(prio, default=len(prio), return_dtype=pl.Int32)
-        .fill_null(len(prio)),
+        is_excluded_type=rt.is_in(cfg.exclude_types).fill_null(False),
+        slot_source=rt.replace_strict(source_of, default=None, return_dtype=pl.String),
     )
     df = df.with_columns(
-        is_candidate=(pl.col("slot_delta_min") <= cfg.window_min) & ~pl.col("is_excluded_type")
+        is_candidate=(
+            (pl.col("slot_delta_min") <= cfg.window_min)
+            & ~pl.col("is_excluded_type")
+            & pl.col("slot_source").is_not_null()
+        ),
+        _source_order=pl.col("slot_source").replace_strict(
+            source_order, default=None, return_dtype=pl.Int32
+        ),
+        _type_order=rt.replace_strict(type_order, default=None, return_dtype=pl.Int32),
     )
-    # Rank candidates within each (station, slot): sort by the tie-break order, then number
-    # them 1, 2, 3, ... per group (`int_range(...).over(...)` = a row number per group).
-    ranked = (
-        df.filter(pl.col("is_candidate"))
-        .sort(_ORDER, descending=_DESC, nulls_last=True)
-        .with_columns(
-            selection_rank=(pl.int_range(pl.len()).over(["station_id", "slot_time"]) + 1).cast(
-                pl.Int32
-            )
-        )
-        .select("row_key", "selection_rank")
+    cand = df.filter(pl.col("is_candidate"))
+    # Rank within each source, then across sources (the primary report).
+    by_source = _rank(
+        cand, ["_type_order"], ["station_id", "slot_time", "slot_source"], "source_rank"
     )
-    # Attach the ranks back to all rows; non-candidates get a null rank.
-    df = df.join(ranked, on="row_key", how="left")
+    overall = _rank(
+        cand, ["_source_order", "_type_order"], ["station_id", "slot_time"], "selection_rank"
+    )
+    # Attach the ranks back to all rows; non-candidates get null ranks.
+    df = df.join(by_source, on="row_key", how="left").join(overall, on="row_key", how="left")
     return df.with_columns(
+        is_source_selected=(pl.col("source_rank") == 1).fill_null(False),
         is_synoptic_selected=(pl.col("selection_rank") == 1).fill_null(False),
         selection_reason=pl.when(pl.col("selection_rank").is_null())
         .then(None)
         .otherwise(
             pl.format(
-                "rank={};type={};pw={};dt_min={}",
+                "rank={};source={}#{};type={};pw={};dt_min={}",
                 pl.col("selection_rank"),
+                pl.col("slot_source"),
+                pl.col("source_rank"),
                 pl.col("report_type"),
                 pl.col("has_pw"),
                 pl.col("slot_delta_min").round(1),
             )
         ),
-    ).drop("priority_rank")  # helper column, not needed in silver
+    ).drop("_source_order", "_type_order")  # helper columns, not needed in silver

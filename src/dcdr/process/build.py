@@ -9,7 +9,7 @@ This is the conductor of the process step: it runs the sub-steps in order and wr
       -> apply_qc          quality flags, RH, capped visibility, gusts            (qc.py)
       -> classify_reports  dust class per report from weather codes               (classify.py)
       -> apply_haze_and_rh haze-after-dust rule and humidity screen               (classify.py)
-      -> select_synoptic   pick one report per 3-hourly slot                      (sampling.py)
+      -> select_synoptic   per 3-hourly slot: one report per source + a primary   (sampling.py)
       -> keep the rows this year's file owns, put core columns first
     silver rows (typed, flagged, classified) -> validated -> written with provenance metadata
 
@@ -61,6 +61,9 @@ CORE_COLUMNS = [
     "is_excluded_type",
     "selection_rank",
     "selection_reason",
+    "slot_source",
+    "source_rank",
+    "is_source_selected",
     "is_synoptic_selected",
     "has_pw",
     "pw_status",

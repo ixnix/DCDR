@@ -64,7 +64,7 @@ def test_daily_counts_dup6_and_visibility(settings: Settings) -> None:
         8,
         8,
     )
-    assert d["valid_day"] and d["dusty_day_synoptic"] and d["dusty_day_any"]
+    assert d["valid_day"] and d["dusty_day"] and d["dusty_day_any"]
     assert d["n_dust_slots_suspended"] == 2
     assert d["wsd_mean"] == pytest.approx(10.0)
     assert d["dup6_mean"] == pytest.approx(1024.0)  # 10^3 * (1 + 0.6) * (1 - 0.36)
@@ -125,7 +125,7 @@ def test_dusty_day_any_source_uses_past_and_daily_summaries(settings: Settings) 
         + _slots("2024-01-03", MW1="02,1")
     )
     d = _daily(settings, [_silver(settings, rows)]).sort("lmst_date")
-    assert d["dusty_day_synoptic"].to_list() == [False, False, False]
+    assert d["dusty_day"].to_list() == [False, False, False]
     assert d["dusty_day_any_source"].to_list() == [True, True, False]
 
 
@@ -223,7 +223,7 @@ def test_metar_only_day_is_valid_and_counted_apart(settings: Settings) -> None:
         d["valid_day"],
         d["valid_day_explicit"],
         d["valid_day_vis5"],
-        d["dusty_day_synoptic"],
+        d["dusty_day"],
     )
     assert got == (8, 8, 8, True, False, True, False)
 
@@ -250,7 +250,7 @@ def test_dusty_day_vis5_counts_dust_with_visibility_at_or_below_5km(
         for h in range(0, 24, 3)
     ]
     d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
-    got = (d["dusty_day_synoptic"], d["dusty_day_vis5"], d["n_slots_pw_vis5"], d["valid_day_vis5"])
+    got = (d["dusty_day"], d["dusty_day_vis5"], d["n_slots_pw_vis5"], d["valid_day_vis5"])
     assert got == (dusty, dusty_vis5, n_pw_vis5, True)
 
 
@@ -263,8 +263,119 @@ def test_vicinity_dust_day_is_a_separate_flag(settings: Settings) -> None:
         VIS="016093,1,N,1",
     )
     d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
-    assert (d["vicinity_dust_day"], d["dusty_day_synoptic"], d["dusty_day_any"]) == (
+    assert (d["vicinity_dust_day"], d["dusty_day"], d["dusty_day_any"]) == (
         True,
         False,
         False,
     )
+
+
+# --- SYNOP and METAR as independent sources per slot (user decision 2026-10-20) --------------
+# A slot is dusty if the selected SYNOP OR the selected METAR reports dust; it is observed if
+# either observed the weather. Per-source flags keep the two apart. Wind, temperature and
+# visibility means come from one primary report per slot (the SYNOP if it observed the weather).
+US_SYNOP_NO_GROUP = (
+    "SYN07472270 31956 22330 10222 21022 38651 49940 56042 92051="  # iX 1, no 7-group
+)
+SYNOP_NIL = "SYN08040829 12960 03406 10062 21002="  # iX 2: nothing significant
+METAR_BLDU = "MET000METAR KELP 010251Z 25030G42KT 3SM BLDU CLR 27/M07 A2978 RMK AO2"
+BLDU_AU = "0,5,00,5,0,1,1"  # AU: BL DU
+METAR_NIL = "MET000METAR OIZB 010300Z 34012KT 9999 NSC 30/10 Q1010"
+
+
+def _slot_day(day: str, at_03: list[dict]) -> list[dict]:
+    """Seven quiet observed SYNOP slots plus the given reports around 03 UTC."""
+    quiet = [isd_row(f"{day}T{h:02d}:00:00", **LON0, MW1="02,1") for h in range(0, 24, 3) if h != 3]
+    return quiet + at_03
+
+
+def test_metar_dust_is_not_hidden_by_an_unobserved_synop(settings: Settings) -> None:
+    """El Paso case: the SYNOP says iX 1 but has no weather group; the METAR 9 min earlier
+    reports blowing dust. Before 1.5.0 the SYNOP filled the slot and the dust was lost."""
+    rows = _slot_day(
+        "2024-06-01",
+        [
+            isd_row(
+                "2024-06-01T02:51:00",
+                **LON0,
+                REPORT_TYPE="FM-15",
+                REM=METAR_BLDU,
+                AU1=BLDU_AU,
+                VIS="004828,1,N,1",
+            ),
+            isd_row("2024-06-01T03:00:00", **LON0, REM=US_SYNOP_NO_GROUP),
+        ],
+    )
+    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
+    got = (
+        d["dusty_day"],
+        d["dusty_day_synop"],
+        d["dusty_day_metar"],
+        d["dusty_day_vis5"],
+        d["n_slots_pw"],
+        d["n_slots_pw_synop"],
+        d["n_slots_pw_metar"],
+    )
+    assert got == (True, False, True, True, 8, 7, 1)
+
+
+@pytest.mark.parametrize(
+    "synop,metar,expected",
+    [
+        # SYNOP observed nothing significant, METAR reports dust -> dusty (either is enough)
+        ({"REM": SYNOP_NIL}, {"REM": METAR_BLDU, "AU1": BLDU_AU}, (True, False, True)),
+        # SYNOP reports dust, METAR has no weather group -> dusty
+        ({"MW1": "07,1"}, {"REM": METAR_NIL}, (True, True, False)),
+        # both clear -> not dusty
+        ({"REM": SYNOP_NIL}, {"REM": METAR_NIL}, (False, False, False)),
+    ],
+)
+def test_slot_is_dusty_if_either_source_reports_dust(
+    settings: Settings, synop: dict, metar: dict, expected: tuple
+) -> None:
+    rows = _slot_day(
+        "2024-06-02",
+        [
+            isd_row("2024-06-02T03:00:00", **LON0, **synop),
+            isd_row("2024-06-02T02:51:00", **LON0, REPORT_TYPE="FM-15", **metar),
+        ],
+    )
+    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
+    assert (d["dusty_day"], d["dusty_day_synop"], d["dusty_day_metar"]) == expected
+    assert (d["n_slots"], d["n_slots_synop"], d["n_slots_metar"]) == (8, 8, 1)
+
+
+def test_speci_and_extra_metars_count_only_in_dusty_day_any(settings: Settings) -> None:
+    """Only the closest observed METAR per slot is used; SPECI never fill a slot."""
+    rows = _slot_day(
+        "2024-06-03",
+        [
+            isd_row("2024-06-03T03:00:00", **LON0, REPORT_TYPE="FM-15", REM=METAR_NIL),
+            isd_row(
+                "2024-06-03T02:35:00", **LON0, REPORT_TYPE="FM-15", REM=METAR_BLDU, AU1=BLDU_AU
+            ),
+            isd_row(
+                "2024-06-03T03:12:00",
+                **LON0,
+                REPORT_TYPE="FM-16",
+                REM=METAR_BLDU.replace("METAR", "SPECI"),
+                AU1=BLDU_AU,
+            ),
+        ],
+    )
+    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
+    assert (d["dusty_day"], d["dusty_day_metar"], d["dusty_day_any"]) == (False, False, True)
+
+
+def test_weather_means_come_from_the_primary_report(settings: Settings) -> None:
+    """Wind is averaged over one report per slot (the observed SYNOP), never double counted."""
+    rows = [
+        isd_row(f"2024-06-04T{h:02d}:00:00", **LON0, MW1="02,1", WND="090,1,N,0100,1")
+        for h in range(0, 24, 3)
+    ] + [
+        isd_row(
+            "2024-06-04T02:51:00", **LON0, REPORT_TYPE="FM-15", REM=METAR_NIL, WND="090,1,N,0500,1"
+        )
+    ]
+    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
+    assert d["wsd_mean"] == pytest.approx(10.0)

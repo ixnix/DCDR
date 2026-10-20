@@ -1,32 +1,112 @@
 -- Daily station product on the local mean solar time (LMST) day.
--- Definitions: docs/superpowers/specs/2026-10-15-dcdr-pilot-design.md section 7.3.2.
+-- Definitions: docs/science.md section 9 (rule tables: section 5.3).
 -- Inputs: view `silver`; variables `min_slots` (valid-day threshold) and `vis5_max_m` (dust at
 -- or below this visibility counts for dusty_day_vis5).
 --
 -- Output: one row per station per LMST day (gold table `daily`).
 -- Run by aggregate.build_gold, which creates the `silver` view over all silver files and sets
--- `min_slots` (config products.min_slots_per_day) before executing this file.
+-- the variables (config products.*) before executing this file.
+--
+-- Two sources per 3-hourly slot (user decision 2026-10-20, method 1.5.0): sampling keeps at most
+-- one SYNOP and one METAR report per slot (`is_source_selected`). A slot is dusty if EITHER
+-- reports dust, and observed if either observed the weather; per-source columns keep them apart.
+-- Wind, temperature and visibility statistics use one PRIMARY report per slot
+-- (`is_synoptic_selected`: the SYNOP if it observed the weather, else the METAR).
 --
 -- How the query is built: a chain of CTEs (WITH name AS (...)), each a named intermediate table.
---   sel           the synoptic-selected reports (one per 3-hourly slot), with two derived columns
---   sel_daily     per day, from those slots: slot counts, dust class counts, weather statistics
+--   rep           the reports chosen for the slots (one per source), with dust flags
+--   slot          one row per station and slot: the sources combined
+--   slot_daily    per day, from the slots: slot counts, validity, dusty-day flags, class counts
+--   prim          the primary report per slot, with DUP6
+--   prim_daily    per day, from the primary reports: wind, visibility, temperature, pressure
 --   all_daily     per day, from ALL reports (not just slots): report count, any-dust, gust, past weather
 --   summary_daily per day, from daily-summary (SOD) rows: dust in the daily summary
 --   keys          the list of station-days that get a row
 --   joined        everything joined onto keys; missing counts become 0
 --   final SELECT  adds day-to-day changes (d_t_mean, d_slp_mean)
-WITH sel AS (
+WITH rep AS (
     SELECT
         *,
-        -- Is this slot's report dusty? (same list as classify.DUSTY_CLASSES)
+        -- Is this report dusty? (same list as classify.DUSTY_CLASSES)
         list_contains(
             ['suspended', 'blowing', 'whirls', 'storm', 'storm_severe', 'storm_thunder', 'dust_haze'],
             dust_class_final
         ) AS is_dusty,
-        -- Dust that reduced visibility to <= 5 km (dusty_day_vis5). A dusty report whose visibility
-        -- is unknown cannot be judged for this measure: vis5_unknown removes its slot from it.
+        -- Dust that reduced visibility to <= 5 km (dusty_day_vis5). A dusty report whose
+        -- visibility is unknown cannot be judged for this measure (dusty_vis_unknown).
         is_dusty AND coalesce(use_vis, false) AND vis_raw <= getvariable('vis5_max_m') AS is_dusty_vis5,
-        is_dusty AND NOT coalesce(use_vis, false) AS vis5_unknown,
+        is_dusty AND NOT coalesce(use_vis, false) AS dusty_vis_unknown,
+        -- explicit observation: a code, an iX 2/5 or CAVOK (not inferred, not implied)
+        pw_status IN ('reported', 'nil_significant') AS is_explicit
+    FROM silver
+    WHERE is_source_selected
+),
+slot AS (
+    -- `bool_or(cond)` is true if any of the slot's (at most two) reports meets the condition.
+    -- A report filling a slot counts on the SLOT's LMST day (it may sit up to 30 min across midnight).
+    SELECT
+        station_id,
+        slot_time,
+        min(slot_lmst_date) AS lmst_date,
+        bool_or(has_pw) AS pw,  -- observed by either source
+        bool_or(is_explicit) AS pw_explicit,
+        bool_or(is_dusty) AS dusty,  -- dust reported by either source
+        bool_or(is_dusty_vis5) AS dusty_vis5,
+        bool_or(dusty_vis_unknown) AS dusty_vis_unknown,
+        bool_or(slot_source = 'synop') AS has_synop,
+        bool_or(slot_source = 'synop' AND has_pw) AS pw_synop,
+        bool_or(slot_source = 'synop' AND is_dusty) AS dusty_synop,
+        bool_or(slot_source = 'metar') AS has_metar,
+        bool_or(slot_source = 'metar' AND has_pw) AS pw_metar,
+        bool_or(slot_source = 'metar' AND is_dusty) AS dusty_metar,
+        bool_or(pw_status = 'nil_inferred') AS nil_inferred,
+        bool_or(pw_status = 'nil_metar') AS nil_metar,
+        -- dust classes in the slot (a slot counts in each class that one of its reports has)
+        bool_or(dust_class_final = 'suspended') AS c_suspended,
+        bool_or(dust_class_final = 'blowing') AS c_blowing,
+        bool_or(dust_class_final = 'whirls') AS c_whirls,
+        bool_or(dust_class_final IN ('storm', 'storm_severe', 'storm_thunder')) AS c_storm,
+        bool_or(dust_class_final = 'dust_haze') AS c_dust_haze,
+        bool_or(dust_class_final = 'screened') AS c_screened,
+        min(lmst_hour) FILTER (WHERE is_dusty) AS dust_lmst_hour
+    FROM rep
+    GROUP BY station_id, slot_time
+),
+slot_daily AS (
+    -- `count(*) FILTER (WHERE cond)` counts only the slots meeting the condition.
+    SELECT
+        station_id,
+        lmst_date,
+        count(*) AS n_slots,  -- slots with at least one SYNOP or METAR (max 8)
+        count(*) FILTER (WHERE pw) AS n_slots_pw,  -- observed by either source
+        count(*) FILTER (WHERE pw_explicit) AS n_slots_pw_explicit,
+        count(*) FILTER (WHERE has_synop) AS n_slots_synop,
+        count(*) FILTER (WHERE pw_synop) AS n_slots_pw_synop,
+        count(*) FILTER (WHERE has_metar) AS n_slots_metar,
+        count(*) FILTER (WHERE pw_metar) AS n_slots_pw_metar,
+        -- slots with "nothing significant" inferred by rule V3 / implied by a METAR without group
+        count(*) FILTER (WHERE nil_inferred) AS n_slots_nil_inferred,
+        count(*) FILTER (WHERE nil_metar) AS n_slots_nil_metar,
+        bool_or(dusty) AS dusty_day,  -- the PRIMARY dusty-day definition: either source
+        bool_or(dusty_synop) AS dusty_day_synop,
+        bool_or(dusty_metar) AS dusty_day_metar,
+        bool_or(dusty_vis5) AS dusty_day_vis5,
+        -- slots that can be judged for dust at <= 5 km: observed, and not dusty only through a
+        -- report of unknown visibility
+        count(*) FILTER (WHERE pw AND (dusty_vis5 OR NOT dusty_vis_unknown)) AS n_slots_pw_vis5,
+        count(*) FILTER (WHERE c_suspended) AS n_dust_slots_suspended,
+        count(*) FILTER (WHERE c_blowing) AS n_dust_slots_blowing,
+        count(*) FILTER (WHERE c_whirls) AS n_dust_slots_whirls,
+        count(*) FILTER (WHERE c_storm) AS n_dust_slots_storm,
+        count(*) FILTER (WHERE c_dust_haze) AS n_dust_slots_dust_haze,
+        count(*) FILTER (WHERE c_screened) AS n_slots_rh_screened,
+        min(dust_lmst_hour) AS dust_first_lmst_hour  -- first dusty slot of the day
+    FROM slot
+    GROUP BY station_id, lmst_date
+),
+prim AS (
+    SELECT
+        *,
         -- DUP6: dust uplift potential with a 6 m/s threshold, U^3 (1 + Ut/U)(1 - Ut^2/U^2),
         -- a proxy for how strongly the wind can lift dust (0 at or below 6 m/s; null if no wind).
         CASE
@@ -36,32 +116,10 @@ WITH sel AS (
     FROM silver
     WHERE is_synoptic_selected
 ),
-sel_daily AS (
-    -- a report filling a slot counts on the SLOT's LMST day (it may sit up to 30 min across midnight)
-    -- `count(*) FILTER (WHERE cond)` counts only the rows meeting the condition.
+prim_daily AS (
     SELECT
         station_id,
         slot_lmst_date AS lmst_date,
-        count(*) AS n_slots,  -- slots filled (max 8)
-        count(*) FILTER (WHERE has_pw) AS n_slots_pw,  -- slots with a weather observation
-        -- of those, "nothing significant" inferred by rule V3 (no code, no iX, visibility)
-        count(*) FILTER (WHERE pw_status = 'nil_inferred') AS n_slots_nil_inferred,
-        -- of those, METAR with no weather group at > 5 km ("nothing significant, implied")
-        count(*) FILTER (WHERE pw_status = 'nil_metar') AS n_slots_nil_metar,
-        -- slots filled by a METAR or SPECI (only where no SYNOP was available): where these are
-        -- many, dusty_day_synoptic can miss light dust that METAR does not code above 5 km
-        count(*) FILTER (WHERE report_type IN ('FM-15', 'FM-16')) AS n_slots_metar,
-        bool_or(is_dusty) AS dusty_day_synoptic,  -- the PRIMARY dusty-day definition
-        -- dust at <= 5 km visibility: caught alike by SYNOP and METAR (comparable measure)
-        coalesce(bool_or(is_dusty_vis5), false) AS dusty_day_vis5,
-        count(*) FILTER (WHERE has_pw AND NOT vis5_unknown) AS n_slots_pw_vis5,
-        count(*) FILTER (WHERE dust_class_final = 'suspended') AS n_dust_slots_suspended,
-        count(*) FILTER (WHERE dust_class_final = 'blowing') AS n_dust_slots_blowing,
-        count(*) FILTER (WHERE dust_class_final = 'whirls') AS n_dust_slots_whirls,
-        count(*) FILTER (WHERE dust_class_final IN ('storm', 'storm_severe', 'storm_thunder')) AS n_dust_slots_storm,
-        count(*) FILTER (WHERE dust_class_final = 'dust_haze') AS n_dust_slots_dust_haze,
-        count(*) FILTER (WHERE dust_class_final = 'screened') AS n_slots_rh_screened,
-        min(lmst_hour) FILTER (WHERE is_dusty) AS dust_first_lmst_hour,  -- first dusty slot of the day
         avg(wsd) FILTER (WHERE use_wsd) AS wsd_mean,
         max(wsd) FILTER (WHERE use_wsd) AS wsd_max,
         min(vis_capped) FILTER (WHERE use_vis) AS vis_min,
@@ -77,13 +135,13 @@ sel_daily AS (
         avg(rh) AS rh_mean,  -- rh is already null unless both t and td passed QC
         avg(slp) FILTER (WHERE use_slp) AS slp_mean,
         avg(dup6) AS dup6_mean
-    FROM sel
+    FROM prim
     GROUP BY station_id, slot_lmst_date
 ),
 all_daily AS (
-    -- Every report except daily/monthly summaries, including the extra METAR/special reports
-    -- that sampling skips. More sensitive than the synoptic definition, but depends on how
-    -- often a station reports.
+    -- Every report except daily/monthly summaries, including the extra METAR and SPECI reports
+    -- that sampling skips. More sensitive than the slot definition, but depends on how often a
+    -- station reports.
     SELECT
         station_id,
         lmst_date,
@@ -111,14 +169,14 @@ summary_daily AS (
     GROUP BY ALL
 ),
 keys AS (
-    -- a station-day exists if it has any non-excluded report or any selected slot;
+    -- a station-day exists if it has any non-excluded report or any slot;
     -- a day known only from a daily summary (SOD) has no row (no observations to back it)
     SELECT station_id, lmst_date FROM all_daily
     UNION
-    SELECT station_id, lmst_date FROM sel_daily
+    SELECT station_id, lmst_date FROM slot_daily
 ),
 joined AS (
-    -- LEFT JOINs keep every key; a day without e.g. any slot gets nulls from sel_daily, which
+    -- LEFT JOINs keep every key; a day without e.g. any slot gets nulls from slot_daily, which
     -- coalesce(..., 0 / false) turns into "zero slots" / "not dusty".
     SELECT
         k.station_id,
@@ -128,14 +186,22 @@ joined AS (
         coalesce(s.n_slots_pw, 0) AS n_slots_pw,
         -- Valid day: enough slots WITH a weather observation to judge whether it was dusty.
         coalesce(s.n_slots_pw, 0) >= getvariable('min_slots') AS valid_day,
+        coalesce(s.dusty_day, false) AS dusty_day,
+        -- the same from explicit observations only (codes, iX, CAVOK): no inferred or implied nil
+        coalesce(s.n_slots_pw_explicit, 0) AS n_slots_pw_explicit,
+        coalesce(s.n_slots_pw_explicit, 0) >= getvariable('min_slots') AS valid_day_explicit,
         coalesce(s.n_slots_nil_inferred, 0) AS n_slots_nil_inferred,
         coalesce(s.n_slots_nil_metar, 0) AS n_slots_nil_metar,
+        -- per source: SYNOP alone (comparable with duISD and SYNOP-only stations) and METAR alone
+        coalesce(s.n_slots_synop, 0) AS n_slots_synop,
+        coalesce(s.n_slots_pw_synop, 0) AS n_slots_pw_synop,
+        coalesce(s.n_slots_pw_synop, 0) >= getvariable('min_slots') AS valid_day_synop,
+        coalesce(s.dusty_day_synop, false) AS dusty_day_synop,
         coalesce(s.n_slots_metar, 0) AS n_slots_metar,
-        -- validity from explicit observations only (codes, iX, CAVOK), without inferred or
-        -- implied "nothing significant" slots
-        coalesce(s.n_slots_pw, 0) - coalesce(s.n_slots_nil_inferred, 0)
-            - coalesce(s.n_slots_nil_metar, 0) >= getvariable('min_slots') AS valid_day_explicit,
-        coalesce(s.dusty_day_synoptic, false) AS dusty_day_synoptic,
+        coalesce(s.n_slots_pw_metar, 0) AS n_slots_pw_metar,
+        coalesce(s.n_slots_pw_metar, 0) >= getvariable('min_slots') AS valid_day_metar,
+        coalesce(s.dusty_day_metar, false) AS dusty_day_metar,
+        -- dust at <= 5 km (either source): caught alike by SYNOP and METAR
         coalesce(s.n_slots_pw_vis5, 0) AS n_slots_pw_vis5,
         coalesce(s.n_slots_pw_vis5, 0) >= getvariable('min_slots') AS valid_day_vis5,
         coalesce(s.dusty_day_vis5, false) AS dusty_day_vis5,
@@ -153,22 +219,23 @@ joined AS (
         coalesce(s.n_dust_slots_dust_haze, 0) AS n_dust_slots_dust_haze,
         coalesce(s.n_slots_rh_screened, 0) AS n_slots_rh_screened,
         s.dust_first_lmst_hour,
-        s.wsd_mean,
-        s.wsd_max,
+        p.wsd_mean,
+        p.wsd_max,
         a.gust_max,
-        s.vis_min,
-        s.vis_hmean,
-        coalesce(s.n_vis_zero, 0) AS n_vis_zero,
-        s.t_mean,
-        s.t_min,
-        s.t_max,
-        s.td_mean,
-        s.rh_mean,
-        s.slp_mean,
-        s.dup6_mean
+        p.vis_min,
+        p.vis_hmean,
+        coalesce(p.n_vis_zero, 0) AS n_vis_zero,
+        p.t_mean,
+        p.t_min,
+        p.t_max,
+        p.td_mean,
+        p.rh_mean,
+        p.slp_mean,
+        p.dup6_mean
     FROM keys AS k
     LEFT JOIN all_daily AS a ON k.station_id = a.station_id AND k.lmst_date = a.lmst_date
-    LEFT JOIN sel_daily AS s ON k.station_id = s.station_id AND k.lmst_date = s.lmst_date
+    LEFT JOIN slot_daily AS s ON k.station_id = s.station_id AND k.lmst_date = s.lmst_date
+    LEFT JOIN prim_daily AS p ON k.station_id = p.station_id AND k.lmst_date = p.lmst_date
     LEFT JOIN summary_daily AS m ON k.station_id = m.station_id AND k.lmst_date = m.lmst_date
 )
 -- Day-to-day changes in mean temperature and pressure (signals of fronts, which often bring

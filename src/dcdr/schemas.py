@@ -10,7 +10,7 @@ file is written, so a bug in processing fails loudly instead of quietly producin
 Two kinds of checks
 -------------------
 * Per column (Pandera): type, nullability, value range or allowed set, uniqueness.
-* Across rows (plain Polars): at most one selected report per synoptic slot. Pandera's column
+* Across rows (plain Polars): at most one primary report, and one report per source, per slot. Pandera's column
   checks can't express "per group" rules like this as clearly, so it is written out by hand.
 """
 
@@ -29,7 +29,9 @@ SILVER_SCHEMA = pa.DataFrameSchema(
         "lmst_date": pa.Column(pl.Date, nullable=False),  # local mean solar date
         "lmst_hour": pa.Column(pl.Float64, pa.Check.in_range(0, 24, include_max=False)),
         "dust_class_final": pa.Column(pl.String, pa.Check.isin(FINAL_CLASSES)),
-        "is_synoptic_selected": pa.Column(pl.Boolean),
+        "is_synoptic_selected": pa.Column(pl.Boolean),  # the slot's primary report
+        "is_source_selected": pa.Column(pl.Boolean),  # the slot's report for its source
+        "slot_source": pa.Column(pl.String, pa.Check.isin(["synop", "metar"]), nullable=True),
         "has_pw": pa.Column(pl.Boolean),  # weather observed: a code reported, or iX "nothing"
         "pw_status": pa.Column(
             pl.String,
@@ -56,13 +58,13 @@ def validate_silver(df: pl.DataFrame) -> pl.DataFrame:
     Raises pandera's SchemaError for column problems, SilverContractError for the slot rule.
     """
     SILVER_SCHEMA.validate(df)
-    # The synoptic sampling must pick exactly one report per 3-hourly slot (or none).
-    dup = (
-        df.filter(pl.col("is_synoptic_selected"))
-        .group_by(["station_id", "slot_time"])
-        .len()
-        .filter(pl.col("len") > 1)
-    )
-    if dup.height:
-        raise SilverContractError(f"{dup.height} synoptic slots have more than one selected report")
+    # The synoptic sampling picks at most one primary report per 3-hourly slot, and at most one
+    # report per source (SYNOP, METAR) per slot.
+    for col, keys, what in (
+        ("is_synoptic_selected", ["station_id", "slot_time"], "primary report"),
+        ("is_source_selected", ["station_id", "slot_time", "slot_source"], "report per source"),
+    ):
+        dup = df.filter(pl.col(col)).group_by(keys).len().filter(pl.col("len") > 1)
+        if dup.height:
+            raise SilverContractError(f"{dup.height} synoptic slots have more than one {what}")
     return df
