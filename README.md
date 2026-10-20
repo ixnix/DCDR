@@ -6,6 +6,7 @@ Documentation:
 - [Part 1, Engineering](docs/engineering.md): structure, commands, inputs, outputs, design.
 - [Part 2, Science](docs/science.md): how observations are interpreted, classified and aggregated, and why.
 - [Work log](docs/worklog.md): dated decisions, findings and open items.
+- [References](docs/references.md): the official code manuals behind the rules, with extracts.
 - Original design spec: `docs/superpowers/specs/2026-10-15-dcdr-pilot-design.md` (historical).
 
 ## Quick start
