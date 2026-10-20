@@ -167,8 +167,8 @@ Silver columns: `has_pw` (true if `reported`, `nil_significant` or `nil_inferred
   rule cannot apply; see 5.1.
 - 17 % of SYNOP messages reached NOAA only as BUFR (`SYN004BUFR`): no text, no iX; they fall
   back to "not observed" when no code is present (e.g. Nokkundi, Pakistan).
-- METAR has no iX: an absent weather group in METAR stays "not observed" (explicit `CAVOK` or
-  `NSW` could be used later).
+- METAR has no iX: an absent weather group in METAR stays "not observed" (current method). See
+  5.2 for what the codes and the data say, and the open decision.
 - The rule (WMO-No. 306 Vol. I.1, FM 12, Regulation 12.2.6, p. A–15): group 7 is included only if
   present or past weather of significance was observed (12.2.6.1); ww 00–03 and W1W2 0–2 are
   without significance (12.2.6.2), so haze and every dust code must be reported; the group is
@@ -386,7 +386,7 @@ Method (`notebooks/01_duisd_v1_dusty_stations.ipynb`):
 5. Dusty station: score ≥ 1 % (roughly ≥ 14 dusty days a year); up to 12 per region, ≥ 50 km
    apart → 88 stations.
 6. Contrast stations (12, hand-picked): downwind of the Sahara, Asian and Australian sources;
-   US automated METAR stations; clean controls (Shannon; Zhang Ping and Haikou in southern China,
+   US METAR-only stations (ASOS, augmented by observers: AO2, no AUTO); clean controls (Shannon; Zhang Ping and Haikou in southern China,
    which never reported dust **and** do report weather). `flagDU = False` alone is not enough:
    stations that never report weather have it too.
 7. `pilot_20`: the 2-3 dustiest per region (88 → 20) for end-to-end tests.
@@ -395,11 +395,37 @@ Known issue (pilot_20 test, 2026-10-19): Wadi Halfa, Abu Hamed and Papunya have 
 2020-2024; Dongola has no weather codes; Rabbit Flat (automatic) rarely reports weather; Ashchysai,
 Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is being considered.
 
+### 5.2 METAR without a weather group (validated; decision pending)
+
+The code rules (extracts: [references/metar-weather.md](references/metar-weather.md)):
+WMO FM 15 omits the w'w' group when nothing can be reported with table 4678 (15.8.2), writes `//`
+when an automatic system cannot observe weather (15.8.19), and allows DU, SA, HZ, FU only at
+visibility <= 5 000 m (15.8.12); US practice (FMH-1 2005) codes obscurations below 7 statute miles
+and puts weather away from the station in the remarks; `AUTO` = no human involvement; ASOS never
+reports dust.
+
+Validation (notebook 03, pilot_100 2015-2024): 680 k METARs at the same minute as a SYNOP that
+observed the weather.
+- When the SYNOP reports dust and the METAR visibility is <= 5 km, the METAR reports dust in
+  95-96 %; above 5 km in 11 %. SYNOP code 06 is mostly reported at visibility above 5 km.
+- A non-AUTO METAR with no group and visibility 5 to < 10 km coincides with SYNOP dust in 44 %:
+  not a "nothing significant". With visibility >= 10 km or `CAVOK` (candidate rule M1): SYNOP dust
+  in 0.79 % overall, but 14.7 % at Barbados, 6.6 % at Niamey (transported dust, code 06) and 2.7 %
+  at Aktyubinsk; <= 0.5 % elsewhere. M1 would need a station guard, which METAR-only stations
+  (US Southwest) cannot have.
+- Counting only dust with visibility <= 5 km (the METAR definition), a no-group METAR missed such
+  dust in <= 0.6 % at 20 of 21 stations (Niamey 5.8 %).
+- AUTO METARs (mainly Australia) almost always carry `//`; they never count as dust observations.
+- US remarks carry dust that ISD does not decode (`BLDU ALQDS`, `BLDU DSNT`, `VCBLDU`): 2 632 reports,
+  twice the body dust reports at El Paso.
+
 ## 11. Open questions
 
 1. ~~Exact WMO regulation for omitting group 7~~: resolved, FM 12 Regulation 12.2.6 (section 5).
 2. BUFR-only SYNOP (17 %): recover "omitted" information from the BUFR original?
-3. METAR: use `CAVOK`/`NSW` as explicit "no significant weather"?
+3. METAR without a weather group (5.2): stay "not observed", rule M1 with a station guard, or a
+   second, visibility-limited dust definition (dust at <= 5 km) that METAR can observe? US remarks
+   dust: decode it?
 4. Humidity screen at humid dust sites (6.6); `has_pw` before time distance in sampling (8).
 5. Station selection: require recent data and weather reporting.
 6. Does ISD keep the raw SYNOP text (and so iX) in older decades and at African stations?
@@ -418,9 +444,9 @@ Official code manuals and tables, with URLs and checksums of the local copies:
 - WMO (2025). *Manual on Codes*, WMO-No. 306, Vol. I.2 (BUFR/CREX); code table 0 20 003.
 - WMO BUFR4 tables, release v46 (2026), https://github.com/wmo-im/BUFR4 (code table 0-20-003
   embeds tables 4677 as 0-99 and 4680 as 100-199; 508/509 = nothing significant / no observation).
-- OFCM/ICAMS (2019). *Federal Meteorological Handbook No. 1: Surface Weather Observations and
-  Reports* (FCM-H1-2019): US METAR/SPECI practice.
-- OFCM (1988, changes 1-4). *Federal Meteorological Handbook No. 2: Surface Synoptic Codes*.
+- OFCM (2005). *Federal Meteorological Handbook No. 1: Surface Weather Observations and Reports*
+  (FCM-H1-2005): US METAR/SPECI practice.
+- OFCM (1988). *Federal Meteorological Handbook No. 2: Surface Synoptic Codes* (FCM-H2-1988).
 - OFCM. *Federal Meteorological Handbook No. 12: United States Meteorological Codes and Coding
   Practices*.
 - NOAA/FAA/US Navy/US Air Force (1998). *Automated Surface Observing System (ASOS) User's Guide*.

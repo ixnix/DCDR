@@ -7,6 +7,7 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## Open items
 
+- [ ] **Decision: METAR without a weather group** (notebook 03; options in the 2026-10-20 entry).
 - [ ] FMH-1: replace the 2005 mirror copy (everyspec.com) with an ICAMS/NOAA copy if one appears.
 - [ ] Station selection: add a recent-data criterion (data and weather reports in ≥ 3 of the last
       5 years); replace Wadi Halfa, Abu Hamed, Papunya, Dongola, Rabbit Flat in pilot lists.
@@ -21,6 +22,26 @@ open to review. Details of the current method: [science.md](science.md); of the 
 ---
 
 ## 2026-10-20
+
+- **Notebook 03: METAR present weather validated** (`notebooks/03_metar_present_weather.ipynb`;
+  pilot_100 2015-2024, 3.18 M METAR/SPECI, 680 k paired with a SYNOP that observed the weather).
+  Findings (science.md 5.2): METAR reports dust when visibility <= 5 km (95-96 % of SYNOP dust
+  cases) and almost never above (WMO 15.8.12 holds in the data; US reports DU up to 7 mi). A
+  non-AUTO METAR with no group at 5 to < 10 km coincides with SYNOP dust in 44 %. At >= 10 km or
+  CAVOK (candidate M1): 0.79 % overall but 14.7 % Barbados, 6.6 % Niamey, 2.7 % Aktyubinsk.
+  AUTO METARs carry `//` (93 %). US remarks hold dust that ISD drops (2 632 reports).
+  Options for the decision (none implemented; method unchanged):
+  - A. Keep "no group = not observed". METAR adds dust reports only (dusty_day_any); METAR-only
+    stations (US Southwest, Australian AUTO) get no valid days.
+  - B. M1 with a station guard (as V3): only where paired SYNOPs show M1 misses dust in < ~1 %;
+    METAR-only stations stay "not observed" (no guard possible).
+  - C. A second, visibility-limited definition, *dust at <= 5 km*: any non-AUTO METAR without a
+    group but with visibility reported is a valid "no such dust" (validated <= 0.6 % at 20 of 21
+    stations); SYNOP counts only dust codes with visibility <= 5 km. Comparable across SYNOP and
+    METAR and usable at METAR-only stations; the current any-visibility definition stays primary.
+  - Separately: decode US remarks dust (`BLDU ALQDS`, `DSNT`, `VCBLDU`) as vicinity/distant flags.
+- **Ruling:** in notebook 03, SYNOP iX 3/6 is not truth for the paired METAR (the SYNOP observer did
+  not look; the aviation observer may have); ww 00-03 count as nothing significant (FM 12.2.6.2).
 
 - **FMH-1 2005 is the reference edition** (user decision): the 2019 edition's official link is
   broken and no other official copy exists; the 1995 copy was removed as redundant (same rules,
