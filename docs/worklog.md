@@ -7,8 +7,7 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## Open items
 
-- [ ] FMH-1: obtain the published 2019 edition (official ICAMS URL in references.md) for recent
-      years, and an official copy of the 2005 edition (ours is from a mirror, everyspec.com).
+- [ ] FMH-1: replace the 2005 mirror copy (everyspec.com) with an ICAMS/NOAA copy if one appears.
 - [ ] Station selection: add a recent-data criterion (data and weather reports in ≥ 3 of the last
       5 years); replace Wadi Halfa, Abu Hamed, Papunya, Dongola, Rabbit Flat in pilot lists.
 - [ ] Investigate stations with no dust in 2020-2024 despite high duISD ranks (Ashchysai, Shakawe,
@@ -22,6 +21,10 @@ open to review. Details of the current method: [science.md](science.md); of the 
 ---
 
 ## 2026-10-20
+
+- **FMH-1 2005 is the reference edition** (user decision): the 2019 edition's official link is
+  broken and no other official copy exists; the 1995 copy was removed as redundant (same rules,
+  584f47e). Extract and index now cite 2005 only.
 
 - **Only published editions** (user decision): the FMH-1 2026 draft was removed and replaced by the
   published FCM-H1-1995 and FCM-H1-2005; FMH-2 change 4 removed (a one-page notice). The METAR

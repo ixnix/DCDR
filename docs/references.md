@@ -10,9 +10,10 @@ a few MB each); the parts we rely on are extracted, with page citations, in
 |---|---|---|
 | [synop-weather-group.md](references/synop-weather-group.md) | FM 12 Regulation 12.2.6 (when group 7 is omitted); iX, code table 1860; tables 4677/4561/4680/4531 | `parse.py`, `classify.py`; science.md §5 |
 | [bufr-present-weather.md](references/bufr-present-weather.md) | BUFR 0-20-003: dust codes, tables 4677/4680, 508/509 | `classify.py`; science.md §5, §6 |
-| [metar-weather.md](references/metar-weather.md) | METAR present weather: WMO FM 15 and table 4678, US practice (FMH-1 2005 and 1995), what ASOS (AUTO) can and cannot report | METAR rules (in progress) |
+| [metar-weather.md](references/metar-weather.md) | METAR present weather: WMO FM 15 and table 4678, US practice (FMH-1 2005), what ASOS (AUTO) can and cannot report | METAR rules (in progress) |
 
-Only published editions are used, never drafts (user decision 2026-10-20).
+Only published editions are used, never drafts (user decision 2026-10-20). FMH-1 is cited from the
+2005 edition: the 2019 edition's official link is broken and no other official copy was found.
 
 Why both: an extract keeps the rule we use next to the method and under version control; the full
 copy answers the next question (context, footnotes, nearby exceptions). Each extract names the
@@ -34,7 +35,6 @@ with short quotes. The WMO BUFR4 tables on GitHub are MIT-licensed.
 | `wmo/codes-registry_bufr4_0-20-003.jsonld` | Code table 0-20-003, present weather | WMO Codes Registry | https://codes.wmo.int/bufr4/codeflag/0-20-003 | script | 119,656 | `947f08aff984704900d7ef9edf8b1c8f031c9bf0e3e3c637beb408c28b8d8a74` |
 | `nws/aum-toc.pdf` | *Automated Surface Observing System (ASOS) User's Guide* | NOAA, FAA, US Navy, US Air Force, March 1998 | https://www.weather.gov/media/asos/aum-toc.pdf | script | 918,728 | `1b7c0edea39bd6c282ebe905da7b74cbc3dce97f28239bfccfce6bce09b8d8d8` |
 | `icams/FCM-H1-2005.pdf` | *Federal Meteorological Handbook No. 1: Surface Weather Observations and Reports* (FCM-H1-2005) | OFCM, September 2005 | saved by the user; this copy is from a third-party mirror (each page stamped "Downloaded from https://www.everyspec.com"); replace with an ICAMS/NOAA copy if one is found | manual | 977,184 | `d87eb26daf6da37a0bc874f960666ab92cd0d6770f151bc2d8e9d5d1444281b9` |
-| `icams/fmh1.pdf` | *Federal Meteorological Handbook No. 1* (FCM-H1-1995), the first US METAR edition; text layer damaged on some pages | OFCM, December 1995 | saved by the user from a browser | manual | 1,117,440 | `3c5addea1ad6722afb011b0bfd5ef2e051d9c717e49f507ac5c8b154ccb3e865` |
 | `icams/SurfaceSynopticCodes_FCM-H2-1988.pdf` | *Federal Meteorological Handbook No. 2: Surface Synoptic Codes* (FCM-H2-1988), base edition without changes 1–4 | OFCM, 1988 | https://www.icams-portal.gov/resources/ofcm/fmh/allfmh2.htm (saved by the user in a browser) | manual | 17,884,193 | `dc449d6c75fec6bfa8ea806f13440f4a02351b388c708af70406a380078b3b6f` |
 | `legacy/isd-format-document.pdf` (in git) | *Federal Climate Complex Data Documentation for Integrated Surface Data* | NOAA NCEI | kept with the v1 material | — | — | — |
 
@@ -45,6 +45,5 @@ a browser and listed above with their checksums; FMH-2 changes 1–4 are not nee
 
 | Document | Why we need it | Source |
 |---|---|---|
-| FMH-1, FCM-H1-2019 (published edition in force for recent years) | US METAR practice for 2019 onwards | https://www.icams-portal.gov/resources/ofcm/fmh/FMH1/fmh1_2019.pdf (answered a HEAD request on 2026-10-20; downloads by script refused) |
 | FMH-12 *United States Meteorological Codes and Coding Practices* | US code practice overview | https://www.icams-portal.gov/resources/ofcm/fmh/FMH12/fmh12.pdf (HTTP 403 to scripts; save from a browser) |
 | ICAO Annex 3 *Meteorological Service for International Air Navigation* | International METAR practice | ICAO (not free); WMO-No. 306 FM 15 holds the code form; FMH-1 the US practice |
