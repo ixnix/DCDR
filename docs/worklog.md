@@ -7,6 +7,11 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## Open items
 
+- [ ] **Decisions after the full-record test** (notebook 04): (a) METARs without text before
+      2000; (b) visibility under SYNOP-first weather values; (c) keep or change the dust and
+      weather sources (still open by user decision).
+- [ ] NOAA's S3 ISD files end on 2025-08-27 (no 2026): check whether ISD is still updated or
+      replaced (e.g. by another NCEI hourly product) before relying on recent years.
 - [ ] **Run the pipeline for method 1.6.0** (user): `dcdr process` rebuilds all silver (new method
       version), then `dcdr aggregate`; per station compare `dusty_day`, `dusty_day_synop`,
       `dusty_day_metar` and `dusty_day_vis5`, and `n_slots_pw_synop` against `n_slots_pw`.
@@ -26,6 +31,31 @@ open to review. Details of the current method: [science.md](science.md); of the 
 ---
 
 ## 2026-10-20
+
+- **Full-record test of the slot sources** (user request; notebook 04; method 1.6.0 unchanged).
+  Ingested the whole NOAA record for pilot_100: `dcdr ingest --years 1931-2026` (5 651
+  station-year files, 4 275 new, 1.7 GB bronze, 5 min; NOAA has no 2026 files and 2025 ends on
+  27 August), `dcdr process` (5 651 built, 0 failed, 18 min), `dcdr aggregate` (1.92 M
+  station-days, all checks passed). Findings (science.md 8.1):
+  - METARs without raw text (none before 2000) count as observed only when coded: valid days
+    -90 % and dust frequency x4.6 (median) when simulated on 2010-2024 data. Pre-2000 METAR
+    periods are biased (Gimpo; El Paso before 2005; Dammam, Ilam, In Salah have no SYNOP in ISD
+    before 2005). Pre-1960 SAO reports always carry a code (mostly 00): not affected.
+  - SYNOP vs METAR in the same slot: wind +2.4 m/s at Aktyubinsk, +1.3 Jodhpur, +1.1 Kashi;
+    temperature +1.0 °C Kashi; median +0.05 °C, 0.0 m/s. Supports one source for weather values.
+  - SYNOP-first weather values: visibility missing although the METAR has it in 11.5 % of slots
+    with both (Australian automatic SYNOPs 50-63 %); temperature 0.2 %, wind 1.1 %.
+  - METAR adds 3 541 of 220 152 dusty days (1.6 %); where both observed, METAR-only dust 2 430
+    slots vs SYNOP-only 42 439 and both 36 078. Main source at El Paso (79 %), Las Vegas (60 %),
+    Phoenix (53 %), Gimpo (100 %, no SYNOP).
+  - Rule V3 inferred "nothing significant" for 151 US SYNOP slots in which the METAR reports dust.
+  - 26 switch years (METAR share of weather values changes by >= 0.3) at 16 stations; no
+    systematic jump overall, but single wind jumps (Learmonth 1999 -2.2 m/s).
+  - Options to decide (none implemented): (a) pre-2000 METAR without text: count for dust only,
+    never for validity; or validate a V3-like inference (no code + visibility reported) on
+    2000+ data with text, guarded per station; (b) visibility: accept gaps, or take only
+    visibility from the METAR when the SYNOP has none; (c) V3 at US stations: exclude stations
+    whose SYNOPs are auto-generated (guard against METAR dust).
 
 - **Weather variables from the SYNOP whenever the slot has one** (method **1.6.0**, follows
   2e7c56a; user decision). In 1.5.0 the primary report (wind, temperature, humidity, pressure,
