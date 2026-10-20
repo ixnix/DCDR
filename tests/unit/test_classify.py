@@ -210,3 +210,51 @@ def test_synop_ix_rule_can_be_switched_off(settings: Settings) -> None:
     )
     r = _cls(off, REM=ZABOL_IX2)
     assert (r["has_pw"], r["dust_class_rule"]) == (False, "unknown")
+
+
+# --- Inferred "nothing significant" when iX is missing (rule V3; user decision 2026-10-20) ----
+def _cls_g(settings: Settings, guard: bool | None, **fields: str) -> dict:
+    df = add_time_columns(parse_reports(bronze_frame([isd_row("2024-07-22T21:00:00", **fields)])))
+    df = apply_qc(df, settings.qc, settings.parse)
+    return classify_reports(df, settings.classify, settings.qc, nil_guard=guard).row(0, named=True)
+
+
+def test_no_code_no_ix_with_visibility_is_inferred_nil_when_station_passes_guard(
+    settings: Settings,
+) -> None:
+    r = _cls_g(settings, True, REM="SYN004BUFR")  # FM-12, visibility reported, no code, no iX
+    assert (r["has_pw"], r["dust_class_rule"], r["pw_status"]) == (True, "none", "nil_inferred")
+
+
+@pytest.mark.parametrize("guard", [False, None])
+def test_no_inference_when_station_fails_or_lacks_the_guard(
+    settings: Settings, guard: bool | None
+) -> None:
+    r = _cls_g(settings, guard)
+    assert (r["has_pw"], r["pw_status"]) == (False, "not_observed")
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"VIS": "999999,9,9,9"},  # visibility not reported
+        {"VIS": "010000,3,N,3"},  # visibility rejected by QC
+        {"REM": IX3},  # explicit "not observed" wins over inference
+        {"REPORT_TYPE": "FM-15"},  # METAR: rule validated for SYNOP only
+    ],
+)
+def test_no_inference_without_visibility_or_with_explicit_ix_or_non_synop(
+    settings: Settings, fields: dict
+) -> None:
+    assert _cls_g(settings, True, **fields)["pw_status"] == "not_observed"
+
+
+def test_explicit_nil_is_not_relabelled_inferred(settings: Settings) -> None:
+    assert _cls_g(settings, True, REM=ZABOL_IX2)["pw_status"] == "nil_significant"
+
+
+def test_inference_can_be_switched_off(settings: Settings) -> None:
+    off = settings.model_copy(
+        update={"classify": settings.classify.model_copy(update={"infer_nil": False})}
+    )
+    assert _cls_g(off, True)["pw_status"] == "not_observed"

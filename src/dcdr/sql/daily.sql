@@ -39,6 +39,8 @@ sel_daily AS (
         slot_lmst_date AS lmst_date,
         count(*) AS n_slots,  -- slots filled (max 8)
         count(*) FILTER (WHERE has_pw) AS n_slots_pw,  -- slots with a weather observation
+        -- of those, "nothing significant" inferred by rule V3 (no code, no iX, visibility)
+        count(*) FILTER (WHERE pw_status = 'nil_inferred') AS n_slots_nil_inferred,
         bool_or(is_dusty) AS dusty_day_synoptic,  -- the PRIMARY dusty-day definition
         count(*) FILTER (WHERE dust_class_final = 'suspended') AS n_dust_slots_suspended,
         count(*) FILTER (WHERE dust_class_final = 'blowing') AS n_dust_slots_blowing,
@@ -111,6 +113,10 @@ joined AS (
         coalesce(s.n_slots_pw, 0) AS n_slots_pw,
         -- Valid day: enough slots WITH a weather observation to judge whether it was dusty.
         coalesce(s.n_slots_pw, 0) >= getvariable('min_slots') AS valid_day,
+        coalesce(s.n_slots_nil_inferred, 0) AS n_slots_nil_inferred,
+        -- validity from explicit observations only (codes and iX), without inferred slots
+        coalesce(s.n_slots_pw, 0) - coalesce(s.n_slots_nil_inferred, 0) >= getvariable('min_slots')
+            AS valid_day_explicit,
         coalesce(s.dusty_day_synoptic, false) AS dusty_day_synoptic,
         coalesce(a.dusty_day_any, false) AS dusty_day_any,
         coalesce(a.past_weather_dust, false) AS past_weather_dust,

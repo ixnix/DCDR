@@ -84,9 +84,13 @@ class ClassifyCfg(_Section):
     haze_window_h: int  # look-back window (hours) for the haze-after-dust rule
     sand_min_t_c: float  # ambiguous "dust or snow" codes count as sand at or above this temp
     snow_max_t_c: float  # ... and as snow at or below this temp
-    synop_ix: (
-        bool  # read the SYNOP iX indicator: 2/5 = observed, nothing significant (see classify.py)
-    )
+    # SYNOP iX indicator: 2/5 = observed, nothing significant (see classify.py)
+    synop_ix: bool
+    # Rule V3: no code, no iX, visibility reported, station guard -> pw_status "nil_inferred"
+    infer_nil: bool
+    infer_nil_report_types: list[str]  # report types the inference applies to (validated: FM-12)
+    nil_guard_max_share: float  # guard: max share "not observed although visibility reported"
+    nil_guard_min_reports: int  # guard: min such iX reports needed to judge a station
 
 
 class SamplingCfg(_Section):

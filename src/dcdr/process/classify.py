@@ -14,13 +14,15 @@ When a report carries NO usable weather field, the SYNOP iX indicator (WMO code 
 from the raw message in REM) decides (user decision 2026-10-19, refining 2026-10-17):
     iX 2 or 5   group omitted, no significant phenomenon -> observed: class "none"
     iX 3 or 6   group omitted, no observation            -> not observed: class "unknown"
-    no SYNOP text (METAR, BUFR-only), or no iX             -> not observed: class "unknown"
+    no SYNOP text (METAR, BUFR-only), or no iX: a SYNOP with visibility reported at a station that
+                passes the guard -> inferred nil: class "none" (pw_status "nil_inferred")
+    otherwise                                              -> not observed: class "unknown"
 A missing weather field is never ASSUMED to mean "no significant weather"; only an explicit
 iX 2/5 says so. iX 7 also selects the code table: automatic station, WMO tables 4680/4531.
 
 Columns added (process pipeline steps 4-5 of 6)
 ----------------------------------------------
-classify_reports:  has_pw, pw_status ("reported" / "nil_significant" / "not_observed"), dust_rank, dust_class_rule, dust_rule_id, pw_evidence,
+classify_reports:  has_pw, pw_status ("reported" / "nil_significant" / "nil_inferred" / "not_observed"), dust_rank, dust_class_rule, dust_rule_id, pw_evidence,
                    flag_du / flag_susp / flag_bd / flag_ds (convenience flags from the rank),
                    flag_vicinity, flag_past, flag_ambiguous, flag_daily_dust (extra evidence that
                    does NOT change the class)
@@ -151,7 +153,9 @@ def _au_code(n: int) -> pl.Expr:
     )
 
 
-def classify_reports(df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg) -> pl.DataFrame:
+def classify_reports(
+    df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg, *, nil_guard: bool | None = None
+) -> pl.DataFrame:
     """Give every report a dust rank and class from its weather fields, plus evidence flags."""
     # Step 1: which numbered fields hold a usable code (present AND accepted by QC)?
     # One boolean expression per field number, e.g. mw_ok[1] is "MW1 is usable".
@@ -264,13 +268,28 @@ def classify_reports(df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg) -> pl.DataFr
     # observation of "no significant weather", so no dust. iX 3/6 (omitted: no observation) and
     # reports without SYNOP text (METAR, BUFR-only) stay "not observed" (user decision 2026-10-19).
     nil = ix.is_in(["2", "5"]).fill_null(False) if cfg.synop_ix else pl.lit(False)
-    # has_pw: weather was observed at this report (a code was reported, or explicitly nothing).
-    has_pw = reported | nil
+    # nil_inferred (rule V3, user decision 2026-10-20; validated in notebooks/02): a SYNOP report
+    # with no code AND no iX whose visibility was reported (good QC) is inferred "nothing
+    # significant", if its station passes the guard (nil_guard, computed from the station's iX
+    # years by process/guard.py). In SYNOP, visibility and iX share one group, so a reported
+    # visibility shows an observation was made. Kept apart from the explicit nil_significant.
+    inferred = (
+        ~reported
+        & ix.is_null()
+        & pl.col("use_vis").fill_null(False)
+        & pl.col("report_type").is_in(cfg.infer_nil_report_types).fill_null(False)
+        if cfg.infer_nil and nil_guard
+        else pl.lit(False)
+    )
+    # has_pw: weather was observed at this report (a code, an explicit or an inferred "nothing").
+    has_pw = reported | nil | inferred
     pw_status = (
         pl.when(reported)
         .then(pl.lit("reported"))
         .when(nil)
         .then(pl.lit("nil_significant"))
+        .when(inferred)
+        .then(pl.lit("nil_inferred"))
         .otherwise(pl.lit("not_observed"))
     )
     rank = pl.max_horizontal([fam_rank[f] for f in fields]).fill_null(0).cast(pl.Int8)

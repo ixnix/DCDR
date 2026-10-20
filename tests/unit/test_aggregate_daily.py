@@ -22,10 +22,14 @@ LON0 = {"LONGITUDE": "0.0"}  # LMST == UTC keeps expectations readable
 
 
 def _silver(
-    settings: Settings, rows: list[dict], name: str = "S", cfg_hash: str | None = None
+    settings: Settings,
+    rows: list[dict],
+    name: str = "S",
+    cfg_hash: str | None = None,
+    nil_guard: bool | None = None,
 ) -> Path:
     cfg_hash = cfg_hash or silver_config_hash(settings)
-    df = build_station_year(bronze_frame(rows), None, 2024, settings)
+    df = build_station_year(bronze_frame(rows), None, 2024, settings, nil_guard=nil_guard)
     path = settings.data_root / "silver" / "year=2024" / f"{name}.parquet"
     write_silver(df, path, run_id="r", config_hash=cfg_hash, source_md5="m", prev_source_md5="")
     return path
@@ -192,3 +196,12 @@ def test_pruning_survives_files_vanishing_during_delete(
     monkeypatch.setattr(os, "unlink", unlink_with_twin)
     prune_versions(gold, keep=1)
     assert [p.name for p in (gold / "versions").iterdir()] == ["20260102T000000Z-bbbbbb"]
+
+
+def test_daily_keeps_inferred_nil_slots_visible(settings: Settings) -> None:
+    """Rule V3: inferred "nothing significant" slots make a day valid, but are counted apart, and
+    valid_day_explicit ignores them."""
+    rows = [isd_row(f"2024-03-01T{h:02d}:00:00", **LON0, REM="SYN004BUFR") for h in range(0, 24, 3)]
+    d = _daily(settings, [_silver(settings, rows, nil_guard=True)]).row(0, named=True)
+    got = (d["n_slots_pw"], d["n_slots_nil_inferred"], d["valid_day"], d["valid_day_explicit"])
+    assert got == (8, 8, True, False)

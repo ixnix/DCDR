@@ -5,7 +5,7 @@ Part 2 ([science.md](science.md)) explains how the observations are interpreted 
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-10-19 (method version 1.2.0).
+> Last updated: 2026-10-20 (method version 1.3.0).
 
 ---
 
@@ -61,6 +61,7 @@ DCDR/
 │   │   ├── qc.py               quality flags, RH, capped visibility, gusts
 │   │   ├── classify.py         dust class per report; haze rule; RH screen
 │   │   ├── sampling.py         one report per 3-hourly synoptic slot
+│   │   ├── guard.py            station guard for inferred "nothing significant" (rule V3)
 │   │   └── build.py            runs the above for one station-year, writes silver
 │   ├── aggregate.py            silver -> gold (versioned, checked, CURRENT pointer)
 │   ├── sql/daily.sql           the gold `daily` table, in SQL (run by DuckDB)
@@ -126,7 +127,7 @@ All method choices live in `src/dcdr/default.yaml`, validated by Pydantic models
 | `ingest` | bucket, region, concurrency, retries | no |
 | `parse` | which OD wind types are gusts | yes |
 | `qc` | QC code mapping, accepted flags, visibility cap, RH screen | yes |
-| `classify` | weather fields used, haze window, snow/sand temperatures, SYNOP iX rule | yes |
+| `classify` | weather fields used, haze window, snow/sand temperatures, SYNOP iX rule, inferred nil (V3) and its guard | yes |
 | `sampling` | synoptic window, excluded report types, report-type priority | yes |
 | `products` | valid-day threshold, gold versions kept | no (gold only) |
 | `stations` | default station list | no |
@@ -137,7 +138,7 @@ Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
 - `config_hash`: SHA-256 (16 hex) of all resolved settings; stored in every run record.
 - `silver_config_hash`: hash of the silver sections only; stored in every silver file. If it
   changes, silver is rebuilt.
-- `METHOD_VERSION` (`src/dcdr/process/__init__.py`, currently **1.2.0**): bumped whenever
+- `METHOD_VERSION` (`src/dcdr/process/__init__.py`, currently **1.3.0**): bumped whenever
   processing logic changes; stored in every silver file. If it changes, silver is rebuilt.
 
 ## 6. Inputs
@@ -194,7 +195,7 @@ local time, dust class and evidence, synoptic selection. Core columns come first
 |---|---|
 | Identity, time | `station_id, time_utc, time_lmst, lmst_date, lmst_hour, summary_lmst_date, report_type, source, lat, lon, lon_used, elev` |
 | Sampling | `slot_time, slot_lmst_date, slot_delta_min, is_candidate, is_excluded_type, selection_rank, selection_reason, is_synoptic_selected` |
-| Weather observed? | `has_pw, pw_status, syn_ix` |
+| Weather observed? | `has_pw`, `pw_status` (reported, nil_significant, nil_inferred, not_observed), `syn_ix` |
 | Dust | `dust_rank, dust_class_rule, dust_rule_id, dust_class_final, dust_haze, rh_screened, flag_du, flag_duhz, flag_susp, flag_bd, flag_ds, flag_vicinity, flag_past, flag_ambiguous, flag_daily_dust, pw_evidence` |
 | Weather values | `wsd, use_wsd, wind_dir, use_wind_dir, gust, use_gust, gust_src, vis_raw, vis_capped, use_vis, t, use_t, td, use_td, rh, slp, use_slp` |
 | Bookkeeping | `parse_status, dup_count, row_key, source_key` |
@@ -205,14 +206,15 @@ allowed values, unique `row_key`, at most one selected report per slot.
 
 ### 7.3 Gold `daily`
 One row per station per local (LMST) day. Columns (definitions in Part 2, section 9):
-`n_reports, n_slots, n_slots_pw, valid_day, dusty_day_synoptic, dusty_day_any,
+`n_reports, n_slots, n_slots_pw, valid_day, n_slots_nil_inferred, valid_day_explicit, dusty_day_synoptic, dusty_day_any,
 past_weather_dust, daily_summary_dust, dusty_day_any_source, n_dust_slots_{suspended, blowing,
 whirls, storm, dust_haze}, n_slots_rh_screened, dust_first_lmst_hour, wsd_mean, wsd_max, gust_max,
 vis_min, vis_hmean, n_vis_zero, t_mean, t_min, t_max, td_mean, rh_mean, slp_mean, dup6_mean,
 d_t_mean, d_slp_mean`.
 
 Checks run before activation (each must return 0 rows): at most 8 slots per day; slots with
-weather ≤ slots; `valid_day` matches its definition; synoptic dusty days have slots; one row per
+weather ≤ slots; inferred ≤ observed slots; `valid_day_explicit` implies `valid_day`;
+`valid_day` matches its definition; synoptic dusty days have slots; one row per
 station-day; day-to-day changes only between valid days.
 
 Planned gold products (spec §7.3, not built yet): `synoptic3h`, `monthly`, `annual`,
@@ -221,7 +223,7 @@ Planned gold products (spec §7.3, not built yet): `synoptic3h`, `monthly`, `ann
 ### 7.4 Provenance
 - Bronze metadata: `dcdr_layer, source_md5, source_key, run_id`.
 - Silver metadata: `dcdr_layer, method_version, config_hash, run_id, source_md5,
-  prev_source_md5, next_year_present`.
+  prev_source_md5, next_year_present, nil_guard` (`1` pass, `0` fail, empty = no decision).
 - Run log: `run_id, command, started_at, finished_at, status, git_commit, git_dirty,
   dcdr_version, config_hash, summary` (JSON with counts and failures).
 

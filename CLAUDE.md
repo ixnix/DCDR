@@ -12,8 +12,10 @@
 - Every ISD field, code or QC meaning is checked against `legacy/isd-format-document.pdf` **and**
   against real CSV strings (CSV sub-field order can differ from the document).
 - WMO code meanings come from official WMO sources (WMO-No. 306, codes.wmo.int).
-- A missing weather field is never assumed to mean "no significant weather"; only an explicit
-  SYNOP iX 2/5 says so (see docs/science.md, section 5).
+- A missing weather field is never assumed to mean "no significant weather": only an explicit
+  SYNOP iX 2/5 says so, or the validated inference V3 (docs/science.md, section 5).
+- **If it cannot be verified, it is "not observed"** (user decision 2026-10-20): any inference
+  must be validated against ground truth; where verification is impossible, stay conservative.
 - Bump `METHOD_VERSION` (`src/dcdr/process/__init__.py`) when processing results change.
 - Data live under `DCDR_DATA` (the author uses `/Volumes/CrucialX8/dcdr`); never commit data.
 

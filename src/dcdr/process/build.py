@@ -150,6 +150,7 @@ def build_station_year(
     settings: Settings,
     *,
     next_year_exists: bool = False,
+    nil_guard: bool | None = None,
 ) -> pl.DataFrame:
     """Turn one station-year of bronze into silver (in memory; `write_silver` saves it).
 
@@ -157,6 +158,8 @@ def build_station_year(
     previous         bronze rows of `year - 1` (or None): only its last day is used
     next_year_exists whether bronze for `year + 1` exists; decides which file keeps the
                      31-December reports that compete for the 1-January 00:00 slot
+    nil_guard        the station's guard for inferred "nothing significant" (process/guard.py):
+                     True allows rule V3, False/None do not
     The `*` makes `next_year_exists` keyword-only, so call sites must spell out its name.
     """
     frames = [current] if previous is None else [previous_year_tail(previous, year), current]
@@ -172,7 +175,7 @@ def build_station_year(
     # Sort by time and tell Polars the time column is sorted: the haze rule's rolling window
     # (in classify.py) requires it.
     df = df.sort(_SORT, nulls_last=True).with_columns(pl.col("time_utc").set_sorted())
-    df = classify_reports(df, settings.classify, settings.qc)
+    df = classify_reports(df, settings.classify, settings.qc, nil_guard=nil_guard)
     df = apply_haze_and_rh(df, settings.classify, settings.qc)
     df = select_synoptic(df, settings.sampling)
     # Each report lives in exactly one station-year file: slot candidates belong to their SLOT's
@@ -199,6 +202,7 @@ def write_silver(
     source_md5: str,
     prev_source_md5: str,
     next_year_present: bool = False,
+    nil_guard: bool | None = None,
 ) -> None:
     """Validate one silver station-year against the contract, then write it with provenance.
 
@@ -217,5 +221,6 @@ def write_silver(
             "source_md5": source_md5,
             "prev_source_md5": prev_source_md5,
             "next_year_present": "1" if next_year_present else "0",
+            "nil_guard": {True: "1", False: "0", None: ""}[nil_guard],  # station guard (rule V3)
         },
     )

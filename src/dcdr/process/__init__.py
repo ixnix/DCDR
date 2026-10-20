@@ -15,4 +15,4 @@ Bumping it makes the next run rebuild every silver file, because each file recor
 that built it (see pipeline._silver_is_current).
 """
 
-METHOD_VERSION = "1.2.0"  # 1.2.0: SYNOP iX rule (no-significant-weather, 4680 table)
+METHOD_VERSION = "1.3.0"  # 1.3.0: inferred nil (rule V3); 1.2.0: SYNOP iX rule
