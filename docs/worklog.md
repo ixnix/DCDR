@@ -24,6 +24,12 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## 2026-10-20
 
+- **METAR first** (user decision): handle METAR before running all station-years; the user wants
+  more US Southwest stations, which report mostly METAR.
+- **Finding: ISD decodes METAR dust reliably.** Phoenix, El Paso, Las Vegas (2015-2024): 761 METARs
+  with a dust group (DU, SA, BLDU, BLSA, DRDU, DRSA, PO, DS, SS) in the raw text; 746 (98 %) also
+  have dust in ISD's decoded fields (MW/AU/AW). Raw METAR text is kept in REM ("MET…METAR …").
+  None of these three stations' METARs carry "AUTO" (staffed or augmented).
 - **Finding: SYNOP and METAR at the same time** (pilot_100 silver, 2015-2024): 27 % of SYNOPs
   (908k, 37 stations) have a METAR at the identical timestamp. When both carry a code they agree
   on dust 98.9 %, but SYNOP reports dust far more often (27,487 SYNOP-only vs 2,135 METAR-only vs
