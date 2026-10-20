@@ -346,6 +346,10 @@ Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is be
 5. Station selection: require recent data and weather reporting.
 6. Does ISD keep the raw SYNOP text (and so iX) in older decades and at African stations?
    If not, older years keep the biased denominator.
+7. When iX is missing: infer "nothing significant" from the station's reporting habit (stations
+   that leave out the group almost never report codes 00-03), a valid visibility and possibly
+   high visibility; validate against station-years that have iX before adopting (proposal
+   2026-10-20, see worklog).
 
 ## 12. References
 

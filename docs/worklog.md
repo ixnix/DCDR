@@ -15,6 +15,7 @@ open to review. Details of the current method: [science.md](science.md); of the 
 - [ ] Investigate stations with no dust in 2020-2024 despite high duISD ranks (Ashchysai, Shakawe,
       Good Hope): change of observing practice or real decline?
 - [ ] BUFR-only SYNOP (17 %, no iX): any source for the "omitted" information?
+- [ ] Decide on inferred-nil levels + validation experiment when iX is missing (proposal 2026-10-20).
 - [ ] Check iX availability (raw SYNOP text in REM) by decade and region, e.g. In Salah and
       Dongola for 1995, 2005, 2015.
 - [ ] Review humidity screen at humid dust sites and the `has_pw` sampling tie-break.
@@ -22,6 +23,21 @@ open to review. Details of the current method: [science.md](science.md); of the 
 - [ ] Set up a GitHub remote; publish documentation (e.g. MkDocs) when stable.
 
 ---
+
+## 2026-10-20
+
+- **Finding: reporting habit is detectable without iX.** Stations that leave out the weather group
+  when nothing happens (iX 2 in 72-84 % of iX-bearing SYNOPs: Dammam, Zabol, Nasiriya, La Rioja,
+  Catamarca; Nokkundi 53 %) almost never report codes 00-03 (0-7 %); stations that always include
+  it (Hotan, Bachu, Tazhong, Good Hope, Shakawe) report 00-03 in 60-92 % of codes.
+- **Proposal (awaiting user decision):** three confidence levels for "observed": explicit (code or
+  iX 2/5), inferred nil (no code, no iX, station habit "leave out", valid visibility, optionally
+  high visibility), not observed. Validate the inference on station-years with iX (hide iX,
+  compare) before adopting; publish statistics with and without inferred nil. Also check the
+  METAR convention (absent weather group; AUTO, CAVOK, NSW) and keep a visibility-based dust
+  index as an independent check.
+- Caveat: on the exFAT SSD a glob like `*.parquet` also matches macOS `._*.parquet` files; use
+  `[0-9]*.parquet` in ad-hoc queries.
 
 ## 2026-10-19
 
