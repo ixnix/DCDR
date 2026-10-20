@@ -535,6 +535,26 @@ carry nearly all the dust (2020: 126 dusty days from SYNOP, 34 from METAR alone)
 one, so `dusty_day` is somewhat more sensitive where both exist; `dusty_day_synop` stays
 comparable across SYNOP stations.
 
+### 8.1 Full-record test of the slot sources (notebook 04)
+
+`notebooks/04_slot_sources_full_record.ipynb`: pilot_100, 1931 to 2025-08-27, 5 651 station-years,
+method 1.6.0 (the choice of dust and weather sources is still under test). Main results:
+- **METARs without raw text (all before 2000) bias dust frequency.** Without text a METAR counts
+  as observed only when it carries a code, so clear slots drop out (44-51 % of METAR slots
+  observed before 2000, 85-90 % since). Counting only coded METAR slots on 2010-2024 data cuts
+  valid days by ~90 % and raises dust frequency by a median factor of 4.6. Affected: stations or
+  years relying on METAR before 2000 (Gimpo; El Paso before 2005; Dammam, Ilam, In Salah have no
+  SYNOP in ISD before 2005). Old SAO reports (before 1960) always carry a code (mostly 00) and are
+  not affected.
+- **SYNOP and METAR values differ at some stations** (same slot): wind +2.4 m/s (Aktyubinsk),
+  temperature +1.0 °C (Kashi); median +0.05 °C, 0.0 m/s. Supports one source for weather values.
+- **SYNOP-first weather values lose visibility** where the SYNOP has none but the METAR has: 11.5 %
+  of slots with both (Australian automatic SYNOPs 50-63 %); temperature 0.2 %, wind 1.1 %.
+- **METAR adds 1.6 % of dusty days overall**, mostly where the SYNOP did not observe; it is the
+  main source at El Paso (79 %), Las Vegas, Phoenix and Gimpo (no SYNOP).
+- Rule V3 infers "nothing significant" for some US SYNOPs while the METAR reports dust (151 slots).
+- NOAA's S3 data end on 2025-08-27 (no 2026 files).
+
 ## 9. Daily aggregation (gold `daily`, `sql/daily.sql`)
 
 One row per station per local (LMST) day.
@@ -607,6 +627,10 @@ Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is be
 2. BUFR-only SYNOP (17 %): recover "omitted" information from the BUFR original?
 3. ~~METAR without a weather group~~: resolved (5.2, method 1.4.0). Still open: decode dust in
    US remarks as a "nearby/distant" flag; why Niamey's METARs miss dust at <= 5 km (5.8 %).
+8. METARs without raw text (before 2000) and the selection bias they cause (8.1): count them for
+   dust only, or validate an inference like V3 (no code + visibility = nothing significant)?
+9. Visibility under SYNOP-first weather values (8.1): accept the gaps, or take visibility from
+   the METAR when the SYNOP has none?
    US SYNOPs rarely carry the dust of their METARs (5.2): resolved by judging both per slot (1.5.0).
 4. Humidity screen at humid dust sites (6.6); `has_pw` before time distance in sampling (8).
 5. Station selection: require recent data and weather reporting.
