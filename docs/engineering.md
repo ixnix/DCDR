@@ -5,7 +5,7 @@ Part 2 ([science.md](science.md)) explains how the observations are interpreted 
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-10-20 (method version 1.4.0).
+> Last updated: 2026-10-20 (method version 1.5.0).
 
 ---
 
@@ -130,7 +130,7 @@ All method choices live in `src/dcdr/default.yaml`, validated by Pydantic models
 | `parse` | which OD wind types are gusts | yes |
 | `qc` | QC code mapping, accepted flags, visibility cap, RH screen | yes |
 | `classify` | weather fields used, haze window, snow/sand temperatures, SYNOP iX rule, inferred nil (V3) and its guard, METAR rules (`metar_rules`, `metar_report_types`, `metar_nil_min_vis_m`) | yes |
-| `sampling` | synoptic window, excluded report types, report-type priority | yes |
+| `sampling` | synoptic window, excluded report types, slot sources (`sources`: SYNOP and METAR report types, in order of preference) | yes |
 | `products` | valid-day threshold, visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept | no (gold only) |
 | `stations` | default station list | no |
 
@@ -140,7 +140,7 @@ Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
 - `config_hash`: SHA-256 (16 hex) of all resolved settings; stored in every run record.
 - `silver_config_hash`: hash of the silver sections only; stored in every silver file. If it
   changes, silver is rebuilt.
-- `METHOD_VERSION` (`src/dcdr/process/__init__.py`, currently **1.4.0**): bumped whenever
+- `METHOD_VERSION` (`src/dcdr/process/__init__.py`, currently **1.5.0**): bumped whenever
   processing logic changes; stored in every silver file. If it changes, silver is rebuilt.
 
 ## 6. Inputs
@@ -196,7 +196,7 @@ local time, dust class and evidence, synoptic selection. Core columns come first
 | Group | Columns |
 |---|---|
 | Identity, time | `station_id, time_utc, time_lmst, lmst_date, lmst_hour, summary_lmst_date, report_type, source, lat, lon, lon_used, elev` |
-| Sampling | `slot_time, slot_lmst_date, slot_delta_min, is_candidate, is_excluded_type, selection_rank, selection_reason, is_synoptic_selected` |
+| Sampling | `slot_time, slot_lmst_date, slot_delta_min, is_candidate, is_excluded_type, slot_source` (synop/metar), `source_rank, is_source_selected` (the slot's report for its source), `selection_rank, selection_reason, is_synoptic_selected` (the slot's primary report) |
 | Weather observed? | `has_pw`, `pw_status` (reported, nil_significant, nil_inferred, nil_metar, not_observed), `syn_ix`, `metar_auto`, `metar_wx` (missing, group, cavok, none) |
 | Dust | `dust_rank, dust_class_rule, dust_rule_id, dust_class_final, dust_haze, rh_screened, flag_du, flag_duhz, flag_susp, flag_bd, flag_ds, flag_vicinity, flag_past, flag_ambiguous, flag_daily_dust, pw_evidence` |
 | Weather values | `wsd, use_wsd, wind_dir, use_wind_dir, gust, use_gust, gust_src, vis_raw, vis_capped, use_vis, t, use_t, td, use_td, rh, slp, use_slp` |
@@ -204,25 +204,27 @@ local time, dust class and evidence, synoptic selection. Core columns come first
 | Raw decoded fields | e.g. `mw1_code, mw1_qc, au1_obsc, ay1_code, ...` (alphabetical) |
 
 Meanings are in Part 2. The contract (`schemas.py`) is checked before every write: types,
-allowed values, unique `row_key`, at most one selected report per slot.
+allowed values, unique `row_key`, at most one primary report and one report per source per slot.
 
 ### 7.3 Gold `daily`
 One row per station per local (LMST) day. Columns (definitions in Part 2, section 9):
-`n_reports, n_slots, n_slots_pw, valid_day, n_slots_nil_inferred, n_slots_nil_metar, n_slots_metar,
-valid_day_explicit, dusty_day_synoptic, n_slots_pw_vis5, valid_day_vis5, dusty_day_vis5,
-dusty_day_any, past_weather_dust, daily_summary_dust, vicinity_dust_day, dusty_day_any_source, n_dust_slots_{suspended, blowing,
+`n_reports, n_slots, n_slots_pw, valid_day, dusty_day, n_slots_pw_explicit, valid_day_explicit,
+n_slots_nil_inferred, n_slots_nil_metar, n_slots_synop, n_slots_pw_synop, valid_day_synop,
+dusty_day_synop, n_slots_metar, n_slots_pw_metar, valid_day_metar, dusty_day_metar,
+n_slots_pw_vis5, valid_day_vis5, dusty_day_vis5, dusty_day_any, past_weather_dust,
+daily_summary_dust, vicinity_dust_day, dusty_day_any_source, n_dust_slots_{suspended, blowing,
 whirls, storm, dust_haze}, n_slots_rh_screened, dust_first_lmst_hour, wsd_mean, wsd_max, gust_max,
 vis_min, vis_hmean, n_vis_zero, t_mean, t_min, t_max, td_mean, rh_mean, slp_mean, dup6_mean,
 d_t_mean, d_slp_mean`.
-Which dusty-day column to use: `dusty_day_synoptic` with `valid_day` for complete counts at SYNOP
-stations; `dusty_day_vis5` with `valid_day_vis5` to compare stations or years whose slots come
-partly from METAR (`n_slots_metar`); see Part 2, sections 5.2 and 9.
+Which dusty-day column to use (each with its own `valid_day*`): `dusty_day` for the fullest count
+(SYNOP or METAR per slot); `dusty_day_synop` to compare with duISD v1 or SYNOP-only stations;
+`dusty_day_vis5` to compare stations or years with different report mixes; see Part 2,
+sections 5.2, 5.3 and 9.
 
-Checks run before activation (each must return 0 rows): at most 8 slots per day; slots with
-weather ≤ slots; inferred ≤ observed slots; `valid_day_explicit` implies `valid_day`;
-METAR slots ≤ slots; implied-nil METAR slots ≤ observed slots; `dusty_day_vis5` implies
-`dusty_day_synoptic`; vis5 observed slots ≤ observed slots; `valid_day` and `valid_day_vis5`
-match their definitions; synoptic dusty days have slots; one row per
+Checks run before activation (each must return 0 rows): at most 8 slots per day; observed slots ≤
+slots; explicit, per-source, inferred, implied and vis5-judgeable slots ≤ observed slots; per-source
+slots ≤ slots; `dusty_day` = `dusty_day_synop` OR `dusty_day_metar`; the narrower dusty-day flags
+imply `dusty_day`; every `valid_day*` matches its definition; dusty days have slots; one row per
 station-day; day-to-day changes only between valid days.
 
 Planned gold products (spec §7.3, not built yet): `synoptic3h`, `monthly`, `annual`,

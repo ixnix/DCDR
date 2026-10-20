@@ -15,4 +15,5 @@ Bumping it makes the next run rebuild every silver file, because each file recor
 that built it (see pipeline._silver_is_current).
 """
 
-METHOD_VERSION = "1.4.0"  # 1.4.0: METAR rules, vis5; 1.3.0: inferred nil (V3); 1.2.0: iX rule
+METHOD_VERSION = "1.5.0"  # 1.5.0: SYNOP and METAR per slot; 1.4.0: METAR rules, vis5;
+# 1.3.0: inferred nil (V3); 1.2.0: iX rule

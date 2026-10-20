@@ -43,7 +43,7 @@ def test_end_to_end_incremental(settings: Settings) -> None:
     assert sil.built == 1
     daily = pl.read_parquet(run_aggregate(ctx, [STATION], [2024]) / "daily" / "part-000.parquet")
     jan1 = daily.filter(pl.col("lmst_date") == date(2024, 1, 1)).row(0, named=True)
-    assert jan1["dusty_day_synoptic"] and jan1["n_dust_slots_dust_haze"] == 1
+    assert jan1["dusty_day"] and jan1["n_dust_slots_dust_haze"] == 1
 
     # Unchanged inputs: nothing is re-downloaded or rebuilt.
     assert run_ingest(ctx, [STATION], [2024], store=store).downloaded == 0
@@ -62,7 +62,7 @@ def test_end_to_end_incremental(settings: Settings) -> None:
     assert run_process(ctx, [STATION], [2024]).built == 1
     daily = pl.read_parquet(run_aggregate(ctx, [STATION], [2024]) / "daily" / "part-000.parquet")
     jan1 = daily.filter(pl.col("lmst_date") == date(2024, 1, 1)).row(0, named=True)
-    assert not jan1["dusty_day_synoptic"]
+    assert not jan1["dusty_day"]
 
 
 def test_one_bad_station_year_does_not_abort_silver(settings: Settings, monkeypatch) -> None:

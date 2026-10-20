@@ -7,10 +7,9 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## Open items
 
-- [ ] **Run the pipeline for method 1.4.0** (user): `dcdr process` rebuilds all silver (new method
-      version), then `dcdr aggregate`; compare `dusty_day_synoptic` with `dusty_day_vis5` and look
-      at `n_slots_metar` per station.
-- [ ] Validate US METARs against their SYNOPs (METAR at :51, SYNOP at :00: pair within minutes).
+- [ ] **Run the pipeline for method 1.5.0** (user): `dcdr process` rebuilds all silver (new method
+      version), then `dcdr aggregate`; per station compare `dusty_day`, `dusty_day_synop`,
+      `dusty_day_metar` and `dusty_day_vis5`, and `n_slots_pw_synop` against `n_slots_pw`.
 - [ ] Decode dust in US remarks (`BLDU ALQDS`, `DSNT`, `VCBLDU`) as a "nearby/distant" flag.
 - [ ] Niamey: why its METARs miss dust at <= 5 km in 5.8 % of SYNOP dust cases.
 - [ ] FMH-1: replace the 2005 mirror copy (everyspec.com) with an ICAMS/NOAA copy if one appears.
@@ -27,6 +26,35 @@ open to review. Details of the current method: [science.md](science.md); of the 
 ---
 
 ## 2026-10-20
+
+- **SYNOP and METAR judged independently per slot** (method **1.5.0**, follows 26ed889;
+  tests first, 224 pass).
+  - *Found:* US SYNOPs rarely carry the dust their METARs report. Pairing each dusty METAR with the
+    next SYNOP within 15 min (2015-2024): El Paso 103 pairs, SYNOP dust in 1; Phoenix 12, 1. Of El
+    Paso's, 92 say iX 1 ("group included") but contain no weather group → "not observed", yet
+    under 1.4.0 they still filled the slot (report type ranked before "observed"), hiding the dust.
+    Las Vegas reports at :56, El Paso and Phoenix at :51. The US stations had no SYNOP in the 1985
+    and 1995 samples and 4-8 a day since at least 2005.
+  - *User decisions:* SYNOP and METAR are independent per slot; a slot is dusty if either reports
+    dust. When the SYNOP observed the weather it is the primary input and METAR the supplement;
+    when it did not (e.g. automatically generated), the METAR fills the gap. Confirmed: sources
+    SYNOP = FM-12 + SY-*, METAR = FM-15 (+ SAO, AUTO); SPECI never fill a slot (event-driven;
+    still in `dusty_day_any`); at most one report per source per slot (closest that observed the
+    weather); combined measure is the primary `dusty_day` (renames `dusty_day_synoptic`), with
+    `dusty_day_synop` and `dusty_day_metar` alongside; weather means from one primary report per
+    slot (the SYNOP if it observed the weather).
+  - *Rulings:* `valid_day_explicit` now counts slots with an explicit observation from either
+    source (`n_slots_pw_explicit`) instead of subtracting inferred slots; a slot counts in each
+    dust class one of its two reports has; a slot dusty only through a report of unknown
+    visibility is left out of `valid_day_vis5`; `sampling.priority` and the unused
+    `synoptic_dust_source` were replaced by `sampling.sources`.
+  - Code: `sampling.py` (`slot_source`, `source_rank`, `is_source_selected`; `is_synoptic_selected`
+    is now the slot's primary report), `sql/daily.sql` rewritten (slots combine sources; weather
+    statistics from primary reports), gold checks, silver contract (one primary and one report
+    per source per slot).
+  - Check on real 2020 bronze (built into a scratch folder): El Paso 5 dusty days (SYNOP alone 1,
+    METAR alone 5); Phoenix 1 (0, 1); Zabol 126 (126, 34); Niamey 236 (235, 129); Gran Canaria 2.
+    All five have 366 valid days.
 
 - **METAR rules implemented** (method **1.4.0**; tests first: 41 new, 215 pass). Full rule tables
   for every report type: science.md 5.3. Decisions:

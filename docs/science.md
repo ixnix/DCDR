@@ -5,7 +5,7 @@ dust, samples reports and aggregates them into daily records, and **why** each c
 Part 1 ([engineering.md](engineering.md)) covers the software; [worklog.md](worklog.md) records
 how and when each decision was made.
 
-> Living document. It describes the method **as implemented now** (method version **1.4.0**).
+> Living document. It describes the method **as implemented now** (method version **1.5.0**).
 > Planned steps are marked *planned*. Last updated: 2026-10-20.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`)
@@ -224,14 +224,23 @@ Letlhakane, Carnarvon), no decision 13 (mostly Australian automatic and some Ind
 Inference touches 44 of 98 stations; where it matters most, dust frequency falls toward
 plausible values (Nokkundi 325 → 155 dusty days/yr; Bachu 85 → 71).
 
-### 5.2 METAR and SPECI (adopted; method 1.4.0)
+### 5.2 METAR and SPECI (adopted; methods 1.4.0 and 1.5.0)
 
-**Role (user decision 2026-10-20).** SYNOP is the primary source; METAR is a supplement. Sampling
-fills each 3-hourly slot from a SYNOP whenever one exists (section 8). A METAR or SPECI fills a
-slot only when no SYNOP does: night gaps, stations with fewer SYNOPs (Phoenix and Las Vegas sent 4 SYNOPs a day in 2016 and 2020, 8 in
-2024), and METAR-only stations. When a SYNOP and
-a METAR at the same time disagree, the SYNOP is the truth. Every report, METAR included, still
-feeds `dusty_day_any`.
+**Role (user decisions 2026-10-20; method 1.5.0).** SYNOP and METAR are judged independently in
+each 3-hourly slot: the slot is **dusty if either reports dust**, and observed if either observed
+the weather. When the SYNOP observed the weather it is the primary input and the METAR a
+supplement; when the SYNOP observed nothing, the METAR fills the gap. Each source contributes at
+most one report per slot (the closest that observed the weather), so a busy airport gets no extra
+chances; SPECI never fill a slot (they are sent because conditions changed, often when dust
+arrives) but count in `dusty_day_any`. Section 8 has the sampling; 5.3 the tables.
+
+*Why (method 1.4.0 took one report per slot, SYNOP first):* a SYNOP that observed nothing then hid
+the METAR next to it. US SYNOPs show the problem: after a METAR reporting dust, the next SYNOP
+(9 minutes later) carried dust in 1 of 103 cases at El Paso and 1 of 12 at Phoenix (2015-2024);
+92 of El Paso's say iX 1 ("weather group included") but contain no weather group, so they are
+"not observed" (they seem to be generated automatically). With 1.5.0, El Paso 2020 has 5 dusty
+days in the slots instead of 1. The US stations sent no SYNOP in the 1985 and 1995 samples and
+4-8 a day since at least 2005.
 
 **What the code rules say** (extracts with page citations:
 [references/metar-weather.md](references/metar-weather.md)):
@@ -286,16 +295,17 @@ columns: `metar_auto`, `metar_wx` (`missing`, `group`, `cavok`, `none`; null wit
 Settings: `classify.metar_rules`, `metar_report_types` ([FM-15, FM-16]), `metar_nil_min_vis_m`
 (5000).
 
-**Known limitation: light dust in METAR slots.** SYNOP codes 06 and 07 have no visibility limit
-(WMO table 4677; the automatic table 4680 splits only at 1 km), but METAR codes dust only at
-<= 5 km (US: < 7 mi). In slots filled by a METAR, light dust above 5 km is mostly missed, so
-`dusty_day_synoptic` is a lower bound where many slots come from METAR. Two daily columns handle
-this (user decision): `n_slots_metar` shows how many of the day's slots came from a METAR, and
-`dusty_day_vis5` counts only dust with visibility <= 5 km, which SYNOP and METAR catch alike. For
-SYNOP the 5 km limit is applied with the visibility of the same report: it is a threshold we derive
-to match METAR, not a SYNOP rule. Use `dusty_day_vis5` to compare stations or years with
-different report mixes (e.g. a SYNOP station with a METAR station, or a station before and after a
-switch to METAR); use `dusty_day_synoptic` for complete counts at SYNOP stations.
+**Known limitation: light dust where only METAR observed.** SYNOP codes 06 and 07 have no
+visibility limit (WMO table 4677; the automatic table 4680 splits only at 1 km), but METAR codes
+dust only at <= 5 km (US: < 7 mi). Where a slot's only observation is a METAR, light dust above
+5 km is mostly missed, so `dusty_day` is a lower bound at stations or in years with few observed
+SYNOPs (see `n_slots_pw_synop` against `n_slots_pw`). Two measures handle this (user decisions):
+the per-source flags (`dusty_day_synop`, `dusty_day_metar`) and `dusty_day_vis5`, which counts
+only dust with visibility <= 5 km, caught alike by SYNOP and METAR. For SYNOP the 5 km limit is
+applied with the visibility of the same report: a threshold we derive to match METAR, not a SYNOP
+rule. Use `dusty_day_vis5` to compare stations or years with different report mixes;
+`dusty_day_synop` to compare with duISD v1 or SYNOP-only stations; `dusty_day` for the fullest
+count at a station.
 
 **Vicinity dust.** `VC` dust groups are rare (370 of 3.18 M METARs) but concentrated: they would
 add 80 dust days at Las Vegas (40 dust days at the station in 2015-2024) and 33 at El Paso. They
@@ -311,15 +321,23 @@ Malta `DU`): ISD does not decode it; 2 632 reports, 1 178 of them at El Paso.
 `nil_significant`, `nil_inferred` and `nil_metar` count as observed; `not_observed` does not.
 "Dusty" = a dust class (suspended, blowing, whirls, storms) or `dust_haze`.
 
-**Which report fills a 3-hourly slot** (section 8):
+**Which reports judge a 3-hourly slot** (section 8; method 1.5.0):
 
-| Reports within ±30 min of the slot | Fills the slot |
-|---|---|
-| a SYNOP (FM-12) | the SYNOP, even one that observed nothing; a METAR never overrides it |
-| no FM-12; a merged SYNOP record (SY-MT, SY-SA, SY-AE, SY-AU) | that record |
-| none of these; a METAR (FM-15) | the METAR: one that observed weather first, then the closest in time |
-| then SAO, AUTO, SPECI (FM-16), other types | in that order |
-| only daily or monthly summaries (SOD, SOM) | no slot |
+| Source | Report types (in order of preference) | Report used in the slot |
+|---|---|---|
+| SYNOP | FM-12, SY-MT, SY-SA, SY-AE, SY-AU | the closest that observed the weather (else the closest) |
+| METAR | FM-15, SAO, AUTO | the same rule |
+| none | SPECI (FM-16), SOD, SOM, any other type | never used for slots (SPECI and others still count in `dusty_day_any`) |
+
+| SYNOP in the slot | METAR in the slot | Slot dusty? | Slot observed? | Primary report (wind, T, visibility) |
+|---|---|---|---|---|
+| observed, dust | any | yes | yes | SYNOP |
+| observed, no dust | dust | **yes** (either is enough) | yes | SYNOP |
+| observed, no dust | no dust or not observed | no | yes | SYNOP |
+| not observed (iX 3/6, iX 1 without group, no code) | dust | **yes** | yes | METAR |
+| not observed | no dust | no | yes | METAR |
+| not observed | not observed or none | no | no | SYNOP |
+| none | observed | as the METAR | yes | METAR |
 
 **SYNOP (FM-12)**
 
@@ -378,12 +396,14 @@ Pilot data, bronze 2020: FM-12 343 587, FM-15 305 980, FM-16 9 093, SOD 1 335, S
 
 | Column | Counts |
 |---|---|
-| `n_slots_pw`, `valid_day` | slots whose report observed the weather (reported, nil_significant, nil_inferred, nil_metar) |
-| `valid_day_explicit` | the same without nil_inferred (S6) and nil_metar (M5) |
-| `dusty_day_synoptic` | a selected slot is dusty (any visibility) |
-| `dusty_day_vis5`, `n_slots_pw_vis5`, `valid_day_vis5` | a selected slot is dusty with visibility <= 5 km; dusty slots with unknown visibility are left out |
-| `n_slots_metar`, `n_slots_nil_metar` | slots filled by a METAR or SPECI; of those, M5 |
-| `dusty_day_any` | any report of the day dusty (all types, selected or not) |
+| `n_slots_pw`, `valid_day` | slots observed by either source (reported, nil_significant, nil_inferred, nil_metar) |
+| `n_slots_pw_explicit`, `valid_day_explicit` | slots with an explicit observation (a code, iX 2/5, CAVOK) from either source |
+| `dusty_day` | a slot where either source reports dust (any visibility) |
+| `dusty_day_synop`, `n_slots_pw_synop`, `valid_day_synop` | the SYNOP report of each slot alone |
+| `dusty_day_metar`, `n_slots_pw_metar`, `valid_day_metar` | the METAR report of each slot alone |
+| `dusty_day_vis5`, `n_slots_pw_vis5`, `valid_day_vis5` | dust at <= 5 km from either source; slots dusty only through a report of unknown visibility are left out |
+| `n_slots_nil_inferred`, `n_slots_nil_metar` | slots with S6 / M5 |
+| `dusty_day_any` | any report of the day dusty (all types, selected or not, SPECI included) |
 | `vicinity_dust_day` | any report with vicinity dust (M11, S10) |
 
 ## 6. Dust classification (`classify.py`)
@@ -485,25 +505,28 @@ Ciudad Constitución 375, Jaisalmer 171 in 2020-2024).
 
 *Why:* stations report at very different rates (SYNOP every 3 h; airports every 30-60 min plus
 special reports when weather changes, often exactly when dust arrives). Counting dust in all
-reports would make busy airports look dustier. So, as in duISD v1, one report is chosen per
-3-hourly slot (00, 03, ..., 21 UTC) and the primary dusty-day flag uses only those.
+reports would make busy airports look dustier. So, as in duISD v1, dust is judged in 3-hourly
+slots (00, 03, ..., 21 UTC), with a fixed number of reports per slot.
 
-Rules:
-- Candidates: reports within ±30 min of the slot, excluding summaries (SOD, SOM).
-- Ranking: report-type priority (FM-12 SYNOP first, then merged SYNOP types, METAR, older and
-  automated formats, SPECI last) → weather observed (`has_pw`) → closest in time → fixed
-  tie-breakers. Rank 1 is selected; every candidate keeps its rank and a `selection_reason`.
+Rules (method 1.5.0; user decisions 2026-10-20):
+- Candidates: reports within ±30 min of the slot whose type belongs to a source
+  (`sampling.sources`: SYNOP = FM-12 and the merged SY-* types; METAR = FM-15, SAO, AUTO).
+  Summaries (SOD, SOM) and SPECI are never candidates.
+- Per source, one report per slot: weather observed (`has_pw`) first, then the type order, then
+  the closest in time, then fixed tie-breakers (`source_rank`, `is_source_selected`).
+- The slot's **primary** report (`is_synoptic_selected`): the same order with SYNOP before METAR
+  after `has_pw`, i.e. the SYNOP if it observed the weather, otherwise the METAR. It supplies wind,
+  temperature, humidity, pressure and visibility statistics, which are never double counted.
+- Gold combines the two sources per slot: dusty if either reports dust (table in 5.3).
+- Every candidate keeps its ranks and a `selection_reason`.
 
-Example: Zabol 2023 has 8,226 METAR and 2,840 SYNOP; nearly all slots are filled by SYNOP.
-Phoenix 2020 has 4 SYNOPs a day, so METARs fill about half of its slots (1,474 of 2,928).
+Example: Zabol 2023 has 8,226 METAR and 2,840 SYNOP. Its SYNOPs observe almost every slot and
+carry nearly all the dust (2020: 126 dusty days from SYNOP, 34 from METAR alone). Phoenix 2020 has
+4 SYNOPs a day, so half its slots are judged by METAR alone.
 
-Because report type ranks first, SYNOP is always the primary source and a METAR only fills a slot
-without SYNOP (user decision 2026-10-20). A consequence: a SYNOP that observed nothing (iX 3/6)
-still wins over a METAR at the same slot that did observe the weather.
-
-*To review:* `has_pw` ranks before time distance. Among METARs this can prefer a later report
-that observed weather over a closer one that did not. With the METAR rules most METARs now count
-as observed (5.2), so the effect is smaller than before 1.4.0.
+*Trade-off:* a station with both SYNOP and METAR gets two looks per slot, a SYNOP-only station
+one, so `dusty_day` is somewhat more sensitive where both exist; `dusty_day_synop` stays
+comparable across SYNOP stations.
 
 ## 9. Daily aggregation (gold `daily`, `sql/daily.sql`)
 
@@ -511,29 +534,29 @@ One row per station per local (LMST) day.
 
 | Column(s) | Definition | Why |
 |---|---|---|
-| `n_slots`, `n_slots_pw` | selected slots on the day; of those, slots with weather observed | basis of validity |
+| `n_slots`, `n_slots_pw` | slots with a SYNOP or METAR on the day; of those, slots observed by either | basis of validity |
 | `valid_day` | `n_slots_pw ≥ 4` (of 8) | a day can only be judged dusty or not if enough was observed |
-| `n_slots_nil_inferred` | observed slots whose "nothing significant" was inferred (rule V3) | keeps inference visible |
-| `n_slots_nil_metar` | observed slots from a METAR with no weather group at > 5 km (5.2) | keeps the implied "nothing" visible |
-| `n_slots_metar` | slots filled by a METAR or SPECI (no SYNOP available) | where `dusty_day_synoptic` may miss light dust |
-| `valid_day_explicit` | `n_slots_pw − n_slots_nil_inferred − n_slots_nil_metar ≥ 4` | validity without inferred or implied "nothing", for sensitivity checks |
-| `dusty_day_synoptic` | any selected slot dusty, at any visibility (**primary definition**) | all dust the observers reported |
-| `dusty_day_vis5` | any selected slot dusty with visibility ≤ 5 km (5.2) | caught alike by SYNOP and METAR: compare stations and years with different report mixes |
-| `n_slots_pw_vis5`, `valid_day_vis5` | observed slots, leaving out dusty slots of unknown visibility; `≥ 4` | denominator of `dusty_day_vis5` |
+| `dusty_day` | a slot where either source reports dust, at any visibility (**primary definition**) | all dust the observers reported (5.2) |
+| `n_slots_pw_explicit`, `valid_day_explicit` | slots with an explicit observation (code, iX 2/5, CAVOK); `≥ 4` | validity without inferred or implied "nothing", for sensitivity checks |
+| `n_slots_nil_inferred`, `n_slots_nil_metar` | slots with "nothing significant" inferred (V3) or implied by a METAR without group | keeps them visible |
+| `n_slots_synop`, `n_slots_pw_synop`, `valid_day_synop`, `dusty_day_synop` | the same from each slot's SYNOP alone | comparable with duISD v1 and SYNOP-only stations |
+| `n_slots_metar`, `n_slots_pw_metar`, `valid_day_metar`, `dusty_day_metar` | the same from each slot's METAR alone | METAR's contribution; misses light dust (5.2) |
+| `n_slots_pw_vis5`, `valid_day_vis5`, `dusty_day_vis5` | dust with visibility ≤ 5 km, either source | caught alike by SYNOP and METAR: compare stations and years with different report mixes |
 | `vicinity_dust_day` | any report with dust in the vicinity (METAR `VC`, SYNOP MV codes) | dust near, not at, the station; kept apart |
-| `dusty_day_any` | any report of the day dusty (all report types) | more sensitive; depends on reporting rate |
+| `dusty_day_any` | any report of the day dusty (all report types, SPECI included) | more sensitive; depends on reporting rate |
 | `past_weather_dust`, `daily_summary_dust` | past-weather or daily-summary dust evidence | evidence from other fields |
 | `dusty_day_any_source` | `dusty_day_any` or either evidence flag | most sensitive |
-| `n_dust_slots_<class>`, `n_slots_rh_screened` | slots per class | keeps code 06 etc. visible |
+| `n_dust_slots_<class>`, `n_slots_rh_screened` | slots per class (a slot counts in each class one of its two reports has) | keeps code 06 etc. visible |
 | `dust_first_lmst_hour` | first dusty slot of the day | diurnal timing |
-| `wsd_mean`, `wsd_max`, `gust_max` | wind (gust from all reports) | driver |
+| `wsd_mean`, `wsd_max`, `gust_max` | wind from each slot's primary report (gust from all reports) | driver |
 | `vis_min`, `vis_hmean`, `n_vis_zero` | minimum and harmonic-mean visibility | harmonic mean averages extinction (≈ 1/visibility) |
-| `t_*`, `td_mean`, `rh_mean`, `slp_mean` | means and extremes at selected slots | drivers |
+| `t_*`, `td_mean`, `rh_mean`, `slp_mean` | means and extremes over the slots' primary reports | drivers |
 | `dup6_mean` | dust uplift potential U³(1 + 6/U)(1 − 36/U²) for U > 6 m/s, else 0 | wind's capacity to lift dust (Marsham et al. 2011 form; fixed 6 m/s threshold) |
 | `d_t_mean`, `d_slp_mean` | change from the previous day, only between two consecutive valid days | fronts often bring dust |
 
 Analyses of dust frequency use **valid days only** (e.g. dusty days per year =
-365 × dusty valid days / valid days); `dusty_day_vis5` goes with `valid_day_vis5`. A day known
+365 × dusty valid days / valid days); each dusty-day flag goes with its own validity
+(`dusty_day_synop` with `valid_day_synop`, `dusty_day_vis5` with `valid_day_vis5`, ...). A day known
 only from a daily summary has no row. Rule tables for every report type: section 5.3.
 
 *Planned:* monthly and annual products, coverage, station catalog, climatology, diurnal cycle,
@@ -576,8 +599,8 @@ Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is be
 1. ~~Exact WMO regulation for omitting group 7~~: resolved, FM 12 Regulation 12.2.6 (section 5).
 2. BUFR-only SYNOP (17 %): recover "omitted" information from the BUFR original?
 3. ~~METAR without a weather group~~: resolved (5.2, method 1.4.0). Still open: decode dust in
-   US remarks as a "nearby/distant" flag; why Niamey's METARs miss dust at <= 5 km (5.8 %);
-   validate US METARs against their SYNOPs (METAR at :51, SYNOP at :00).
+   US remarks as a "nearby/distant" flag; why Niamey's METARs miss dust at <= 5 km (5.8 %).
+   US SYNOPs rarely carry the dust of their METARs (5.2): resolved by judging both per slot (1.5.0).
 4. Humidity screen at humid dust sites (6.6); `has_pw` before time distance in sampling (8).
 5. Station selection: require recent data and weather reporting.
 6. Does ISD keep the raw SYNOP text (and so iX) in older decades and at African stations?

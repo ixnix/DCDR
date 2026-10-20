@@ -101,8 +101,10 @@ class ClassifyCfg(_Section):
 class SamplingCfg(_Section):
     window_min: int  # +- minutes around each 3-hourly synoptic hour
     exclude_types: list[str]  # report types never used for slots (daily/monthly summaries)
-    priority: list[str]  # report-type preference when several reports compete for one slot
-    synoptic_dust_source: Literal["selected"]
+    # Slot sources, in order of preference: {"synop": [FM-12, ...], "metar": [FM-15, ...]}. Each
+    # source contributes at most one report per slot; types listed first are preferred. Types in
+    # no source (e.g. SPECI FM-16) never fill a slot.
+    sources: dict[str, list[str]]
 
 
 class ProductsCfg(_Section):

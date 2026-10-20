@@ -59,26 +59,38 @@ PRODUCTS = [
         {
             # A day has 8 synoptic slots (00, 03, ..., 21 UTC), so more than 8 means double counting.
             "n_slots_le_8": "SELECT count(*) FROM daily WHERE n_slots > 8",
-            # Slots with weather codes are a subset of all slots.
+            # Observed slots are a subset of all slots; explicit, per-source, inferred, implied
+            # and vis5-judgeable slots are subsets of observed slots.
             "pw_le_slots": "SELECT count(*) FROM daily WHERE n_slots_pw > n_slots",
-            # Inferred-nil slots are a subset of observed slots; explicit validity implies validity.
-            "inferred_le_pw": "SELECT count(*) FROM daily WHERE n_slots_nil_inferred > n_slots_pw",
-            "explicit_implies_valid": "SELECT count(*) FROM daily WHERE valid_day_explicit AND NOT valid_day",
-            # METAR slots and implied-nil METAR slots are subsets of all / observed slots.
-            "metar_le_slots": "SELECT count(*) FROM daily WHERE n_slots_metar > n_slots",
-            "nil_metar_le_pw": "SELECT count(*) FROM daily WHERE n_slots_nil_metar > n_slots_pw",
-            # dust at <= 5 km is dust; slots judged for it are a subset of observed slots.
-            "vis5_implies_dusty": "SELECT count(*) FROM daily WHERE dusty_day_vis5 AND NOT dusty_day_synoptic",
-            "pw_vis5_le_pw": "SELECT count(*) FROM daily WHERE n_slots_pw_vis5 > n_slots_pw",
-            "valid_vis5_consistent": (
-                "SELECT count(*) FROM daily WHERE valid_day_vis5 <> (n_slots_pw_vis5 >= getvariable('min_slots'))"
+            "subsets_le_pw": (
+                "SELECT count(*) FROM daily WHERE n_slots_pw_explicit > n_slots_pw "
+                "OR n_slots_pw_synop > n_slots_pw OR n_slots_pw_metar > n_slots_pw "
+                "OR n_slots_nil_inferred > n_slots_pw OR n_slots_nil_metar > n_slots_pw "
+                "OR n_slots_pw_vis5 > n_slots_pw"
             ),
-            # valid_day must follow its definition exactly.
-            "valid_day_consistent": (
-                "SELECT count(*) FROM daily WHERE valid_day <> (n_slots_pw >= getvariable('min_slots'))"
+            "sources_le_slots": (
+                "SELECT count(*) FROM daily WHERE n_slots_synop > n_slots OR n_slots_metar > n_slots "
+                "OR n_slots_pw_synop > n_slots_synop OR n_slots_pw_metar > n_slots_metar"
             ),
-            # A synoptic dusty day needs at least one synoptic slot.
-            "dusty_needs_slots": "SELECT count(*) FROM daily WHERE dusty_day_synoptic AND n_slots = 0",
+            # Every narrower dusty-day flag implies the combined one, and every validity follows
+            # its definition.
+            "narrow_implies_dusty": (
+                "SELECT count(*) FROM daily WHERE NOT dusty_day "
+                "AND (dusty_day_synop OR dusty_day_metar OR dusty_day_vis5)"
+            ),
+            "dusty_is_synop_or_metar": (
+                "SELECT count(*) FROM daily WHERE dusty_day <> (dusty_day_synop OR dusty_day_metar)"
+            ),
+            "validity_consistent": (
+                "SELECT count(*) FROM daily WHERE "
+                "valid_day <> (n_slots_pw >= getvariable('min_slots')) "
+                "OR valid_day_explicit <> (n_slots_pw_explicit >= getvariable('min_slots')) "
+                "OR valid_day_synop <> (n_slots_pw_synop >= getvariable('min_slots')) "
+                "OR valid_day_metar <> (n_slots_pw_metar >= getvariable('min_slots')) "
+                "OR valid_day_vis5 <> (n_slots_pw_vis5 >= getvariable('min_slots'))"
+            ),
+            # A dusty day needs at least one slot.
+            "dusty_needs_slots": "SELECT count(*) FROM daily WHERE dusty_day AND n_slots = 0",
             # Exactly one row per station and day.
             "unique_station_day": (
                 "SELECT count(*) FROM (SELECT station_id, lmst_date FROM daily "

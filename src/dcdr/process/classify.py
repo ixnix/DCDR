@@ -28,7 +28,7 @@ METAR/SPECI (FM-15/16) follow their own code rules, read from the raw message (u
     no weather group, visibility > 5 km -> nothing significant, implied ("nil_metar")
     no weather group, visibility <= 5 km or missing -> not observed (something went unnamed)
     a weather group ISD did not decode -> not observed
-A METAR only fills a synoptic slot when no SYNOP does (sampling priority).
+Sampling keeps one SYNOP and one METAR per slot; a slot is dusty if either reports dust.
 
 Columns added (process pipeline steps 4-5 of 6)
 ----------------------------------------------
