@@ -22,3 +22,10 @@ Pipeline: `dcdr ingest` (NOAA S3 → bronze), `dcdr process` (→ silver), `dcdr
 Run `dcdr` from the repo root (or anywhere: it is an installable package — `uv build` makes a wheel).
 Data are written to `./data` (relative to where you run `dcdr`; git-ignored in the repo) by default; set `DCDR_DATA` to use another location, e.g. an external drive.
 `legacy/` holds the original scripts and the NOAA ISD format document for reference only — it is never imported.
+
+## Licence
+
+The code is released under the [MIT licence](LICENSE). NOAA ISD data are public; reference
+documents in `docs/references/` are short extracts with their sources (see
+[docs/references.md](docs/references.md)). Licences for published data products will be set when
+they are released.

@@ -32,6 +32,10 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## 2026-10-20
 
+- **Repository made public** (user decision), with an MIT licence for the code (user decision;
+  `LICENSE`, README; `pyproject.toml` already declared MIT). The duISD v1 script keeps its creator
+  e-mail in `legacy/master_DCDR.py` (user decision: legacy stays verbatim).
+
 - **Repository published to GitHub (private)** (user decision): `github.com/ixnix/DCDR`. The user is
   the only author; the `Co-Authored-By` trailers were removed from all 59 commit messages
   (`git filter-branch --msg-filter`), which changed every commit hash; content is unchanged
