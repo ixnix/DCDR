@@ -36,7 +36,7 @@ with short quotes. The WMO BUFR4 tables on GitHub are MIT-licensed.
 | `nws/aum-toc.pdf` | *Automated Surface Observing System (ASOS) User's Guide* | NOAA, FAA, US Navy, US Air Force, March 1998 | https://www.weather.gov/media/asos/aum-toc.pdf | script | 918,728 | `1b7c0edea39bd6c282ebe905da7b74cbc3dce97f28239bfccfce6bce09b8d8d8` |
 | `icams/FCM-H1-2005.pdf` | *Federal Meteorological Handbook No. 1: Surface Weather Observations and Reports* (FCM-H1-2005) | OFCM, September 2005 | saved by the user; this copy is from a third-party mirror (each page stamped "Downloaded from https://www.everyspec.com"); replace with an ICAMS/NOAA copy if one is found | manual | 977,184 | `d87eb26daf6da37a0bc874f960666ab92cd0d6770f151bc2d8e9d5d1444281b9` |
 | `icams/SurfaceSynopticCodes_FCM-H2-1988.pdf` | *Federal Meteorological Handbook No. 2: Surface Synoptic Codes* (FCM-H2-1988), base edition without changes 1–4 | OFCM, 1988 | https://www.icams-portal.gov/resources/ofcm/fmh/allfmh2.htm (saved by the user in a browser) | manual | 17,884,193 | `dc449d6c75fec6bfa8ea806f13440f4a02351b388c708af70406a380078b3b6f` |
-| `legacy/isd-format-document.pdf` (in git) | *Federal Climate Complex Data Documentation for Integrated Surface Data* | NOAA NCEI | kept with the v1 material | — | — | — |
+| `legacy/isd-format-document.pdf` (local; not in the public repo) | *Federal Climate Complex Data Documentation for Integrated Surface Data* | NOAA NCEI | kept with the v1 material | — | — | — |
 
 ## Still to obtain
 
