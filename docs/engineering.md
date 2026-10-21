@@ -67,13 +67,14 @@ DCDR/
 │   ├── sql/daily.sql           the gold `daily` table, in SQL (run by DuckDB)
 │   └── schemas.py              the silver data contract
 ├── config/stations/            run inputs: station lists and region definitions
-├── notebooks/                  analyses (01: pilot station selection; 02: validating inferred "nothing significant";
+├── notebooks/                  (local only, not in the public repo) analyses (01: pilot station selection; 02: validating inferred "nothing significant";
 │                               03: METAR present weather; 04: slot sources over the full record)
 ├── scripts/                    one-off scripts (thin_slice_report.py; fetch_references.py)
 ├── references/                official code manuals, local copies (git-ignored; index: docs/references.md)
 ├── tests/                      pytest: unit/, integration/, fixtures/
 ├── docs/                       this documentation, design spec, figures
-└── legacy/                     original v1 scripts, duISD v1 data, ISD format document (never imported)
+└── legacy/                     (local only, not in the public repo) original v1 scripts, duISD v1
+                                data, ISD format document (never imported)
 ```
 
 Naming rule: code and commands are named by **action** (`ingest`, `process`, `aggregate`), data by
@@ -149,7 +150,8 @@ Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
 `s3://noaa-global-hourly-pds/<year>/<station_id>.csv`, public, anonymous, `us-east-1`. One CSV
 per station-year; columns differ by station and year (a column appears only if the station
 reported that group). Station ID = USAF (6) + WBAN (5) digits, e.g. `40582099999`.
-Reference for every field: `legacy/isd-format-document.pdf` (NOAA ISD format document).
+Reference for every field: `legacy/isd-format-document.pdf` (NOAA ISD format document; a local
+copy, not in the public repo: NOAA NCEI publishes it with the ISD data).
 
 ### 6.2 Station lists (`config/stations/`)
 
