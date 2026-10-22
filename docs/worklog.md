@@ -32,6 +32,14 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## 2026-10-22
 
+- **Documented the manual download of the whole ISD archive** (user request; engineering.md 8,
+  "Download the whole ISD archive"): station list, detached year-by-year loop, monitoring,
+  stopping, resuming, completeness check. New `scripts/list_isd_stations.py` writes the station
+  list (reproduces `config/stations/all_isd.csv` exactly). Lessons from the run: `uv run dcdr` only
+  works inside the project folder (a loop started from the home folder failed with "Failed to
+  spawn: dcdr" for every year), so the command now `cd`s into the project itself; `pkill` of
+  `caffeinate` alone may leave the loop running.
+
 - **Ingest saves its record and logs progress every 500 files** (user request; tests first,
   228 pass). Downloading the whole ISD archive (30,375 stations, 711,411 station-year files,
   1.47 TB of CSV, 1901-2025; station list `config/stations/all_isd.csv` from the S3 listing) was

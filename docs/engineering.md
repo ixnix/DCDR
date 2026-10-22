@@ -69,7 +69,8 @@ DCDR/
 ├── config/stations/            run inputs: station lists and region definitions
 ├── notebooks/                  (local only, not in the public repo) analyses (01: pilot station selection; 02: validating inferred "nothing significant";
 │                               03: METAR present weather; 04: slot sources over the full record)
-├── scripts/                    one-off scripts (thin_slice_report.py; fetch_references.py)
+├── scripts/                    one-off scripts (thin_slice_report.py; fetch_references.py;
+│                               list_isd_stations.py: station list of the whole ISD archive)
 ├── references/                official code manuals, local copies (git-ignored; index: docs/references.md)
 ├── tests/                      pytest: unit/, integration/, fixtures/
 ├── docs/                       this documentation, design spec, figures
@@ -265,6 +266,46 @@ uv run python -c "import duckdb; s='SILVER.parquet'; b='BRONZE.parquet'; print(d
 
 **Regenerate the pilot station lists**: run `notebooks/01_duisd_v1_dusty_stations.ipynb`
 (needs `legacy/duISDv1/`).
+
+**Download the whole ISD archive** (all 30,375 stations, 711,411 station-year files, 1.47 TB of
+CSV, 1901-2025; about 115 GB of bronze; roughly a day on a home connection). Run it yourself in a
+terminal; it does not need Claude.
+
+1. Make the station list (about 20 s; lists NOAA's S3 bucket, writes `config/stations/all_isd.csv`
+   with one column, `station_id`):
+   ```bash
+   uv run python scripts/list_isd_stations.py
+   ```
+2. Download year by year, detached from the terminal. One `dcdr ingest` per year keeps each run
+   short; `nohup ... &` lets it survive closing the terminal; `caffeinate -i` keeps the Mac awake
+   (it still stops on shutdown, sleep with the lid closed on battery, or if the disk is
+   unplugged). The `cd` and `export` inside make it work from any folder: `uv run dcdr` only
+   works inside the project, and the station list path is relative.
+   ```bash
+   nohup caffeinate -i zsh -c 'cd /Users/xinxi/Projects/DCDR && export DCDR_DATA=/Volumes/CrucialX8/dcdr && for y in {1901..2025}; do uv run dcdr ingest --stations config/stations/all_isd.csv --years $y || echo "YEAR $y FAILED"; done' >> /Volumes/CrucialX8/dcdr/_state/ingest_all_isd.log 2>&1 &
+   ```
+3. Watch progress: each run logs a `started (ingest)` line, a progress line every 500 files
+   (`3500/12949 files, 41 MB/s, 0 failed, about 9 min left`) and a `run ...` summary per year.
+   Ctrl-C stops only the watching.
+   ```bash
+   tail -f /Volumes/CrucialX8/dcdr/_state/ingest_all_isd.log
+   grep -c "^run " /Volumes/CrucialX8/dcdr/_state/ingest_all_isd.log     # finished year runs
+   pgrep -fl "dcdr ingest"                                               # is it running?
+   ```
+4. Stop it (loses at most the last 500 files):
+   ```bash
+   pkill -f "zsh -c cd /Users/xinxi/Projects/DCDR"; pkill -f "dcdr ingest"
+   ```
+5. Resume: run step 2 again, optionally from the first unfinished year (`{2014..2025}`). Files
+   already recorded in the manifest are skipped; each run also re-lists the year before (haze
+   look-back), which costs a second.
+6. Check it is complete: every `run ...` line shows `'failed': 0`, and the manifest
+   (`_state/sources.parquet`) holds as many `ok` files per year as S3 lists.
+
+Notes: `listed`/`selected`/`skipped` in a run summary include the previous year's files (already
+downloaded by the previous step, so skipped). Files written by a run that was stopped before its
+next checkpoint are not in the manifest yet and are downloaded again (overwritten). Adapt the
+paths (`/Users/xinxi/Projects/DCDR`, `/Volumes/CrucialX8/dcdr`) to your machine.
 
 ## 9. Design decisions (engineering)
 
