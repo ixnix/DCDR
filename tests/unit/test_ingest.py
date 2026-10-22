@@ -114,3 +114,59 @@ def test_object_removed_upstream_is_marked_not_deleted(settings: Settings) -> No
 
 def test_bronze_path_layout(tmp_path: Path) -> None:
     assert ing.bronze_path(tmp_path, 2024, A) == tmp_path / "bronze" / "year=2024" / f"{A}.parquet"
+
+
+# --- Checkpoints and progress (2026-10-22: a 30-min year was lost twice when a run stopped) ---
+def _five_station_store() -> tuple[MemoryStore, set[str]]:
+    store, ids = MemoryStore(), set()
+    for i in range(5):
+        sid = f"4058209999{i}"
+        ids.add(sid)
+        obs.put(
+            store, f"2024/{sid}.csv", make_isd_csv([isd_row("2024-01-01T00:00:00", STATION=sid)])
+        )
+    return store, ids
+
+
+def test_manifest_is_saved_at_checkpoints_so_an_interrupted_run_resumes(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stopped during the 5th of 5 files (checkpoint every 2): the 4 finished files are recorded
+    on disk, so the next run downloads only what is left."""
+    import threading
+
+    store, ids = _five_station_store()
+    cfg = settings.ingest.model_copy(update={"checkpoint_every": 2})
+    real, calls, lock = ing.fetch_bytes, [0], threading.Lock()
+
+    def stop_on_fifth(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        with lock:
+            calls[0] += 1
+            n = calls[0]
+        if n == 5:
+            raise KeyboardInterrupt  # what Ctrl-C (or a closed terminal) does to the run
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(ing, "fetch_bytes", stop_on_fifth)
+    path = settings.data_root / "_state" / "sources.parquet"
+    with pytest.raises(KeyboardInterrupt):
+        ing.ingest(store, cfg, settings.data_root, Manifest(path), ids, [2024], "run1")
+    saved = Manifest(path).df
+    assert saved.filter(saved["status"] == "ok").height == 4
+
+    monkeypatch.setattr(ing, "fetch_bytes", real)
+    again = ing.ingest(store, cfg, settings.data_root, Manifest(path), ids, [2024], "run2")
+    assert (again.downloaded, again.skipped) == (1, 4)
+
+
+def test_progress_is_logged_at_each_checkpoint(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    store, ids = _five_station_store()
+    cfg = settings.ingest.model_copy(update={"checkpoint_every": 2})
+    path = settings.data_root / "_state" / "sources.parquet"
+    with caplog.at_level("INFO", logger="dcdr.ingest"):
+        ing.ingest(store, cfg, settings.data_root, Manifest(path), ids, [2024], "run1")
+    lines = [r.getMessage() for r in caplog.records if "files" in r.getMessage()]
+    assert any(line.startswith("2/5 files") for line in lines)
+    assert any(line.startswith("5/5 files") for line in lines)

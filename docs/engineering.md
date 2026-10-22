@@ -88,7 +88,7 @@ environment). Every pipeline command records a run (section 7.3).
 
 | Command | What it does | Main options |
 |---|---|---|
-| `dcdr ingest` | List NOAA's S3 files for the years; download new or changed station-years into bronze | `--years`, `--stations` |
+| `dcdr ingest` | List NOAA's S3 files for the years; download new or changed station-years into bronze; saves the download record and logs progress every 500 files, so a stopped run resumes where it left off | `--years`, `--stations` |
 | `dcdr process` | Build silver for station-years that are missing or out of date | `--years`, `--stations`, `--force` |
 | `dcdr aggregate` | Build a new gold version from silver, check it, activate it | `--years`, `--stations` |
 | `dcdr run` | `ingest`, then `process`, then `aggregate` | as above |
@@ -127,7 +127,7 @@ All method choices live in `src/dcdr/default.yaml`, validated by Pydantic models
 | Section | Controls | Affects silver hash |
 |---|---|---|
 | `paths` | data root | no |
-| `ingest` | bucket, region, concurrency, retries | no |
+| `ingest` | bucket, region, concurrency, retries, checkpoint interval (`checkpoint_every`) | no |
 | `parse` | which OD wind types are gusts | yes |
 | `qc` | QC code mapping, accepted flags, visibility cap, RH screen | yes |
 | `classify` | weather fields used, haze window, snow/sand temperatures, SYNOP iX rule, inferred nil (V3) and its guard, METAR rules (`metar_rules`, `metar_report_types`, `metar_nil_min_vis_m`) | yes |

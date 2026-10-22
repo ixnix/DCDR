@@ -14,6 +14,7 @@ ingest:
   region: us-east-1
   max_concurrency: 16  # parallel downloads
   retries: 5  # attempts per file before it is marked failed
+  checkpoint_every: 500  # save the download record and log progress every 500 files
 
 parse:
   gust_od_types: [3, 4]  # OD supplementary-wind types that are gusts (ISD format document)

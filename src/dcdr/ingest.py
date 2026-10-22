@@ -248,14 +248,36 @@ def ingest(
                 "error": repr(exc)[:500],
             }
 
-    # Downloads wait on the network, not the CPU, so threads give a big speed-up here.
+    # Downloads wait on the network, not the CPU, so threads give a big speed-up here. The work
+    # goes in chunks of `checkpoint_every` files; after each chunk the manifest is updated (in the
+    # main thread: it is not thread-safe) and saved, and a progress line is logged. So a run that
+    # is stopped (Ctrl-C, a closed terminal) loses at most one chunk: the next run skips every
+    # file already recorded.
+    step = max(1, cfg.checkpoint_every)
+    start, done_bytes = time.monotonic(), 0
     with ThreadPoolExecutor(max_workers=cfg.max_concurrency) as pool:
-        results = list(pool.map(work, todo))
-    manifest.upsert(results)  # update the manifest once, in the main thread (not thread-safe)
-    for r in results:
-        if r["status"] == "ok":
-            summary.downloaded += 1
-        else:
-            summary.failed += 1
-            summary.failures.append(r["key"])
+        for i in range(0, len(todo), step):
+            chunk = todo[i : i + step]
+            results = list(pool.map(work, chunk))
+            manifest.upsert(results)
+            manifest.save()
+            for r in results:
+                if r["status"] == "ok":
+                    summary.downloaded += 1
+                else:
+                    summary.failed += 1
+                    summary.failures.append(r["key"])
+            done, done_bytes = i + len(chunk), done_bytes + sum(o.size for o in chunk)
+            elapsed = time.monotonic() - start
+            rate = done_bytes / elapsed if elapsed > 0 else 0.0  # bytes per second
+            left = sum(o.size for o in todo[done:])
+            eta = f"{left / rate / 60:.0f} min" if rate > 0 else "?"
+            log.info(
+                "%d/%d files, %.0f MB/s, %d failed, about %s left",
+                done,
+                len(todo),
+                rate / 1e6,
+                summary.failed,
+                eta,
+            )
     return summary
