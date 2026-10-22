@@ -63,6 +63,7 @@ class IngestCfg(_Section):
     region: str  # AWS region of that bucket
     max_concurrency: int  # parallel downloads
     retries: int  # retries per file before marking it failed
+    checkpoint_every: int  # save the manifest and log progress every this many files
 
 
 class ParseCfg(_Section):

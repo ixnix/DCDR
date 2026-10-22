@@ -30,6 +30,17 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ---
 
+## 2026-10-22
+
+- **Ingest saves its record and logs progress every 500 files** (user request; tests first,
+  228 pass). Downloading the whole ISD archive (30,375 stations, 711,411 station-year files,
+  1.47 TB of CSV, 1901-2025; station list `config/stations/all_isd.csv` from the S3 listing) was
+  stopped twice mid-year (Ctrl-C; a closed terminal). The manifest was saved only at the end of
+  a run, so each stop lost a whole year (20-30 min). Now `ingest` updates and saves the manifest
+  after every `ingest.checkpoint_every` (500) files and logs `done/total files, MB/s, failed,
+  time left`; a stopped run loses at most 500 files. Progress at that point: 1901-2013 complete,
+  552,184 files (78 %), 871 GB of CSV (59 %), 0 failures.
+
 ## 2026-10-20
 
 - **`legacy/` and `notebooks/` kept local only** (user decision): removed from the public
