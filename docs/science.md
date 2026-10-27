@@ -210,6 +210,24 @@ observed"). iX was hidden and predicted from information available in every deca
 **Principle (user decision 2026-10-20): if it cannot be verified, it is "not observed".** The
 inference is used only where validated; stations without enough iX evidence get none.
 
+**V3 across decades** (`notebooks/05_v3_across_decades.ipynb`, local; pilot_100 1931-2025; no
+ground truth before 2010 except 265 reports, so the tests are indirect):
+- V3 is barely used in 1950-1979 (99 % of SYNOPs carry a code) but supplies 0.4-1.0 M "nothing
+  significant" slots per decade from the 1980s, when observers leave out the weather group. In
+  the 1930s-40s it infers 65-91 % of the reports of a few Central Asian stations.
+- At the year iX appears (2013-2015), dust frequency (SYNOP alone) drops by a median 1.9 points
+  (normal year-to-year change 0.0; 79 stations with >= 100 valid days both years), with large
+  drops at some dusty stations (Niamey -38, Zahedan -36, Kayes -29 points). The year coincides with
+  a change in ISD's SYNOP intake, so V3 cannot be separated from it; a downward step is what V3's
+  recall (0.84) predicts.
+- The only old ground truth (1970s-80s, mostly Chinese and Kazakh stations): precision 0.81 on
+  156 inferences, against 0.9998 in 2015-2024; visibility did not separate "nothing significant"
+  from "not observed" there. Too few reports to conclude.
+- V3 needs visibility reported, not a value. Precision in 2015-2024 is 0.986 at <= 1 km and
+  0.998-0.9996 above; older inferences more often come with low visibility (<= 1 km: 4-13 % in
+  the 1930s-70s, 0.1-0.3 % since 1980).
+- Status: V3 still applies to all years (method 1.6.0); decision pending (11, open questions).
+
 **BUFR-only reports.** BUFR is WMO's binary format for the same SYNOP content; when NOAA received a
 SYNOP only as BUFR, `REM` holds just `SYN004BUFR` (no text, no iX). Risk checked: if NOAA's decoder
 dropped weather codes from BUFR, V3 would wrongly call dusty reports clear. Evidence (pilot_100,
@@ -636,7 +654,8 @@ Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is be
 5. Station selection: require recent data and weather reporting.
 6. Does ISD keep the raw SYNOP text (and so iX) in older decades and at African stations?
    If not, older years keep the biased denominator.
-7. Rule V3 adopted (5.1): check visibility reporting in older decades (V3 assumes it is stable).
+7. Rule V3 before 2013 (5.1, "V3 across decades"): keep for all years, restrict by period, or
+   restrict to the iX years? Add a visibility condition (> 1 km)?
 
 ## 12. References
 

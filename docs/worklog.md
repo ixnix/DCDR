@@ -23,7 +23,7 @@ open to review. Details of the current method: [science.md](science.md); of the 
 - [ ] Investigate stations with no dust in 2020-2024 despite high duISD ranks (Ashchysai, Shakawe,
       Good Hope): change of observing practice or real decline?
 - [ ] BUFR-only SYNOP (17 %, no iX): any source for the "omitted" information?
-- [ ] Check visibility reporting in older decades (V3 assumes it is stable).
+- [ ] **Decision: V3 before 2013** (notebook 05; options in the 2026-10-27 entry).
 - [ ] Review humidity screen at humid dust sites and the `has_pw` sampling tie-break.
 - [ ] Plan 2: monthly/climatology gold products, station catalog, coverage, Uth, code-06 diagnostic.
 - [ ] Set up a GitHub remote; publish documentation (e.g. MkDocs) when stable.
@@ -31,6 +31,19 @@ open to review. Details of the current method: [science.md](science.md); of the 
 ---
 
 ## 2026-10-27
+
+- **V3 across decades** (user request: V3 had been validated on 2015-2024 only; notebook 05,
+  local). Ground truth before 2010: 265 reports. V3 supplies 0.4-1.0 M nil slots per decade from
+  the 1980s (barely used 1950-1979: 99 % coded). Switch-year test (iX appears 2013-2015; 79
+  stations): dust frequency drops a median 1.9 points (normal 0.0), large drops at some dusty
+  stations (Niamey -38, Zahedan -36); confounded by ISD's 2013 change in SYNOP intake. A first
+  pass was distorted by an ISD gap: 2009-2012 had 20-200 SYNOPs a year at Sal, Zabol, Niamey,
+  Zahedan. Old ground truth: precision 0.81 (156 inferences, 1970s-80s). V3 has no visibility
+  value condition (answer to the user): precision 0.986 at <= 1 km, >= 0.998 above.
+  Options to decide (none implemented): (1) keep V3 for all years; (2) V3 only from 1980 (before,
+  SYNOPs are coded anyway; 1930s-40s Central Asian inferences unverifiable); (3) V3 only in the
+  iX years (strict "verify or not observed", brings back the selection bias in 1980-2012); plus,
+  with any option, require visibility > 1 km.
 
 - **Whole-ISD ingest complete** (user ran it): 711,411 station-year files recorded, 30,375
   stations, 1901-2025, 0 failures, none changed on S3 since; bronze 103.7 GB. Checks found:
