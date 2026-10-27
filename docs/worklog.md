@@ -23,7 +23,6 @@ open to review. Details of the current method: [science.md](science.md); of the 
 - [ ] Investigate stations with no dust in 2020-2024 despite high duISD ranks (Ashchysai, Shakawe,
       Good Hope): change of observing practice or real decline?
 - [ ] BUFR-only SYNOP (17 %, no iX): any source for the "omitted" information?
-- [ ] **Decision: V3 before 2013** (notebook 05; options in the 2026-10-27 entry).
 - [ ] Review humidity screen at humid dust sites and the `has_pw` sampling tie-break.
 - [ ] Plan 2: monthly/climatology gold products, station catalog, coverage, Uth, code-06 diagnostic.
 - [ ] Set up a GitHub remote; publish documentation (e.g. MkDocs) when stable.
@@ -31,6 +30,11 @@ open to review. Details of the current method: [science.md](science.md); of the 
 ---
 
 ## 2026-10-27
+
+- **V3 kept for all years, no visibility-value condition** (user decision, after notebook 05):
+  before 1980 SYNOPs carry a code, so V3 is rarely used; its impact is 1980-2013; the visibility
+  value has little effect on precision, so its presence is the test. Caveat recorded: 1930s-40s
+  Central Asian stations (Aralsk, Zhosaly, Naryn) rely on V3 for most reports.
 
 - **V3 across decades** (user request: V3 had been validated on 2015-2024 only; notebook 05,
   local). Ground truth before 2010: 265 reports. V3 supplies 0.4-1.0 M nil slots per decade from

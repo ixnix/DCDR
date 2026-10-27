@@ -226,7 +226,11 @@ ground truth before 2010 except 265 reports, so the tests are indirect):
 - V3 needs visibility reported, not a value. Precision in 2015-2024 is 0.986 at <= 1 km and
   0.998-0.9996 above; older inferences more often come with low visibility (<= 1 km: 4-13 % in
   the 1930s-70s, 0.1-0.3 % since 1980).
-- Status: V3 still applies to all years (method 1.6.0); decision pending (11, open questions).
+- **Decision (user, 2026-10-27): keep V3 for all years, with no condition on the visibility
+  value.** Before 1980 SYNOPs carry a code, so V3 is rarely used; its main effect is 1980-2013, when
+  neither a code nor iX is reported; the visibility value barely changes precision, so its presence
+  is the test. Caveat: in the 1930s-40s V3 infers most reports of a few Central Asian stations
+  (Aralsk, Zhosaly, Naryn). `valid_day_explicit` (no inferred slots) remains for sensitivity checks.
 
 **BUFR-only reports.** BUFR is WMO's binary format for the same SYNOP content; when NOAA received a
 SYNOP only as BUFR, `REM` holds just `SYN004BUFR` (no text, no iX). Risk checked: if NOAA's decoder
@@ -654,8 +658,7 @@ Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is be
 5. Station selection: require recent data and weather reporting.
 6. Does ISD keep the raw SYNOP text (and so iX) in older decades and at African stations?
    If not, older years keep the biased denominator.
-7. Rule V3 before 2013 (5.1, "V3 across decades"): keep for all years, restrict by period, or
-   restrict to the iX years? Add a visibility condition (> 1 km)?
+7. ~~Rule V3 before 2013~~: resolved, kept for all years without a visibility condition (5.1).
 
 ## 12. References
 
