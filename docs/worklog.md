@@ -30,6 +30,18 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ---
 
+## 2026-10-27
+
+- **Whole-ISD ingest complete** (user ran it): 711,411 station-year files recorded, 30,375
+  stations, 1901-2025, 0 failures, none changed on S3 since; bronze 103.7 GB. Checks found:
+  - 85 files of 1990 (the pilot stations, recorded by the 2026-10-20 pilot run) were gone from
+    disk: the 1990 folder was emptied after that run, and ingest skipped them because its record
+    said "ok". Fix (tests first, 229 pass): ingest also downloads a recorded file whose bronze
+    file is missing.
+  - 41 stations (531 files) have IDs starting with a letter (e.g. `A0000253928`). The pipeline
+    handles them; the ad-hoc glob `[0-9]*.parquet` (used to skip macOS `._` files) does not:
+    use `[0-9A-Z]*.parquet`.
+
 ## 2026-10-22
 
 - **Documented the manual download of the whole ISD archive** (user request; engineering.md 8,
@@ -266,7 +278,7 @@ open to review. Details of the current method: [science.md](science.md); of the 
   METAR convention (absent weather group; AUTO, CAVOK, NSW) and keep a visibility-based dust
   index as an independent check.
 - Caveat: on the exFAT SSD a glob like `*.parquet` also matches macOS `._*.parquet` files; use
-  `[0-9]*.parquet` in ad-hoc queries.
+  `[0-9A-Z]*.parquet` in ad-hoc queries (some station IDs start with a letter).
 
 ## 2026-10-19
 

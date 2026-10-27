@@ -197,7 +197,10 @@ def ingest(
                 [{**r, "status": "missing_upstream"} for r in stale.iter_rows(named=True)]
             )
         for o in chosen:
-            if needs_download(o, manifest.get(o.key)):
+            # Also download again if the record says "ok" but the bronze file is gone from disk
+            # (e.g. a year folder deleted by hand): the record alone would skip it forever.
+            missing = not bronze_path(data_root, o.year, o.station_id).exists()
+            if needs_download(o, manifest.get(o.key)) or missing:
                 todo.append(o)
             else:
                 summary.skipped += 1

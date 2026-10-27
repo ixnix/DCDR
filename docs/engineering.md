@@ -89,7 +89,7 @@ environment). Every pipeline command records a run (section 7.3).
 
 | Command | What it does | Main options |
 |---|---|---|
-| `dcdr ingest` | List NOAA's S3 files for the years; download new or changed station-years into bronze; saves the download record and logs progress every 500 files, so a stopped run resumes where it left off | `--years`, `--stations` |
+| `dcdr ingest` | List NOAA's S3 files for the years; download new or changed station-years into bronze; saves the download record and logs progress every 500 files, so a stopped run resumes where it left off; re-downloads recorded files missing from disk | `--years`, `--stations` |
 | `dcdr process` | Build silver for station-years that are missing or out of date | `--years`, `--stations`, `--force` |
 | `dcdr aggregate` | Build a new gold version from silver, check it, activate it | `--years`, `--stations` |
 | `dcdr run` | `ingest`, then `process`, then `aggregate` | as above |
@@ -345,7 +345,7 @@ Tests use small synthetic ISD rows (`tests/fixtures/isd.py`) and an in-memory fa
 | Data written to `./data` instead of the SSD | `DCDR_DATA` not set in that shell | `export DCDR_DATA=...` (add to `~/.zshrc`) |
 | `StaleSilverError` from `aggregate` | silver built by other code/settings | `dcdr process --years ...` (or `--force`) |
 | A notebook shows as modified in git | JupyterLab re-saved it | `git restore <notebook>` if nothing changed |
-| `No magic bytes found at end of file '…/._x.parquet'` in a query | a glob `*.parquet` matched macOS `._` files on exFAT | use `[0-9]*.parquet` |
+| `No magic bytes found at end of file '…/._x.parquet'` in a query | a glob `*.parquet` matched macOS `._` files on exFAT | use `[0-9A-Z]*.parquet` (station IDs start with a digit or a capital letter) |
 
 ## 12. Roadmap (sub-projects)
 

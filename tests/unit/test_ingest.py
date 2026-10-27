@@ -170,3 +170,15 @@ def test_progress_is_logged_at_each_checkpoint(
     lines = [r.getMessage() for r in caplog.records if "files" in r.getMessage()]
     assert any(line.startswith("2/5 files") for line in lines)
     assert any(line.startswith("5/5 files") for line in lines)
+
+
+def test_recorded_file_missing_on_disk_is_downloaded_again(settings: Settings) -> None:
+    """2026-10-27: 85 bronze files of 1990 were recorded "ok" but gone from disk (folder emptied
+    after the pilot run), and ingest kept skipping them."""
+    store = _store()
+    manifest = Manifest(settings.data_root / "_state" / "sources.parquet")
+    _run(settings, store, manifest)
+    ing.bronze_path(settings.data_root, 2024, A).unlink()
+    again = _run(settings, store, manifest)
+    assert (again.downloaded, again.skipped) == (1, 0)
+    assert ing.bronze_path(settings.data_root, 2024, A).exists()
