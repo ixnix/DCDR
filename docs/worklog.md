@@ -31,6 +31,25 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## 2026-10-27
 
+- **Tests (a) and (b) over all years** (user request; notebook 06, local). Station catalog of
+  the whole archive built from bronze (`DCDR_DATA/catalog/`: station-year inventory, 1.18 M rows;
+  stations with position, report types, country, aridity from the Global Aridity Index v3).
+  Answers: 5,450 stations report METAR in 2015-2025, 2,274 of them in drylands (42 %); METAR-only
+  stations are 67 % American (2,090 of 3,110); 798 US METAR-only stations are in drylands (TX,
+  CA, CO, the Plains, AZ, NM, UT). Extra test stations: `config/stations/metar_test_100.csv`
+  (60 non-US dryland METAR stations, 40 US long-record stations).
+  - (b) derived SYNOPs: 94.7 % of US station-years with both types since ~2005, 0.7 % elsewhere;
+    dust survives in 17 % (independent SYNOPs 91 %).
+  - (a) pre-2000 METAR text is only fragments, `CAVOK` in 30-37 %; without text dust frequency
+    x2.6; with `CAVOK` x1.05; guarded inference (no code + vis > 5 km) x1.07, precision
+    0.993-0.999; both x1.00. SAO not biased (explicit "nothing" codes).
+  - Options to decide (none implemented): (1) read `CAVOK` in pre-2000 fragments as "nothing
+    significant" (explicit; only before any trend word, since "BECMG CAVOK" is a forecast);
+    (2) add the guarded inference for METARs without full text, flagged as inferred;
+    (3) derived SYNOPs (temperature >= 95 % and wind >= 80 % identical, >= 100 pairs per
+    station-year): present weather "not observed", dust and validity from the METAR; weather
+    values still from the SYNOP.
+
 - **Fix: METAR text without the word METAR** (method 1.7.0; tests first, 236 pass). Found while
   testing (a) on 200 stations: in the 2000s, 47 % of METARs have full text that starts with the
   station identifier ("MET046LROP 282200Z ... NOSIG;", ending in ";"), which the parser skipped,

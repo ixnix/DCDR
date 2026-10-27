@@ -581,6 +581,25 @@ method 1.6.0 (the choice of dust and weather sources is still under test). Main 
 - Rule V3 infers "nothing significant" for some US SYNOPs while the METAR reports dust (151 slots).
 - NOAA's S3 data end on 2025-08-27 (no 2026 files).
 
+### 8.2 METARs without text and derived SYNOPs (notebook 06)
+
+`notebooks/06_metar_no_text_and_derived_synop.ipynb` (local): (b) on the whole archive, (a) on
+pilot_100 plus 100 dryland METAR stations (`config/stations/metar_test_100.csv`), all years.
+- **Derived SYNOPs** (SYNOP values copied from the METAR 4-9 min earlier: temperature >= 95 % and
+  wind speed >= 80 % identical): 94.7 % of US station-years with both report types (since ~2005),
+  0.7 % elsewhere. They lose dust: after a dusty METAR the SYNOP has dust in 17 % (independent
+  SYNOPs: 91 %) and says "nothing significant" in 32 %.
+- **METAR text in ISD:** before 2000 only fragments ISD did not decode (93-98 % of METARs;
+  `CAVOK` in 30-37 %); full text from the 2000s (47 % of it without the word METAR, read since
+  1.7.0).
+- **Without text** a METAR counts as observed only when coded: dust frequency x2.6 (2000-2025
+  simulation, 40 stations with METAR dust). Reading `CAVOK` in the fragments gives x1.05; a guarded
+  inference "no code + visibility > 5 km = nothing significant" (precision 0.993-0.999; 102 of 154
+  stations pass the guard) gives x1.07; both together x1.00.
+- Old US airways reports (SAO) carry an explicit "nothing" code in 84-87 % of their codes: not
+  biased.
+- Status: decisions pending (11, open questions; worklog 2026-10-27).
+
 ## 9. Daily aggregation (gold `daily`, `sql/daily.sql`)
 
 One row per station per local (LMST) day.
@@ -653,8 +672,8 @@ Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is be
 2. BUFR-only SYNOP (17 %): recover "omitted" information from the BUFR original?
 3. ~~METAR without a weather group~~: resolved (5.2, method 1.4.0). Still open: decode dust in
    US remarks as a "nearby/distant" flag; why Niamey's METARs miss dust at <= 5 km (5.8 %).
-8. METARs without raw text (before 2000) and the selection bias they cause (8.1): count them for
-   dust only, or validate an inference like V3 (no code + visibility = nothing significant)?
+8. METARs without full text (8.1, 8.2): read `CAVOK` in pre-2000 fragments; add a guarded inference
+   (no code + visibility > 5 km); treat derived US SYNOPs as not observed for present weather?
 9. Visibility under SYNOP-first weather values (8.1): accept the gaps, or take visibility from
    the METAR when the SYNOP has none?
    US SYNOPs rarely carry the dust of their METARs (5.2): resolved by judging both per slot (1.5.0).
