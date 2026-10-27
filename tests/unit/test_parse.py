@@ -180,6 +180,19 @@ def test_synop_ix_is_null_without_remarks() -> None:
             False,
             "group",
         ),
+        # 2000s: full text without the word METAR, ending in ";" (2026-10-27: 47 % of 2000s METARs)
+        ("MET046LROP 282200Z VRB01MPS CAVOK 11/11 Q1018 NOSIG;", False, "cavok"),
+        ("MET058LFMN 041030Z 20010KT 9999 FEW023 BKN100 14/08 Q1013 NOSIG;", False, "none"),
+        (
+            "MET074KPUB 291053Z AUTO 00000KT 10SM CLR M04/M06 A3038 RMK AO2 SLP304 T10391056;",
+            True,
+            "none",
+        ),
+        ("MET060LFML 232300Z 13018G28KT 3000 BLDU SCT020 17/11 Q1007;", False, "group"),
+        # before 2000: only fragments ISD did not decode (no station, no time): not a METAR text
+        ("MET012CAVOK NOSIG?", None, None),
+        ("MET038NEW RETS NOSIG WIND THR14 27013KT BLU;", None, None),
+        ("MET006NOSIG?", None, None),
         ("SYN08040829 12960 03406 10062 21002=", None, None),  # SYNOP text
         ("SYN004BUFR", None, None),
     ],

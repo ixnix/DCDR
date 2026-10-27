@@ -31,6 +31,13 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## 2026-10-27
 
+- **Fix: METAR text without the word METAR** (method 1.7.0; tests first, 236 pass). Found while
+  testing (a) on 200 stations: in the 2000s, 47 % of METARs have full text that starts with the
+  station identifier ("MET046LROP 282200Z ... NOSIG;", ending in ";"), which the parser skipped,
+  so the METAR rules (AUTO, //, CAVOK, no group) were not applied to them. Also found: before 2000,
+  REM holds only the fragments ISD did not decode (e.g. "CAVOK NOSIG"), in 93-98 % of METARs;
+  `CAVOK` appears in 30-38 % of them (an explicit "nothing significant"; not used yet, see (a)).
+
 - **V3 kept for all years, no visibility-value condition** (user decision, after notebook 05):
   before 1980 SYNOPs carry a code, so V3 is rarely used; its impact is 1980-2013; the visibility
   value has little effect on precision, so its presence is the test. Caveat recorded: 1930s-40s

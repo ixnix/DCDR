@@ -49,15 +49,21 @@ def metar_tokens(rem: pl.Expr) -> pl.Expr:
 
     ISD keeps the message in REM as "MET" + 3-digit length + text, e.g.
     "MET072METAR YBMA 082130Z AUTO 00000KT 9999 // SCT085 15/09 Q1017 RF00/0/000/0=";
-    US messages have a local date and time first: "MET10012/31/19 17:51:03 METAR KELP ...".
+    US messages have a local date and time first: "MET10012/31/19 17:51:03 METAR KELP ...";
+    in the 2000s the word METAR is often missing and the text ends with ";":
+    "MET046LROP 282200Z VRB01MPS CAVOK 11/11 Q1018 NOSIG;". A full message is recognised by its
+    station identifier and time ("LROP 282200Z"). Before 2000 REM holds only the fragments ISD did
+    not decode ("MET012CAVOK NOSIG?"): those are not a METAR text and give null.
     Dropped: the station identifier (first group), the remarks (from "RMK"), and the trend
     forecast (from "NOSIG", "BECMG" or "TEMPO"), which are not observations of present weather.
     """
     body = (
         rem.str.extract(
-            r"^MET\d{3}(?:\d{2}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} )?(?:METAR|SPECI) (?:COR )?(.*)$", 1
+            r"^MET\d{3}(?:\d{2}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} )?(?:(?:METAR|SPECI) )?(?:COR )?"
+            r"([A-Z][A-Z0-9]{3} \d{6}Z.*)$",
+            1,
         )
-        .str.replace(r"=\s*$", "")
+        .str.replace(r"[=;]\s*$", "")
         .str.replace(r" RMK( .*)?$", "")
         .str.replace(r" (?:NOSIG|BECMG|TEMPO)( .*)?$", "")
         .str.strip_chars()

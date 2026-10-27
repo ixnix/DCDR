@@ -5,7 +5,7 @@ dust, samples reports and aggregates them into daily records, and **why** each c
 Part 1 ([engineering.md](engineering.md)) covers the software; [worklog.md](worklog.md) records
 how and when each decision was made.
 
-> Living document. It describes the method **as implemented now** (method version **1.6.0**).
+> Living document. It describes the method **as implemented now** (method version **1.7.0**).
 > Planned steps are marked *planned*. Last updated: 2026-10-20.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`)
@@ -315,7 +315,11 @@ Parsing (*rulings*): only the observed part of the message counts; the station i
 remarks (`RMK ...`), trend forecasts (`NOSIG`, `BECMG`, `TEMPO ...`) and recent weather (`RE..`)
 are ignored. A weather group is any token built from table-4678 letter pairs (deliberately broad,
 so malformed groups such as `-TSBLSA` still count as weather; an unrecognised group can only lead
-to "not observed", never to "no dust"). US messages start with a local date and time. Silver
+to "not observed", never to "no dust"). US messages start with a local date and time.
+In the 2000s the word `METAR` is often missing and the text ends with `;` (`MET046LROP 282200Z
+... NOSIG;`): a full message is recognised by its station identifier and time (method 1.7.0; before,
+47 % of 2000s METARs were wrongly treated as having no text). Before 2000, `REM` holds only the
+fragments ISD did not decode (`MET012CAVOK NOSIG?`), which are not read as a METAR text. Silver
 columns: `metar_auto`, `metar_wx` (`missing`, `group`, `cavok`, `none`; null without METAR text).
 Settings: `classify.metar_rules`, `metar_report_types` ([FM-15, FM-16]), `metar_nil_min_vis_m`
 (5000).

@@ -5,7 +5,7 @@ Part 2 ([science.md](science.md)) explains how the observations are interpreted 
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-10-20 (method version 1.6.0).
+> Last updated: 2026-10-20 (method version 1.7.0).
 
 ---
 
@@ -142,7 +142,7 @@ Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
 - `config_hash`: SHA-256 (16 hex) of all resolved settings; stored in every run record.
 - `silver_config_hash`: hash of the silver sections only; stored in every silver file. If it
   changes, silver is rebuilt.
-- `METHOD_VERSION` (`src/dcdr/process/__init__.py`, currently **1.6.0**): bumped whenever
+- `METHOD_VERSION` (`src/dcdr/process/__init__.py`, currently **1.7.0**): bumped whenever
   processing logic changes; stored in every silver file. If it changes, silver is rebuilt.
 
 ## 6. Inputs
