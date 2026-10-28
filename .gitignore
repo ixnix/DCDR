@@ -51,3 +51,6 @@ legacy/duISDv1/
 # Kept locally, not published (user decision 2026-10-20): v1 scripts and analysis notebooks
 legacy/
 notebooks/
+
+# Design spec and plans: kept locally, not published (user decision 2026-10-28)
+/docs/superpowers/
