@@ -8,8 +8,8 @@ a few MB each); the parts we rely on are extracted, with page citations, in
 
 | Extract | Topic | Used by |
 |---|---|---|
-| [synop-weather-group.md](references/synop-weather-group.md) | FM 12 Regulation 12.2.6 (when group 7 is omitted); iX, code table 1860; tables 4677/4561/4680/4531 | `parse.py`, `classify.py`; science.md §5 |
-| [bufr-present-weather.md](references/bufr-present-weather.md) | BUFR 0-20-003: dust codes, tables 4677/4680, 508/509 | `classify.py`; science.md §5, §6 |
+| [synop-weather-group.md](references/synop-weather-group.md) | FM 12 Regulation 12.2.6 (when group 7 is omitted); iX, code table 1860; tables 4677/4561/4680/4531 | `parse.py`, `classify.py`; rules.md §5 |
+| [bufr-present-weather.md](references/bufr-present-weather.md) | BUFR 0-20-003: dust codes, tables 4677/4680, 508/509 | `classify.py`; rules.md §5, §6 |
 | [metar-weather.md](references/metar-weather.md) | METAR present weather: WMO FM 15 and table 4678, US practice (FMH-1 2005), what ASOS (AUTO) can and cannot report | METAR rules (in progress) |
 
 Only published editions are used, never drafts (user decision 2026-10-20). FMH-1 is cited from the

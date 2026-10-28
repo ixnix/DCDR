@@ -1,16 +1,18 @@
-# DCDR documentation, Part 2: Science and method
+# DCDR documentation, Part 2: Rules
 
-How DCDR interprets NOAA ISD station reports, converts them, decides what was observed, classifies
-dust, samples reports and aggregates them into daily records, and **why** each choice was made.
-Part 1 ([engineering.md](engineering.md)) covers the software; [worklog.md](worklog.md) records
-how and when each decision was made.
+The rules DCDR applies **now** to NOAA ISD station reports: how they are decoded, how DCDR decides
+what was observed, how dust is classified, how reports are sampled and aggregated into daily
+records, and briefly why. Part 1 ([code_design.md](code_design.md)) covers the software;
+[rules_history.md](rules_history.md) records how each rule came about, with the evidence, the
+superseded rules and the decisions; [worklog.md](worklog.md) is the dated log.
 
-> Living document. It describes the method **as implemented now** (method version **1.8.0**).
-> Planned steps are marked *planned*. Last updated: 2026-10-20.
+> Describes the method **as implemented** (method version **1.8.0**). Planned steps are marked
+> *planned*. Last updated: 2026-10-28.
 
-Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`)
-and the WMO *Manual on Codes* (WMO-No. 306) as published in the WMO Codes Registry
-(codes.wmo.int). Where the two differ, the source of the code decides (section 6.3).
+Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`,
+local) and the WMO *Manual on Codes* (WMO-No. 306) as published in the WMO Codes Registry
+(codes.wmo.int); extracts in [references/](references/) (index: [references.md](references.md)).
+Where the two differ, the source of the code decides (section 6.3).
 
 ---
 
@@ -52,7 +54,9 @@ Two properties of the CSV matter:
   **direction** (`4,99,0149,1,310`). Field positions are therefore checked against real CSV
   strings, not only against the document.
 - **`REM` keeps the original message text**: `SYN…` for SYNOP, `MET…` for METAR, or
-  `SYN004BUFR` when NOAA received the report only in binary BUFR form (no text).
+  `SYN004BUFR` when NOAA received the report only in binary BUFR form (no text). METAR text comes
+  in three forms: full messages since about 2000 (in the 2000s often without the word `METAR`),
+  and before 2000 only the fragments ISD did not decode (e.g. `CAVOK NOSIG`).
 
 Example, Zabol (Iran) 2023: 2,840 SYNOP (97 % of 3-hourly slots), 8,226 METAR, 11 SPECI.
 
@@ -82,7 +86,7 @@ later change in interpretation can be re-run from bronze without downloading aga
 | `AT1-8` | source, weather type, abbreviation, QC | daily present weather (summary of day) | | |
 | `AX1-6` | code, QC, period | daily past weather | | |
 | `AA1-4`, `AJ1` | precipitation, snow depth | kept, not yet used (low reliability) | | |
-| `REM` | raw SYNOP header | `syn_ix` (section 5) | | |
+| `REM` | raw SYNOP / METAR text | `syn_ix` (5); `metar_text`, `metar_auto`, `metar_wx` (5.2) | | |
 
 Text that is not a number and not a missing code is recorded in `parse_status` (bit mask:
 WND 1, VIS 2, TMP 4, DEW 8, SLP 16) and becomes null.
@@ -104,18 +108,22 @@ Special cases:
 - A synoptic slot is counted on the local day of the **slot**, not of the report that fills it
   (a report up to 30 min early can sit across midnight).
 
-## 5. Was the weather observed? (the SYNOP iX rule)
+## 5. Was the weather observed?
 
 This decides which reports can say anything about dust, and therefore which days are "valid".
+**Principle (user decisions 2026-10-17 to 2026-10-20): a missing weather field never means "no
+significant weather". It means "not observed" unless the report says so explicitly, or a
+validated, guarded inference says so; what cannot be verified is "not observed".**
 
-**Problem.** A SYNOP report includes the weather group `7wwW1W2` (ww = present weather, W1W2 =
-past weather) only when there is something to report or the station chooses to. A missing
-weather group can mean "nothing significant happened" or "not observed".
+`pw_status` per report: `reported` (a usable weather code), `nil_significant` (explicitly nothing
+significant: SYNOP iX 2/5, METAR `CAVOK`), `nil_inferred` (inferred: rule V3, METAR inference),
+`nil_metar` (implied: METAR without weather group above 5 km), `not_observed`. `has_pw` is true
+for all but `not_observed`.
 
-**Rule (user decisions 2026-10-17 and 2026-10-19).** A missing weather field is **never assumed**
-to mean "no significant weather". It means "not observed", **unless the report says so
-explicitly**. SYNOP says so in the indicator **iX** (group `iR iX h VV`, the first group after the
-station number), WMO code table 1860:
+**SYNOP: the iX rule.** A SYNOP includes the weather group `7wwW1W2` only if weather of
+significance was observed; when it is omitted, the indicator **iX** (group `iR iX h VV`, WMO code
+table 1860) says why (FM 12 Regulation 12.2.6; extract:
+[references/synop-weather-group.md](references/synop-weather-group.md)):
 
 | iX | Station | Weather group | DCDR treatment (`pw_status`) |
 |---|---|---|---|
@@ -127,126 +135,30 @@ station number), WMO code table 1860:
 | **6** | automatic | **omitted: no observation** | **not observed** |
 | 7 | automatic | included, tables **4680/4531** | classify with table 4680 (section 6.3) |
 | none (SYNOP) | BUFR-only SYNOP, older years | | **inferred nil** if visibility is reported and the station passes the guard (5.1); else not observed |
-| none (other) | METAR, SPECI | | own rules: AUTO, `//`, CAVOK, no group by visibility (5.2, 5.3) |
+| none (other) | METAR, SPECI | | own rules (5.2, 5.3) |
 
-Official confirmation: WMO Codes Registry, BUFR table 0-20-003: entry 508 "No significant
-phenomenon to report, present and past weather omitted" (= iX 2/5) and 509 "No observation, data
-not available, present and past weather omitted" (= iX 3/6).
+`syn_ix` is read from `REM`: `SYN` + 3-digit length + 5-digit WMO number + space + `iR iX h VV`
+(e.g. `SYN08040829 12960 …` → station 40829, iX 2). BUFR 0-20-003 entries 508/509 are the same two
+cases. In ISD, iX exists mainly from 2013 on. Evidence and the selection bias this rule removes:
+[rules_history.md](rules_history.md), method 1.2.0.
 
-`syn_ix` is read from `REM`: `SYN` + 3-digit length + 5-digit WMO number + space + `iR iX h VV`.
-Example: `SYN08040829 12960 03406 …` → station 40829 (Zabol), iR 1, **iX 2**.
+### 5.1 SYNOP without iX: rule V3
 
-Silver columns: `has_pw` (true if `reported`, `nil_significant`, `nil_inferred` or `nil_metar`),
-`pw_status` (`reported`, `nil_significant`, `nil_inferred`, `nil_metar`, `not_observed`), `syn_ix`,
-and for METAR `metar_auto`, `metar_wx` (5.2).
+- **Rule:** a SYNOP (FM-12) with no weather code and no iX is "nothing significant, inferred"
+  (`nil_inferred`) if its visibility is reported (good QC) and its station passes the **V3 guard**.
+  No condition on the visibility value. Applies to all years (user decision 2026-10-27).
+- **Guard** (`process/guard.py`): from all the station's bronze years, the SYNOPs with no code,
+  visibility reported and iX 2/3/5/6; pass if >= 50 such reports and the iX 3/6 share is < 2 %;
+  below 50, no inference. Stored in the silver metadata (`nil_guard`); a change rebuilds silver.
+- **Why:** in SYNOP, visibility and iX share one group, so a reported visibility shows an
+  observation was made. Validated on 2015-2024 (precision 0.9998, recall 0.84); indirect tests
+  across decades and the caveats: [rules_history.md](rules_history.md), methods 1.3.0 and the
+  V3-across-decades entry.
+- Settings: `classify.infer_nil`, `infer_nil_report_types` ([FM-12]), `nil_guard_max_share` (0.02),
+  `nil_guard_min_reports` (50). Gold keeps inferred slots visible (`n_slots_nil_inferred`,
+  `valid_day_explicit`).
 
-**Evidence** (pilot_20 bronze, 363k SYNOP messages):
-- iX 1/4 → manual weather code (MW) present in 99-100 % of reports; iX 2/3/5/6 → present in
-  ≤ 0.2 %. ISD files the codes consistently with iX.
-- Effect on Zabol 2020-2024: share of synoptic slots with weather observed rose from 0.21 to 0.98;
-  valid days from 357 to 1,802; dusty share of valid days fell from an implausible 92 % to 43 %
-  (156 dusty days a year). Chinese stations, which always include the weather group, were
-  unchanged.
-- *Why the old rule inflated dust (a selection bias).* Of Zabol's ~14,400 synoptic slots, only
-  3,052 (21 %) carried a weather code; 11,096 (77 %) said "nothing significant" (iX 2). A code is
-  reported mostly when something happens, and at Zabol that is mostly dust (~88 % of reported
-  codes). Requiring ≥ 4 slots *with a code* therefore kept only days with long-lasting dust:
-
-  | Old rule | Days | Dusty | % dusty |
-  |---|---|---|---|
-  | "valid" (≥ 4 slots with a code) | 357 | 330 | 92 % |
-  | discarded | 1,460 | 441 | 30 % |
-
-  The discarded days were ~1,000 explicitly clear days and 441 shorter dust episodes. With iX,
-  clear slots count as observed and nearly every day is valid: 771 dusty of ~1,800 days. Stations
-  that always report a code (China) were never filtered this way, so the old rule also made
-  countries with different reporting habits incomparable.
-
-**Limitations.**
-- **iX exists only in recent years.** In pilot_100, the raw SYNOP text (and so iX) is present in
-  78-94 % of SYNOP reports in 2015-2024 and in 0 % in 1985, 1995 and 2005. Before ~2015 the iX
-  rule cannot apply; see 5.1.
-- 17 % of SYNOP messages reached NOAA only as BUFR (`SYN004BUFR`): no text, no iX; they fall
-  back to "not observed" when no code is present (e.g. Nokkundi, Pakistan).
-- METAR has no iX; its own code rules decide (5.2), e.g. a missing weather group counts as
-  "nothing significant" only with visibility above 5 km.
-- The rule (WMO-No. 306 Vol. I.1, FM 12, Regulation 12.2.6, p. A–15): group 7 is included only if
-  present or past weather of significance was observed (12.2.6.1); ww 00–03 and W1W2 0–2 are
-  without significance (12.2.6.2), so haze and every dust code must be reported; the group is
-  omitted when there was no observation or nothing significant, and iX says which (12.2.6.3).
-  Extract: [references/synop-weather-group.md](references/synop-weather-group.md).
-
-### 5.1 When iX is missing: inferring "nothing significant" (rule V3, adopted)
-
-Experiment: `notebooks/02_validate_inferred_nil.ipynb` (pilot_100, 2015-2024). Ground truth: SYNOP
-reports with an omitted weather group and a known iX (1.53 M "nothing significant", 0.49 M "not
-observed"). iX was hidden and predicted from information available in every decade.
-
-- In SYNOP, visibility (VV) is in the same group as iX. Visibility is reported in 84.7 % of
-  "nothing significant" reports but in only 0.4 % of "not observed" ones.
-- **Rule V3:** no weather code and no iX → "nothing significant" if visibility is reported (good
-  QC) **and** the station's iX years show "not observed although visibility reported" in < 2 %
-  of such reports (station guard; excludes e.g. Tidjikja, Good Hope, Letlhakane).
-- Precision 0.9998, recall 0.84. Dusty days per year (iX hidden): median absolute error 46.5
-  days/yr without inference, 0 with V3. Rules based on the share of codes 00-03 were precise but
-  recovered only ~20 %.
-- Caveats: no truth before 2015 (assumes stable visibility-reporting practice); stations without
-  any iX years get no guard; some Sudanese stations' clear reports lack visibility.
-
-**Adopted** (user decision 2026-10-20; method 1.3.0). Implementation:
-- `process/guard.py` computes the guard per station from **all** its bronze years on disk:
-  evidence = SYNOP (FM-12) reports with no weather code, visibility reported and iX 2/3/5/6;
-  pass if evidence ≥ 50 and the iX 3/6 share < 2 %; no decision (no inference) below 50.
-  (The notebook used leave-year-out evidence and no minimum; production uses all years plus the
-  minimum, slightly more conservative.)
-- `classify.py` marks qualifying reports `pw_status = nil_inferred` (observed, class none).
-  The flag is kept everywhere: silver keeps it per report, the silver metadata records the
-  station's guard (`nil_guard`), and gold reports `n_slots_nil_inferred` and
-  `valid_day_explicit` (validity from explicit observations only).
-- A station-year is rebuilt when its station's guard changes (e.g. new iX data arrive).
-- Settings: `classify.infer_nil`, `infer_nil_report_types` ([FM-12]), `nil_guard_max_share`
-  (0.02), `nil_guard_min_reports` (50).
-
-**Principle (user decision 2026-10-20): if it cannot be verified, it is "not observed".** The
-inference is used only where validated; stations without enough iX evidence get none.
-
-**V3 across decades** (`notebooks/05_v3_across_decades.ipynb`, local; pilot_100 1931-2025; no
-ground truth before 2010 except 265 reports, so the tests are indirect):
-- V3 is barely used in 1950-1979 (99 % of SYNOPs carry a code) but supplies 0.4-1.0 M "nothing
-  significant" slots per decade from the 1980s, when observers leave out the weather group. In
-  the 1930s-40s it infers 65-91 % of the reports of a few Central Asian stations.
-- At the year iX appears (2013-2015), dust frequency (SYNOP alone) drops by a median 1.9 points
-  (normal year-to-year change 0.0; 79 stations with >= 100 valid days both years), with large
-  drops at some dusty stations (Niamey -38, Zahedan -36, Kayes -29 points). The year coincides with
-  a change in ISD's SYNOP intake, so V3 cannot be separated from it; a downward step is what V3's
-  recall (0.84) predicts.
-- The only old ground truth (1970s-80s, mostly Chinese and Kazakh stations): precision 0.81 on
-  156 inferences, against 0.9998 in 2015-2024; visibility did not separate "nothing significant"
-  from "not observed" there. Too few reports to conclude.
-- V3 needs visibility reported, not a value. Precision in 2015-2024 is 0.986 at <= 1 km and
-  0.998-0.9996 above; older inferences more often come with low visibility (<= 1 km: 4-13 % in
-  the 1930s-70s, 0.1-0.3 % since 1980).
-- **Decision (user, 2026-10-27): keep V3 for all years, with no condition on the visibility
-  value.** Before 1980 SYNOPs carry a code, so V3 is rarely used; its main effect is 1980-2013, when
-  neither a code nor iX is reported; the visibility value barely changes precision, so its presence
-  is the test. Caveat: in the 1930s-40s V3 infers most reports of a few Central Asian stations
-  (Aralsk, Zhosaly, Naryn). `valid_day_explicit` (no inferred slots) remains for sensitivity checks.
-
-**BUFR-only reports.** BUFR is WMO's binary format for the same SYNOP content; when NOAA received a
-SYNOP only as BUFR, `REM` holds just `SYN004BUFR` (no text, no iX). Risk checked: if NOAA's decoder
-dropped weather codes from BUFR, V3 would wrongly call dusty reports clear. Evidence (pilot_100,
-2015-2024): BUFR-only SYNOPs carry a weather code in 28.3 % of reports vs 23.1 % for text, and the
-dust share among codes is the same (15.31 % vs 15.33 %); station by station and year by year the
-rates agree (e.g. Bachu and Tazhong changed practice in 2020: 13-34 % coded in both formats
-before, 100 % after). Stations where the formats disagree (Sydney; Australian automatic stations)
-get no inference (guard: no decision).
-
-**Effect on pilot_100 (2015-2024):** guard pass 80, fail 5 (Tidjikja, Khasab Port, Good Hope,
-Letlhakane, Carnarvon), no decision 13 (mostly Australian automatic and some Indian stations).
-Inference touches 44 of 98 stations; where it matters most, dust frequency falls toward
-plausible values (Nokkundi 325 → 155 dusty days/yr; Bachu 85 → 71).
-
-### 5.2 METAR and SPECI (adopted; methods 1.4.0-1.8.0)
+### 5.2 METAR and SPECI
 
 **Role (user decisions 2026-10-20; methods 1.5.0 and 1.6.0).** SYNOP and METAR are judged
 independently in each 3-hourly slot: the slot is **dusty if either reports dust**, and observed if
@@ -259,13 +171,7 @@ most one report per slot (the closest that observed the weather), so a busy airp
 chances; SPECI never fill a slot (they are sent because conditions changed, often when dust
 arrives) but count in `dusty_day_any`. Section 8 has the sampling; 5.3 the tables.
 
-*Why (method 1.4.0 took one report per slot, SYNOP first):* a SYNOP that observed nothing then hid
-the METAR next to it. US SYNOPs show the problem: after a METAR reporting dust, the next SYNOP
-(9 minutes later) carried dust in 1 of 103 cases at El Paso and 1 of 12 at Phoenix (2015-2024);
-92 of El Paso's say iX 1 ("weather group included") but contain no weather group, so they are
-"not observed" (they seem to be generated automatically). With 1.5.0, El Paso 2020 has 5 dusty
-days in the slots instead of 1. The US stations sent no SYNOP in the 1985 and 1995 samples and
-4-8 a day since at least 2005.
+Evidence for this arrangement: [rules_history.md](rules_history.md), methods 1.5.0 and 1.6.0.
 
 **What the code rules say** (extracts with page citations:
 [references/metar-weather.md](references/metar-weather.md)):
@@ -280,19 +186,8 @@ days in the slots instead of 1. The US stations sent no SYNOP in the 1985 and 19
 - ASOS (User's Guide 1998, §3.11): never reports dust, sand or smoke; its `HZ` is inferred from
   visibility and dew-point depression, not seen.
 
-**Validation** (`notebooks/03_metar_present_weather.ipynb`; pilot_100 2015-2024: 3.18 M
-METAR/SPECI, 680 k at the same minute as a SYNOP that observed the weather):
-- When the SYNOP reports dust, the METAR reports it in 95-96 % if its visibility is <= 5 km and in
-  11 % above 5 km. SYNOP code 06 is mostly reported at visibility above 5 km.
-- A non-AUTO METAR without a weather group: with visibility 5 to < 10 km the SYNOP saw dust in
-  44 % (light dust METAR is not allowed to code); with visibility >= 10 km in 0.8 % overall, but
-  14.7 % at Barbados and 6.6 % at Niamey (transported dust, code 06).
-- Counting only dust with visibility <= 5 km, a METAR without a group missed such dust in <= 0.6 %
-  at 20 of 21 stations (Niamey 5.8 %).
-- AUTO METARs (mainly Australian automatic stations) carry `//` in 93 %; the 157 that carry dust are
-  implausible (`SA` with visibility 9 999 m at Kashi; `DU` with visibility 0 m at Learmonth).
-- The US stations' METARs (at :51) never share a minute with their SYNOPs (at :00), so they are
-  not in the paired sample (open item: pair within minutes).
+Validation of these rules (notebooks 03 and 06): [rules_history.md](rules_history.md), methods
+1.4.0 and 1.8.0.
 
 **Rules adopted** (user decisions 2026-10-20 unless marked *ruling*):
 1. `AUTO` METAR/SPECI: not observed, and none of its codes is used, so an ASOS `HZ` cannot feed the
@@ -318,8 +213,6 @@ METAR/SPECI, 680 k at the same minute as a SYNOP that observed the weather):
      as rule V3) if the station passes its **METAR guard**: among its full-text METARs with no
      code and visibility > 5 km, < 2 % are "not observed" (mostly AUTO), on >= 50 reports
      (`process/guard.py`; stored in the silver metadata as `metar_guard`).
-   Effect (2000-2025 simulation, 40 stations with METAR dust): dust frequency x1.00 of the text
-   rules, against x2.6 without these rules.
 9. **Derived SYNOPs** (user decision 2026-10-28): in a station-year whose SYNOPs copy the METAR
    just before them (temperature >= 95 % and wind speed >= 80 % identical, >= 100 pairs within
    15 min; `process/derived.py`), the SYNOP's codes and iX are not used (`not_observed`, flag
@@ -335,10 +228,10 @@ are ignored. A weather group is any token built from table-4678 letter pairs (de
 so malformed groups such as `-TSBLSA` still count as weather; an unrecognised group can only lead
 to "not observed", never to "no dust"). US messages start with a local date and time.
 In the 2000s the word `METAR` is often missing and the text ends with `;` (`MET046LROP 282200Z
-... NOSIG;`): a full message is recognised by its station identifier and time (method 1.7.0; before,
-47 % of 2000s METARs were wrongly treated as having no text). Before 2000, `REM` holds only the
-fragments ISD did not decode (`MET012CAVOK NOSIG?`), which are not read as a METAR text. Silver
-columns: `metar_auto`, `metar_wx` (`missing`, `group`, `cavok`, `none`; null without METAR text).
+... NOSIG;`): a full message is recognised by its station identifier and time. Before 2000, `REM`
+holds only the fragments ISD did not decode (`MET012CAVOK NOSIG?`): only their `CAVOK` is read
+(rule 8). Silver columns: `metar_text` (`full`, `fragment`), `metar_auto`, `metar_wx` (`missing`,
+`group`, `cavok`, `none`), `synop_derived`.
 Settings: `classify.metar_rules`, `metar_report_types` ([FM-15, FM-16]), `metar_nil_min_vis_m`
 (5000).
 
@@ -561,17 +454,17 @@ special reports when weather changes, often exactly when dust arrives). Counting
 reports would make busy airports look dustier. So, as in duISD v1, dust is judged in 3-hourly
 slots (00, 03, ..., 21 UTC), with a fixed number of reports per slot.
 
-Rules (method 1.5.0; user decisions 2026-10-20):
+Rules (user decisions 2026-10-20):
 - Candidates: reports within ±30 min of the slot whose type belongs to a source
   (`sampling.sources`: SYNOP = FM-12 and the merged SY-* types; METAR = FM-15, SAO, AUTO).
   Summaries (SOD, SOM) and SPECI are never candidates.
 - Per source, one report per slot: weather observed (`has_pw`) first, then the type order, then
   the closest in time, then fixed tie-breakers (`source_rank`, `is_source_selected`).
 - The slot's **primary** report (`is_synoptic_selected`): the slot's SYNOP whenever it has one,
-  observed or not, otherwise its METAR (1.6.0). It supplies wind, temperature, humidity, pressure
+  observed or not, otherwise its METAR. It supplies wind, temperature, humidity, pressure
   and visibility statistics, which therefore come from one report type per slot and are never
-  double counted. *Why:* taking them from whichever report observed the weather (1.5.0) would mix
-  SYNOP and METAR values within a station's series (different instruments, times and rounding).
+  double counted. *Why:* otherwise a station's series would switch between SYNOP and METAR values
+  (different instruments, times and rounding; up to 2.4 m/s and 1.0 °C apart at some stations).
 - Gold combines the two sources per slot: dusty if either reports dust (table in 5.3).
 - Every candidate keeps its ranks and a `selection_reason`.
 
@@ -582,45 +475,6 @@ carry nearly all the dust (2020: 126 dusty days from SYNOP, 34 from METAR alone)
 *Trade-off:* a station with both SYNOP and METAR gets two looks per slot, a SYNOP-only station
 one, so `dusty_day` is somewhat more sensitive where both exist; `dusty_day_synop` stays
 comparable across SYNOP stations.
-
-### 8.1 Full-record test of the slot sources (notebook 04)
-
-`notebooks/04_slot_sources_full_record.ipynb`: pilot_100, 1931 to 2025-08-27, 5 651 station-years,
-method 1.6.0 (the choice of dust and weather sources is still under test). Main results:
-- **METARs without raw text (all before 2000) bias dust frequency.** Without text a METAR counts
-  as observed only when it carries a code, so clear slots drop out (44-51 % of METAR slots
-  observed before 2000, 85-90 % since). Counting only coded METAR slots on 2010-2024 data cuts
-  valid days by ~90 % and raises dust frequency by a median factor of 4.6. Affected: stations or
-  years relying on METAR before 2000 (Gimpo; El Paso before 2005; Dammam, Ilam, In Salah have no
-  SYNOP in ISD before 2005). Old SAO reports (before 1960) always carry a code (mostly 00) and are
-  not affected.
-- **SYNOP and METAR values differ at some stations** (same slot): wind +2.4 m/s (Aktyubinsk),
-  temperature +1.0 °C (Kashi); median +0.05 °C, 0.0 m/s. Supports one source for weather values.
-- **SYNOP-first weather values lose visibility** where the SYNOP has none but the METAR has: 11.5 %
-  of slots with both (Australian automatic SYNOPs 50-63 %); temperature 0.2 %, wind 1.1 %.
-- **METAR adds 1.6 % of dusty days overall**, mostly where the SYNOP did not observe; it is the
-  main source at El Paso (79 %), Las Vegas, Phoenix and Gimpo (no SYNOP).
-- Rule V3 infers "nothing significant" for some US SYNOPs while the METAR reports dust (151 slots).
-- NOAA's S3 data end on 2025-08-27 (no 2026 files).
-
-### 8.2 METARs without text and derived SYNOPs (notebook 06)
-
-`notebooks/06_metar_no_text_and_derived_synop.ipynb` (local): (b) on the whole archive, (a) on
-pilot_100 plus 100 dryland METAR stations (`config/stations/metar_test_100.csv`), all years.
-- **Derived SYNOPs** (SYNOP values copied from the METAR 4-9 min earlier: temperature >= 95 % and
-  wind speed >= 80 % identical): 94.7 % of US station-years with both report types (since ~2005),
-  0.7 % elsewhere. They lose dust: after a dusty METAR the SYNOP has dust in 17 % (independent
-  SYNOPs: 91 %) and says "nothing significant" in 32 %.
-- **METAR text in ISD:** before 2000 only fragments ISD did not decode (93-98 % of METARs;
-  `CAVOK` in 30-37 %); full text from the 2000s (47 % of it without the word METAR, read since
-  1.7.0).
-- **Without text** a METAR counts as observed only when coded: dust frequency x2.6 (2000-2025
-  simulation, 40 stations with METAR dust). Reading `CAVOK` in the fragments gives x1.05; a guarded
-  inference "no code + visibility > 5 km = nothing significant" (precision 0.993-0.999; 102 of 154
-  stations pass the guard) gives x1.07; both together x1.00.
-- Old US airways reports (SAO) carry an explicit "nothing" code in 84-87 % of their codes: not
-  biased.
-- Status: adopted in method 1.8.0 (5.2, rules 8-10; user decisions 2026-10-28).
 
 ## 9. Daily aggregation (gold `daily`, `sql/daily.sql`)
 
@@ -656,13 +510,8 @@ only from a daily summary has no row. Rule tables for every report type: section
 *Planned:* monthly and annual products, coverage, station catalog, climatology, diurnal cycle,
 trends, wind threshold Uth (source stations only), code-06 diagnostic.
 
-**Implication for Uth (threshold wind).** Uth is estimated from how the dusty fraction rises with
-wind speed, so the denominator must include clear-weather reports. With only reports carrying a
-weather code (duISD v1's denominator), Zabol 2020-2024 looks 30-43 % dusty even at 0-6 m/s and
-no threshold appears; with all observed reports (iX rule) it is 2-3 % below 8 m/s, about 50 % at
-12-14 m/s and 95 % above 16 m/s, a clear threshold curve. This likely explains why the v1 Uth
-method failed at Saharan stations. Fit Uth on **raised dust** (codes 07 and up): suspended dust
-(06) is often transported and reported at low local winds (e.g. Harmattan, Sudan).
+**Uth (threshold wind)** must be fitted with all observed reports in the denominator and on raised
+dust (codes 07 and up); why: [rules_history.md](rules_history.md), method 1.2.0.
 
 ## 10. Station selection (pilot)
 
@@ -690,18 +539,14 @@ Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is be
 
 ## 11. Open questions
 
-1. ~~Exact WMO regulation for omitting group 7~~: resolved, FM 12 Regulation 12.2.6 (section 5).
-2. BUFR-only SYNOP (17 %): recover "omitted" information from the BUFR original?
-3. ~~METAR without a weather group~~: resolved (5.2, method 1.4.0). Still open: decode dust in
-   US remarks as a "nearby/distant" flag; why Niamey's METARs miss dust at <= 5 km (5.8 %).
-8. ~~METARs without full text; derived SYNOPs~~: resolved (5.2, rules 8-9; method 1.8.0).
-9. ~~Visibility under SYNOP-first weather values~~: resolved (5.2, rule 10).
-   US SYNOPs rarely carry the dust of their METARs (5.2): resolved by judging both per slot (1.5.0).
+1. BUFR-only SYNOP (17 %): recover "omitted" information from the BUFR original?
+2. Dust in US remarks (`BLDU ALQDS`, `DSNT`, `VCBLDU`) as a "nearby/distant" flag.
+3. Why Niamey's METARs miss dust at <= 5 km in 5.8 % of SYNOP dust cases.
 4. Humidity screen at humid dust sites (6.6); `has_pw` before time distance in sampling (8).
 5. Station selection: require recent data and weather reporting.
-6. Does ISD keep the raw SYNOP text (and so iX) in older decades and at African stations?
-   If not, older years keep the biased denominator.
-7. ~~Rule V3 before 2013~~: resolved, kept for all years without a visibility condition (5.1).
+6. NOAA's ISD files end on 2025-08-27: is ISD still updated?
+
+Resolved questions: [rules_history.md](rules_history.md), "Resolved questions".
 
 ## 12. References
 
@@ -709,7 +554,7 @@ Official code manuals and tables, with URLs and checksums of the local copies:
 [references.md](references.md).
 
 - NOAA NCEI. *Federal Climate Complex Data Documentation for Integrated Surface Data (ISD)*
-  (ISD format document), `legacy/isd-format-document.pdf`.
+  (ISD format document), `legacy/isd-format-document.pdf` (local).
 - WMO (2019). *Manual on Codes*, WMO-No. 306, Vol. I.1, Part A; code tables 1860, 4677, 4680,
   4561, 4531. WMO Codes Registry: https://codes.wmo.int (BUFR tables 0-20-003, 0-20-004).
 - WMO (2025). *Manual on Codes*, WMO-No. 306, Vol. I.2 (BUFR/CREX); code table 0 20 003.

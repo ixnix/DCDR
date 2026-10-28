@@ -92,7 +92,7 @@ class ClassifyCfg(_Section):
     infer_nil_report_types: list[str]  # report types the inference applies to (validated: FM-12)
     nil_guard_max_share: float  # guard: max share "not observed although visibility reported"
     nil_guard_min_reports: int  # guard: min such iX reports needed to judge a station
-    # METAR/SPECI rules (docs/science.md 5.2): AUTO and "//" -> not observed; CAVOK -> nothing
+    # METAR/SPECI rules (docs/rules.md 5.2): AUTO and "//" -> not observed; CAVOK -> nothing
     # significant; no weather group with visibility > metar_nil_min_vis_m -> "nil_metar"
     metar_rules: bool
     metar_report_types: list[str]  # report types the METAR rules apply to (FM-15, FM-16)

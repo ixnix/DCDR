@@ -15,7 +15,7 @@ detects that habit from the station's own reports that DO carry iX (in ISD: abou
                 none  if there is too little evidence (no inference at that station)
 
 It uses all bronze years of the station that are on disk, so older years without iX are judged by
-the station's recent practice (an assumption, see docs/science.md section 5.1).
+the station's recent practice (an assumption, see docs/rules.md section 5.1).
 Validated in notebooks/02_validate_inferred_nil.ipynb (precision 0.9998, recall 0.84).
 
 The METAR guard (user decision 2026-10-28; notebooks/06) does the same for METARs without full

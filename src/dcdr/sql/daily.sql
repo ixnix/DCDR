@@ -1,5 +1,5 @@
 -- Daily station product on the local mean solar time (LMST) day.
--- Definitions: docs/science.md section 9 (rule tables: section 5.3).
+-- Definitions: docs/rules.md section 9 (rule tables: section 5.3).
 -- Inputs: view `silver`; variables `min_slots` (valid-day threshold) and `vis5_max_m` (dust at
 -- or below this visibility counts for dusty_day_vis5).
 --

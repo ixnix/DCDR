@@ -22,14 +22,14 @@ alphanumeric tables in [synop-weather-group.md](synop-weather-group.md).
 | 510 | present and past weather missing, but expected | (no iX equivalent) |
 
 508/509 are on PDF p. 911. They are how a BUFR SYNOP says what iX says in the text code. ISD's
-`SYN004BUFR` reports carry no text, so neither survives into ISD (science.md §5.1).
+`SYN004BUFR` reports carry no text, so neither survives into ISD (rules.md §5.1).
 
 ## Entries DCDR treats as dust
 
 | BUFR | Summary of the WMO entry | Page (PDF) | DCDR class |
 |---|---|---|---|
 | 04 | visibility reduced by smoke (fires, industry, volcanic ash) | 904 | not dust |
-| 05 | haze | 904 | dust_haze only through the haze rule (science.md §6) |
+| 05 | haze | 904 | dust_haze only through the haze rule (rules.md §6) |
 | 06 | widespread dust in suspension, not raised by wind at or near the station | 904 | suspended |
 | 07 | dust or sand raised by wind at or near the station, no whirls or storm | 904 | blowing |
 | 08 | well-developed dust or sand whirls | 904 | whirls |

@@ -21,7 +21,7 @@ A missing weather field is never ASSUMED to mean "no significant weather"; only 
 iX 2/5 says so. iX 7 also selects the code table: automatic station, WMO tables 4680/4531.
 
 METAR/SPECI (FM-15/16) follow their own code rules, read from the raw message (user decisions
-2026-10-20, validated in notebooks/03; full table in docs/science.md 5.2):
+2026-10-20, validated in notebooks/03; full table in docs/rules.md 5.2):
     AUTO (fully automated) or "//"    -> not observed; their codes are not used (machines do not
                                          detect dust; ASOS infers HZ from visibility and humidity)
     CAVOK                             -> observed, nothing significant ("nil_significant")

@@ -2,8 +2,8 @@
 
 A dated record of what was done, what was found and what was decided, newest first.
 "User decision" = decided by Xin Xi; "Ruling" = a choice made by Claude during implementation,
-open to review. Details of the current method: [science.md](science.md); of the software:
-[engineering.md](engineering.md). Commits are referenced by their short hash.
+open to review. Details of the current method: [rules.md](rules.md); of the software:
+[code_design.md](code_design.md). Commits are referenced by their short hash.
 
 ## Open items
 
@@ -28,6 +28,12 @@ open to review. Details of the current method: [science.md](science.md); of the 
 ---
 
 ## 2026-10-28
+
+- **Documentation restructured** (user request): `engineering.md` renamed `code_design.md`;
+  `science.md` split into `rules.md` (the rules as implemented, method 1.8.0; section numbers kept
+  for 1-12) and `rules_history.md` (per method version: change, evidence, superseded rule,
+  decision; the validation results of notebooks 02-06; resolved questions). References in code,
+  docs, README and CLAUDE.md updated. `docs/superpowers/` (design spec and plans) made local only.
 
 - **Method 1.8.0: METARs without full text, derived SYNOPs, visibility** (user decisions, after
   notebook 06; tests first, 265 pass).
@@ -104,7 +110,7 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## 2026-10-22
 
-- **Documented the manual download of the whole ISD archive** (user request; engineering.md 8,
+- **Documented the manual download of the whole ISD archive** (user request; code_design.md 8,
   "Download the whole ISD archive"): station list, detached year-by-year loop, monitoring,
   stopping, resuming, completeness check. New `scripts/list_isd_stations.py` writes the station
   list (reproduces `config/stations/all_isd.csv` exactly). Lessons from the run: `uv run dcdr` only
@@ -141,7 +147,7 @@ open to review. Details of the current method: [science.md](science.md); of the 
   Ingested the whole NOAA record for pilot_100: `dcdr ingest --years 1931-2026` (5 651
   station-year files, 4 275 new, 1.7 GB bronze, 5 min; NOAA has no 2026 files and 2025 ends on
   27 August), `dcdr process` (5 651 built, 0 failed, 18 min), `dcdr aggregate` (1.92 M
-  station-days, all checks passed). Findings (science.md 8.1):
+  station-days, all checks passed). Findings (rules_history.md (full-record test)):
   - METARs without raw text (none before 2000) count as observed only when coded: valid days
     -90 % and dust frequency x4.6 (median) when simulated on 2010-2024 data. Pre-2000 METAR
     periods are biased (Gimpo; El Paso before 2005; Dammam, Ilam, In Salah have no SYNOP in ISD
@@ -200,7 +206,7 @@ open to review. Details of the current method: [science.md](science.md); of the 
     All five have 366 valid days.
 
 - **METAR rules implemented** (method **1.4.0**; tests first: 41 new, 215 pass). Full rule tables
-  for every report type: science.md 5.3. Decisions:
+  for every report type: rules.md 5.3. Decisions:
   - *User decisions:* SYNOP is primary and METAR a supplement: a METAR fills a slot only when no
     SYNOP does, and the SYNOP is the truth when both exist (already how sampling ranks). METAR
     dust counts **at any visibility** (the group says dust; visibility tells its strength). `HZ`
@@ -229,13 +235,13 @@ open to review. Details of the current method: [science.md](science.md); of the 
 - **Correction: the US Southwest stations are not METAR-only.** Phoenix, El Paso and Las Vegas
   send SYNOPs at :00 (El Paso 8 a day; Phoenix and Las Vegas 4 a day in 2016 and 2020, 8 in 2024)
   besides METARs at :51. Notebook 03 found no same-minute pairs and called them METAR-only; fixed
-  in the notebook text, science.md, and the notes in `config/stations/contrast.csv`. METAR fills
+  in the notebook text, rules.md, and the notes in `config/stations/contrast.csv`. METAR fills
   about half of Phoenix's 2020 slots.
-- **Docs fix:** science.md 5.2 had been inserted after section 10 (4aebd15); moved under section 5.
+- **Docs fix:** rules.md 5.2 had been inserted after section 10 (4aebd15); moved under section 5.
 
 - **Notebook 03: METAR present weather validated** (`notebooks/03_metar_present_weather.ipynb`;
   pilot_100 2015-2024, 3.18 M METAR/SPECI, 680 k paired with a SYNOP that observed the weather).
-  Findings (science.md 5.2): METAR reports dust when visibility <= 5 km (95-96 % of SYNOP dust
+  Findings (rules.md 5.2): METAR reports dust when visibility <= 5 km (95-96 % of SYNOP dust
   cases) and almost never above (WMO 15.8.12 holds in the data; US reports DU up to 7 mi). A
   non-AUTO METAR with no group at 5 to < 10 km coincides with SYNOP dust in 44 %. At >= 10 km or
   CAVOK (candidate M1): 0.79 % overall but 14.7 % Barbados, 6.6 % Niamey, 2.7 % Aktyubinsk.
@@ -347,7 +353,7 @@ open to review. Details of the current method: [science.md](science.md); of the 
   all observed reports the curve is 2-3 % below 8 m/s and ~50 % at 12-14 m/s. Likely cause of the
   v1 Uth failure at Saharan stations; fit Uth on raised dust (07+). Open: is iX available in
   older ISD decades and at African stations?
-- Explained the iX effect as a selection bias (docs/science.md §5): under the old rule a day was
+- Explained the iX effect as a selection bias (docs/rules.md §5): under the old rule a day was
   "valid" only if ≥ 4 slots carried a weather code, and at Zabol codes are mostly dust, so valid
   days were mostly long dust days (357 days, 92 % dusty); 1,460 clear or short-episode days were
   discarded.
@@ -368,7 +374,8 @@ open to review. Details of the current method: [science.md](science.md); of the 
   tests. First full run (2020-2024): 103 station-years ingested, 84 silver, gold OK; ~30 s.
   Found: 4 selected stations without usable recent data; 3 with no dust reported recently.
 - Default station list is pilot_100; thin_slice.csv removed (user decision; `6fd8967`).
-- Documentation started: `docs/engineering.md`, `docs/science.md`, this log (user request).
+- Documentation started: `docs/engineering.md`, `docs/science.md`, this log (user request; renamed
+  2026-10-28: `code_design.md`, and `rules.md` + `rules_history.md`).
 
 ## 2026-10-18
 

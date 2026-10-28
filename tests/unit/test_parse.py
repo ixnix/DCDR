@@ -115,7 +115,7 @@ def test_synop_ix_is_null_without_remarks() -> None:
     assert _one()["syn_ix"] is None
 
 
-# --- METAR/SPECI text (user decision 2026-10-20; rules in docs/science.md 5.2) ---------------
+# --- METAR/SPECI text (user decision 2026-10-20; rules in docs/rules.md 5.2) ---------------
 # Only the observed part counts: remarks (RMK ...), trend forecasts (NOSIG, BECMG, TEMPO ...) and
 # recent weather (RE..) are not present weather. Strings follow real ISD REM values.
 @pytest.mark.parametrize(

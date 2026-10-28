@@ -1,11 +1,12 @@
-# DCDR documentation, Part 1: Engineering
+# DCDR documentation, Part 1: Code design
 
 How the `dcdr` package is built and used: structure, commands, inputs, outputs and design.
-Part 2 ([science.md](science.md)) explains how the observations are interpreted and why.
+Part 2 ([rules.md](rules.md)) gives the data rules as implemented; [rules_history.md](rules_history.md)
+how they came about.
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-10-20 (method version 1.8.0).
+> Last updated: 2026-10-28 (method version 1.8.0).
 
 ---
 
@@ -74,7 +75,8 @@ DCDR/
 │                               list_isd_stations.py: station list of the whole ISD archive)
 ├── references/                official code manuals, local copies (git-ignored; index: docs/references.md)
 ├── tests/                      pytest: unit/, integration/, fixtures/
-├── docs/                       this documentation, design spec, figures
+├── docs/                       code_design.md, rules.md, rules_history.md, worklog.md, references
+│                               (the design spec and plans in docs/superpowers/ are local only)
 └── legacy/                     (local only, not in the public repo) original v1 scripts, duISD v1
                                 data, ISD format document (never imported)
 ```
@@ -352,4 +354,4 @@ Tests use small synthetic ISD rows (`tests/fixtures/isd.py`) and an in-memory fa
 
 A. pipeline (this package) · B. publishing (Hugging Face, Zenodo) · C. website (map, time
 series) · D. environmental drivers (`enrich`) · E. dust forecasting at source stations
-(`forecast`, trained on GEFSv12 reforecasts). Design: `docs/superpowers/specs/2026-10-15-dcdr-pilot-design.md`.
+(`forecast`, trained on GEFSv12 reforecasts). Design: the original spec (`docs/superpowers/specs/2026-10-15-dcdr-pilot-design.md`, local only).

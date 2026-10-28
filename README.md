@@ -3,11 +3,11 @@
 Quality-controlled dust-event records from NOAA ISD surface observations.
 
 Documentation:
-- [Part 1, Engineering](docs/engineering.md): structure, commands, inputs, outputs, design.
-- [Part 2, Science](docs/science.md): how observations are interpreted, classified and aggregated, and why.
+- [Part 1, Code design](docs/code_design.md): structure, commands, inputs, outputs, design.
+- [Part 2, Rules](docs/rules.md): the data ingestion and conversion rules as implemented now.
+- [Rules history](docs/rules_history.md): how each rule came about, with the evidence and decisions.
 - [Work log](docs/worklog.md): dated decisions, findings and open items.
 - [References](docs/references.md): the official code manuals behind the rules, with extracts.
-- Original design spec: `docs/superpowers/specs/2026-10-15-dcdr-pilot-design.md` (historical).
 
 ## Quick start
 
@@ -23,7 +23,7 @@ Run `dcdr` from the repo root (or anywhere: it is an installable package — `uv
 Data are written to `./data` (relative to where you run `dcdr`; git-ignored in the repo) by default; set `DCDR_DATA` to use another location, e.g. an external drive.
 `legacy/` (original v1 scripts, the NOAA ISD format document) and `notebooks/` (analyses) are kept
 locally and are not part of the public repository; the package never imports them. Their findings
-are in [docs/science.md](docs/science.md) and [docs/worklog.md](docs/worklog.md).
+are in [docs/rules.md](docs/rules.md) and [docs/worklog.md](docs/worklog.md).
 
 ## Licence
 

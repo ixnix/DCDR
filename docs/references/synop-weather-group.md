@@ -4,7 +4,7 @@ Source: WMO (2019). *Manual on Codes*, WMO-No. 306, Volume I.1, Part A – Alpha
 Local copy `references/wmo/306_i1_2019_en.pdf` (see [../references.md](../references.md)).
 Page numbers: printed page (PDF page). WMO text is summarised; short quotes are marked.
 
-Used by: `parse.py` (`syn_ix`), `classify.py` (`pw_status`), science.md §5 and §5.1.
+Used by: `parse.py` (`syn_ix`), `classify.py` (`pw_status`), rules.md §5 and §5.1.
 
 ## When the weather group is included or omitted (FM 12, Regulation 12.2.6)
 
