@@ -78,6 +78,7 @@ def test_write_silver_records_metadata(settings: Settings, tmp_path: Path) -> No
         "prev_source_md5": "m0",
         "next_year_present": "0",
         "nil_guard": "",
+        "metar_guard": "",
     }
 
 

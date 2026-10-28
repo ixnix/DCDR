@@ -359,3 +359,74 @@ def test_metar_rules_can_be_switched_off() -> None:
         AU1=SUSPENDED_AU,
     )
     assert (no_group["pw_status"], auto["dust_class_rule"]) == ("not_observed", "suspended")
+
+
+# --- METARs without full text; derived SYNOPs (user decisions 2026-10-28; notebook 06) --------
+def _cls_m(guard: bool | None = None, derived: bool = False, **fields: str) -> dict:
+    s = load_settings()
+    df = add_time_columns(parse_reports(bronze_frame([isd_row("2024-07-22T21:00:00", **fields)])))
+    df = apply_qc(df, s.qc, s.parse)
+    return classify_reports(df, s.classify, s.qc, metar_guard=guard, synop_derived=derived).row(
+        0, named=True
+    )
+
+
+FRAGMENT = "MET006NOSIG?"  # a pre-2000 fragment without CAVOK
+
+
+def test_fragment_cavok_is_explicit_nothing_significant() -> None:
+    r = _cls_m(REPORT_TYPE="FM-15", REM="MET012CAVOK NOSIG?")
+    assert (r["pw_status"], r["dust_class_rule"]) == ("nil_significant", "none")
+
+
+@pytest.mark.parametrize("rem", [FRAGMENT, None])
+def test_metar_without_full_text_is_inferred_nil_when_the_station_passes(rem: str | None) -> None:
+    fields = {"REPORT_TYPE": "FM-15", "VIS": "010000,1,N,1"} | ({"REM": rem} if rem else {})
+    r = _cls_m(guard=True, **fields)
+    assert (r["pw_status"], r["has_pw"], r["dust_class_rule"]) == ("nil_inferred", True, "none")
+
+
+@pytest.mark.parametrize(
+    "guard,vis,code",
+    [
+        (None, "010000,1,N,1", None),  # station without enough evidence
+        (False, "010000,1,N,1", None),  # station fails the guard
+        (True, "004000,1,N,1", None),  # visibility not above 5 km
+        (True, "999999,9,9,9", None),  # visibility missing
+    ],
+)
+def test_no_metar_inference_without_guard_or_good_visibility(
+    guard: bool | None, vis: str, code: str | None
+) -> None:
+    r = _cls_m(guard=guard, REPORT_TYPE="FM-15", REM=FRAGMENT, VIS=vis)
+    assert r["pw_status"] == "not_observed"
+
+
+def test_metar_with_a_code_and_no_text_is_still_reported() -> None:
+    r = _cls_m(guard=True, REPORT_TYPE="FM-15", AU1="0,5,00,5,0,1,1")
+    assert (r["pw_status"], r["dust_class_rule"]) == ("reported", "blowing")
+
+
+def test_full_text_metar_ignores_the_metar_guard() -> None:
+    """With full text the text rules decide (no group at > 5 km = nil_metar), guard or not."""
+    full = "MET000METAR OIZB 010300Z 34012KT 9999 NSC 30/10 Q1010"
+    assert _cls_m(guard=None, REPORT_TYPE="FM-15", REM=full)["pw_status"] == "nil_metar"
+    auto = "MET000METAR YPLM 270800Z AUTO 09009KT 9999 NCD 39/12 Q1010"
+    assert _cls_m(guard=True, REPORT_TYPE="FM-15", REM=auto)["pw_status"] == "not_observed"
+
+
+@pytest.mark.parametrize("fields", [{"MW1": "06,1"}, {"REM": ZABOL_IX2}, {"REM": "SYN004BUFR"}])
+def test_derived_synop_present_weather_is_not_used(fields: dict) -> None:
+    """A SYNOP copied from the METAR (US) is not an independent observation of the weather."""
+    r = _cls_m(guard=True, derived=True, **fields)
+    assert (r["pw_status"], r["dust_rank"], r["dust_class_rule"], r["synop_derived"]) == (
+        "not_observed",
+        0,
+        "unknown",
+        True,
+    )
+
+
+def test_derived_flag_does_not_touch_metars() -> None:
+    r = _cls_m(derived=True, REPORT_TYPE="FM-15", AU1="0,5,00,5,0,1,1")
+    assert (r["pw_status"], r["dust_class_rule"]) == ("reported", "blowing")

@@ -97,6 +97,18 @@ class ClassifyCfg(_Section):
     metar_rules: bool
     metar_report_types: list[str]  # report types the METAR rules apply to (FM-15, FM-16)
     metar_nil_min_vis_m: float  # no group means "nothing significant" only above this visibility
+    # METARs without full text (pre-2000 fragments, no REM): "no code + visibility > metar_nil_min_vis_m"
+    # -> "nothing significant, inferred" if the station passes its METAR guard (process/guard.py)
+    metar_infer_nil: bool
+    metar_nil_guard_max_share: float  # guard: max share "not observed" among such full-text reports
+    metar_nil_guard_min_reports: int  # guard: min full-text evidence to judge a station
+    # Derived SYNOPs (values copied from the METAR just before): present weather not used
+    derived_synop: bool
+    derived_report_types: list[str]  # SYNOP types tested (FM-12)
+    derived_min_pairs: int  # min SYNOP-METAR pairs in a station-year to judge it
+    derived_max_minutes: int  # the METAR must be at most this many minutes before the SYNOP
+    derived_t_share: float  # share of pairs with identical temperature ...
+    derived_wind_share: float  # ... and identical wind speed, to call the SYNOPs derived
 
 
 class SamplingCfg(_Section):

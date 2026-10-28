@@ -7,9 +7,7 @@ open to review. Details of the current method: [science.md](science.md); of the 
 
 ## Open items
 
-- [ ] **Decisions after the full-record test** (notebook 04): (a) METARs without text before
-      2000; (b) visibility under SYNOP-first weather values; (c) keep or change the dust and
-      weather sources (still open by user decision).
+- [ ] **Rebuild all silver and gold for method 1.8.0** (user), then check pre-2000 METAR stations.
 - [ ] NOAA's S3 ISD files end on 2025-08-27 (no 2026): check whether ISD is still updated or
       replaced (e.g. by another NCEI hourly product) before relying on recent years.
 - [ ] **Run the pipeline for method 1.6.0** (user): `dcdr process` rebuilds all silver (new method
@@ -28,6 +26,25 @@ open to review. Details of the current method: [science.md](science.md); of the 
 - [ ] Set up a GitHub remote; publish documentation (e.g. MkDocs) when stable.
 
 ---
+
+## 2026-10-28
+
+- **Method 1.8.0: METARs without full text, derived SYNOPs, visibility** (user decisions, after
+  notebook 06; tests first, 265 pass).
+  - Pre-2000 METAR fragments: `CAVOK` before any trend word or remarks = explicit "nothing
+    significant" (`parse.py`: `metar_text` full/fragment; `metar_wx = cavok` from a fragment).
+  - METARs without full text: no code + visibility > 5 km = `nil_inferred` where the station
+    passes the new METAR guard (`guard.py`: `metar_guard_counts`, `station_guards`; silver
+    metadata `metar_guard`; a guard change triggers a rebuild).
+  - Derived SYNOPs (`derived.py`, per station-year): codes and iX not used; flag `synop_derived`.
+  - Visibility for the day from the slot's METAR when the primary SYNOP has none
+    (`n_vis_from_metar`).
+  - *Rulings:* the METAR inference reuses the status `nil_inferred` (counted with V3 in
+    `n_slots_nil_inferred`, excluded from `valid_day_explicit`); derived detection on FM-12 vs
+    FM-15 only; a station-year frame is assumed to hold one station.
+  - Real-data check (in memory): El Paso 2020 SYNOPs detected as derived (2,896 not observed for
+    weather); Gimpo 1985: of 16,076 METARs, 5,656 CAVOK from fragments and 4,073 inferred,
+    93 not observed (before: most of the ~10,000 uncoded ones).
 
 ## 2026-10-27
 

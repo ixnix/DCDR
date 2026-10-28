@@ -27,6 +27,7 @@ import polars as pl
 from dcdr.config import Settings
 from dcdr.process import METHOD_VERSION
 from dcdr.process.classify import apply_haze_and_rh, classify_reports
+from dcdr.process.derived import synop_is_derived
 from dcdr.process.parse import add_time_columns, parse_reports
 from dcdr.process.qc import apply_qc
 from dcdr.process.sampling import select_synoptic
@@ -68,8 +69,10 @@ CORE_COLUMNS = [
     "has_pw",
     "pw_status",
     "syn_ix",
+    "metar_text",
     "metar_auto",
     "metar_wx",
+    "synop_derived",
     "dust_rank",
     "dust_class_rule",
     "dust_rule_id",
@@ -156,6 +159,7 @@ def build_station_year(
     *,
     next_year_exists: bool = False,
     nil_guard: bool | None = None,
+    metar_guard: bool | None = None,
 ) -> pl.DataFrame:
     """Turn one station-year of bronze into silver (in memory; `write_silver` saves it).
 
@@ -165,6 +169,8 @@ def build_station_year(
                      31-December reports that compete for the 1-January 00:00 slot
     nil_guard        the station's guard for inferred "nothing significant" (process/guard.py):
                      True allows rule V3, False/None do not
+    metar_guard      the station's METAR guard: True allows the inference for METARs without
+                     full text (process/guard.py)
     The `*` makes `next_year_exists` keyword-only, so call sites must spell out its name.
     """
     frames = [current] if previous is None else [previous_year_tail(previous, year), current]
@@ -180,7 +186,17 @@ def build_station_year(
     # Sort by time and tell Polars the time column is sorted: the haze rule's rolling window
     # (in classify.py) requires it.
     df = df.sort(_SORT, nulls_last=True).with_columns(pl.col("time_utc").set_sorted())
-    df = classify_reports(df, settings.classify, settings.qc, nil_guard=nil_guard)
+    # Are this station-year's SYNOPs copies of its METARs (US)? Then their present weather is
+    # not used (process/derived.py).
+    derived = synop_is_derived(df, settings.classify)
+    df = classify_reports(
+        df,
+        settings.classify,
+        settings.qc,
+        nil_guard=nil_guard,
+        metar_guard=metar_guard,
+        synop_derived=derived,
+    )
     df = apply_haze_and_rh(df, settings.classify, settings.qc)
     df = select_synoptic(df, settings.sampling)
     # Each report lives in exactly one station-year file: slot candidates belong to their SLOT's
@@ -208,6 +224,7 @@ def write_silver(
     prev_source_md5: str,
     next_year_present: bool = False,
     nil_guard: bool | None = None,
+    metar_guard: bool | None = None,
 ) -> None:
     """Validate one silver station-year against the contract, then write it with provenance.
 
@@ -227,5 +244,6 @@ def write_silver(
             "prev_source_md5": prev_source_md5,
             "next_year_present": "1" if next_year_present else "0",
             "nil_guard": {True: "1", False: "0", None: ""}[nil_guard],  # station guard (rule V3)
+            "metar_guard": {True: "1", False: "0", None: ""}[metar_guard],  # METAR inference guard
         },
     )

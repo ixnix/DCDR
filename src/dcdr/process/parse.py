@@ -108,6 +108,14 @@ def parse_reports(raw: pl.DataFrame) -> pl.DataFrame:
     """
     d = raw
     tokens = metar_tokens(_raw(d, "REM"))  # observed METAR groups (null for non-METAR remarks)
+    # A "MET" remark that is not a full message is a fragment (before 2000): the parts ISD did not
+    # decode, e.g. "CAVOK NOSIG". Its CAVOK counts only before a trend word or the remarks
+    # ("BECMG CAVOK" is a forecast).
+    is_met = _raw(d, "REM").str.starts_with("MET").fill_null(False)
+    fragment = is_met & tokens.is_null()
+    frag_cavok = fragment & _raw(d, "REM").str.extract(r"^MET\d{3}(.*)$", 1).str.replace(
+        r"(^| )(NOSIG|BECMG|TEMPO|RMK)([ ?;=].*)?$", ""
+    ).str.contains(r"(^| )CAVOK([ ?;=]|$)").fill_null(False)
     # Text parts of the core fields, kept as variables because both _num and _malformed use them.
     wnd_spd, vis, tmp, dew, slp = (
         _part(d, "WND", 3),
@@ -134,10 +142,17 @@ def parse_reports(raw: pl.DataFrame) -> pl.DataFrame:
         # E.g. "SYN08040829 12960 ..." -> iR=1, iX=2. Null for METAR remarks, for messages NOAA
         # received only as BUFR ("SYN004BUFR"), and when the file has no REM column.
         _raw(d, "REM").str.extract(r"^SYN\d{3}\d{5} [0-4/]([1-7])", 1).alias("syn_ix"),
-        # METAR/SPECI text (null when REM holds no METAR message): AUTO = fully automated, no
-        # human involvement (WMO FM 15.4); metar_wx = what the present-weather part says:
+        # METAR/SPECI text: metar_text = "full" (a whole message), "fragment" (before 2000: the
+        # undecoded parts only) or null (no METAR remark). AUTO = fully automated, no human
+        # involvement (WMO FM 15.4; full text only); metar_wx = what the present-weather part says:
         # "missing" ("//", not observable, FM 15.8.19), "group" (weather groups), "cavok"
-        # (CAVOK, FM 15.10), or "none" (no weather group: nothing reportable, FM 15.8.2).
+        # (CAVOK, FM 15.10; also read from a fragment), or "none" (no weather group: nothing
+        # reportable, FM 15.8.2). Null without full text, except a fragment's CAVOK.
+        pl.when(tokens.is_not_null())
+        .then(pl.lit("full"))
+        .when(fragment)
+        .then(pl.lit("fragment"))
+        .alias("metar_text"),
         tokens.list.contains("AUTO").alias("metar_auto"),
         pl.when(tokens.list.contains("//"))
         .then(pl.lit("missing"))
@@ -147,6 +162,8 @@ def parse_reports(raw: pl.DataFrame) -> pl.DataFrame:
         .then(pl.lit("cavok"))
         .when(tokens.is_not_null())
         .then(pl.lit("none"))
+        .when(frag_cavok)
+        .then(pl.lit("cavok"))
         .alias("metar_wx"),
         # --- WND: direction, dir QC, type, speed (x10), speed QC ---
         _num(_part(d, "WND", 0), ("999",)).alias("wind_dir"),

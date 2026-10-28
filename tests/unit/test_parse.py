@@ -189,8 +189,12 @@ def test_synop_ix_is_null_without_remarks() -> None:
             "none",
         ),
         ("MET060LFML 232300Z 13018G28KT 3000 BLDU SCT020 17/11 Q1007;", False, "group"),
-        # before 2000: only fragments ISD did not decode (no station, no time): not a METAR text
-        ("MET012CAVOK NOSIG?", None, None),
+        # before 2000: only fragments ISD did not decode (no station, no time). Only CAVOK is read
+        # from them (user decision 2026-10-28), and only before a trend word: "BECMG CAVOK" is a
+        # forecast.
+        ("MET012CAVOK NOSIG?", None, "cavok"),
+        ("MET016NEW CAVOK NOSIG;", None, "cavok"),
+        ("MET020NEW BECMG CAVOK;", None, None),
         ("MET038NEW RETS NOSIG WIND THR14 27013KT BLU;", None, None),
         ("MET006NOSIG?", None, None),
         ("SYN08040829 12960 03406 10062 21002=", None, None),  # SYNOP text
@@ -207,3 +211,17 @@ def test_metar_text_is_read_from_the_raw_message(
 def test_metar_text_is_null_without_remarks() -> None:
     r = _one()
     assert (r["metar_auto"], r["metar_wx"]) == (None, None)
+
+
+@pytest.mark.parametrize(
+    "rem,kind",
+    [
+        ("MET072METAR YBMA 082130Z AUTO 00000KT 9999 // SCT085 15/09 Q1017 RF00/0/000/0=", "full"),
+        ("MET046LROP 282200Z VRB01MPS CAVOK 11/11 Q1018 NOSIG;", "full"),
+        ("MET012CAVOK NOSIG?", "fragment"),
+        ("MET006NOSIG?", "fragment"),
+        ("SYN08040829 12960 03406 10062 21002=", None),
+    ],
+)
+def test_metar_text_kind(rem: str, kind: str | None) -> None:
+    assert _one(REM=rem)["metar_text"] == kind

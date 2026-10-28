@@ -403,3 +403,19 @@ def test_weather_means_come_from_the_synop_even_when_only_the_metar_saw_dust(
     ]
     d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
     assert d["dusty_day"] and d["wsd_mean"] == pytest.approx(10.0)
+
+
+def test_visibility_comes_from_the_metar_when_the_synop_has_none(settings: Settings) -> None:
+    """User decision (c): only visibility, and only when the slot's SYNOP has none."""
+    rows = [
+        isd_row(f"2024-06-06T{h:02d}:00:00", **LON0, MW1="02,1", VIS="016000,1,N,1")
+        for h in range(0, 24, 3)
+        if h != 3
+    ] + [
+        isd_row("2024-06-06T03:00:00", **LON0, MW1="02,1", VIS="999999,9,9,9"),
+        isd_row(
+            "2024-06-06T02:51:00", **LON0, REPORT_TYPE="FM-15", REM=METAR_NIL, VIS="005000,1,N,1"
+        ),
+    ]
+    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
+    assert (d["vis_min"], d["n_vis_from_metar"]) == (5000.0, 1)

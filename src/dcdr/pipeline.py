@@ -37,7 +37,7 @@ from dcdr.config import Settings, canonical_yaml, config_hash, silver_config_has
 from dcdr.ingest import IngestSummary, bronze_path, ingest, make_store
 from dcdr.process import METHOD_VERSION
 from dcdr.process.build import build_station_year, write_silver
-from dcdr.process.guard import station_guard
+from dcdr.process.guard import station_guards
 from dcdr.state import (
     Manifest,
     append_run_record,
@@ -172,7 +172,13 @@ def _bronze_md5(path: Path) -> str:
 
 
 def _silver_is_current(
-    path: Path, cfg_hash: str, md5: str, prev_md5: str, next_present: bool, guard: bool | None
+    path: Path,
+    cfg_hash: str,
+    md5: str,
+    prev_md5: str,
+    next_present: bool,
+    guard: bool | None,
+    metar_guard: bool | None = None,
 ) -> bool:
     """True if the silver file exists and was built from exactly the current inputs and method.
 
@@ -190,6 +196,7 @@ def _silver_is_current(
         and meta.get("prev_source_md5") == prev_md5
         and meta.get("next_year_present") == ("1" if next_present else "0")
         and meta.get("nil_guard") == {True: "1", False: "0", None: ""}[guard]
+        and meta.get("metar_guard", "") == {True: "1", False: "0", None: ""}[metar_guard]
     )
 
 
@@ -204,12 +211,13 @@ def run_process(
     summary = ProcessSummary()
     cfg_hash = silver_config_hash(ctx.settings)
     for station in stations:
-        # Station guard for inferred "nothing significant" (rule V3), from ALL bronze years of the
-        # station on disk (iX exists only in recent years; older years rely on that evidence).
+        # Station guards for inferred "nothing significant" (rule V3 for SYNOP; the METAR guard for
+        # METARs without full text), from ALL bronze years of the station on disk: the evidence
+        # (iX, full METAR text) exists only in recent years; older years rely on it.
         years_on_disk = sorted(
             p.name for p in safe_listdir(ctx.root / "bronze") if p.name.startswith("year=")
         )
-        guard = station_guard(
+        guard, metar_guard = station_guards(
             [
                 p
                 for y in years_on_disk
@@ -227,7 +235,7 @@ def run_process(
             md5, prev_md5 = _bronze_md5(bpath), _bronze_md5(prev_path)
             spath = silver_path(ctx.root, year, station)
             if not force and _silver_is_current(
-                spath, cfg_hash, md5, prev_md5, next_present, guard
+                spath, cfg_hash, md5, prev_md5, next_present, guard, metar_guard
             ):
                 summary.skipped += 1
                 summary.paths.append(spath)
@@ -241,6 +249,7 @@ def run_process(
                     ctx.settings,
                     next_year_exists=next_present,
                     nil_guard=guard,
+                    metar_guard=metar_guard,
                 )
                 write_silver(
                     df,
@@ -251,6 +260,7 @@ def run_process(
                     prev_source_md5=prev_md5,
                     next_year_present=next_present,
                     nil_guard=guard,
+                    metar_guard=metar_guard,
                 )
             except Exception as exc:
                 log.error("silver %s %s failed: %s", station, year, exc)

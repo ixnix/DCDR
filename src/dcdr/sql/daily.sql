@@ -104,17 +104,29 @@ slot_daily AS (
     FROM slot
     GROUP BY station_id, lmst_date
 ),
+metar_vis AS (
+    -- visibility of each slot's METAR report (user decision 2026-10-28: visibility only, and only
+    -- when the slot's primary SYNOP has none)
+    SELECT station_id, slot_time, any_value(vis_capped) AS vis_metar
+    FROM silver
+    WHERE is_source_selected AND slot_source = 'metar' AND use_vis
+    GROUP BY ALL
+),
 prim AS (
     SELECT
-        *,
+        p.*,
         -- DUP6: dust uplift potential with a 6 m/s threshold, U^3 (1 + Ut/U)(1 - Ut^2/U^2),
         -- a proxy for how strongly the wind can lift dust (0 at or below 6 m/s; null if no wind).
         CASE
-            WHEN use_wsd AND wsd > 6 THEN pow(wsd, 3) * (1 + 6 / wsd) * (1 - 36 / pow(wsd, 2))
-            WHEN use_wsd THEN 0.0
-        END AS dup6
-    FROM silver
-    WHERE is_synoptic_selected
+            WHEN p.use_wsd AND p.wsd > 6 THEN pow(p.wsd, 3) * (1 + 6 / p.wsd) * (1 - 36 / pow(p.wsd, 2))
+            WHEN p.use_wsd THEN 0.0
+        END AS dup6,
+        -- visibility used for the day: the primary report's, else the slot METAR's
+        coalesce(CASE WHEN p.use_vis THEN p.vis_capped END, m.vis_metar) AS vis_used,
+        NOT coalesce(p.use_vis, false) AND m.vis_metar IS NOT NULL AS vis_from_metar
+    FROM silver AS p
+    LEFT JOIN metar_vis AS m ON p.station_id = m.station_id AND p.slot_time = m.slot_time
+    WHERE p.is_synoptic_selected
 ),
 prim_daily AS (
     SELECT
@@ -122,12 +134,13 @@ prim_daily AS (
         slot_lmst_date AS lmst_date,
         avg(wsd) FILTER (WHERE use_wsd) AS wsd_mean,
         max(wsd) FILTER (WHERE use_wsd) AS wsd_max,
-        min(vis_capped) FILTER (WHERE use_vis) AS vis_min,
+        min(vis_used) AS vis_min,
         -- Harmonic mean visibility, n / sum(1/v): averages extinction (~1/visibility), so a few
         -- very low visibilities in dust weigh in properly. Zero visibilities are counted apart.
-        count(*) FILTER (WHERE use_vis AND vis_capped > 0)
-            / nullif(sum(1.0 / vis_capped) FILTER (WHERE use_vis AND vis_capped > 0), 0) AS vis_hmean,
-        count(*) FILTER (WHERE use_vis AND vis_capped = 0) AS n_vis_zero,
+        count(*) FILTER (WHERE vis_used > 0)
+            / nullif(sum(1.0 / vis_used) FILTER (WHERE vis_used > 0), 0) AS vis_hmean,
+        count(*) FILTER (WHERE vis_used = 0) AS n_vis_zero,
+        count(*) FILTER (WHERE vis_from_metar) AS n_vis_from_metar,
         avg(t) FILTER (WHERE use_t) AS t_mean,
         min(t) FILTER (WHERE use_t) AS t_min,
         max(t) FILTER (WHERE use_t) AS t_max,
@@ -225,6 +238,7 @@ joined AS (
         p.vis_min,
         p.vis_hmean,
         coalesce(p.n_vis_zero, 0) AS n_vis_zero,
+        coalesce(p.n_vis_from_metar, 0) AS n_vis_from_metar,
         p.t_mean,
         p.t_min,
         p.t_max,

@@ -57,6 +57,22 @@ classify:
   metar_rules: true
   metar_report_types: [FM-15, FM-16]
   metar_nil_min_vis_m: 5000
+  # METARs without full text (before 2000 ISD keeps only fragments; validated in notebooks/06): no
+  # code and visibility > 5 km -> "nothing significant, inferred" (pw_status nil_inferred) if the
+  # station's full-text METARs show < 2 % "not observed" among such reports (>= 50 reports).
+  # A CAVOK in a fragment (before any trend word) is read as explicit "nothing significant".
+  metar_infer_nil: true
+  metar_nil_guard_max_share: 0.02
+  metar_nil_guard_min_reports: 50
+  # Derived SYNOPs (US since ~2005, notebooks/06): in a station-year whose SYNOPs copy the METAR
+  # just before them (temperature >= 95 % and wind speed >= 80 % identical, >= 100 pairs), the
+  # SYNOP's present weather is not used: dust and validity come from the METAR.
+  derived_synop: true
+  derived_report_types: [FM-12]
+  derived_min_pairs: 100
+  derived_max_minutes: 15
+  derived_t_share: 0.95
+  derived_wind_share: 0.80
 
 sampling:
   window_min: 30  # a report within +-30 min of a synoptic hour (00, 03, ..., 21 UTC) is a candidate

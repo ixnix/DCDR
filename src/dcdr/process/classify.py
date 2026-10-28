@@ -165,9 +165,21 @@ def _au_code(n: int) -> pl.Expr:
 
 
 def classify_reports(
-    df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg, *, nil_guard: bool | None = None
+    df: pl.DataFrame,
+    cfg: ClassifyCfg,
+    qc: QcCfg,
+    *,
+    nil_guard: bool | None = None,
+    metar_guard: bool | None = None,
+    synop_derived: bool = False,
 ) -> pl.DataFrame:
-    """Give every report a dust rank and class from its weather fields, plus evidence flags."""
+    """Give every report a dust rank and class from its weather fields, plus evidence flags.
+
+    nil_guard      the station's guard for rule V3 (SYNOP without iX), process/guard.py
+    metar_guard    the station's guard for the METAR inference (METAR without full text)
+    synop_derived  this station-year's SYNOPs copy its METARs (process/derived.py): their present
+                   weather (codes and iX) is not used
+    """
     # Step 1: which numbered fields hold a usable code (present AND accepted by QC)?
     # One boolean expression per field number, e.g. mw_ok[1] is "MW1 is usable".
     mw_ok = {
@@ -292,13 +304,22 @@ def classify_reports(
         )
     else:
         metar_unusable = metar_cavok = metar_nil = pl.lit(False)
+    # Derived SYNOPs (user decision 2026-10-28): copies of the METAR, not an independent
+    # observation of the weather; like an AUTO METAR, their codes and iX are not used.
+    derived = (
+        pl.lit(synop_derived)
+        & pl.col("report_type").is_in(cfg.derived_report_types).fill_null(False)
+        if cfg.derived_synop
+        else pl.lit(False)
+    )
+    unusable = metar_unusable | derived
     # reported: the report carries at least one usable present-weather code.
-    reported = pl.any_horizontal([fam_has[f] for f in fields]).fill_null(False) & ~metar_unusable
+    reported = pl.any_horizontal([fam_has[f] for f in fields]).fill_null(False) & ~unusable
     # nil_significant: a SYNOP whose iX says the weather group was omitted because NOTHING
     # SIGNIFICANT happened (iX 2 = manned, 5 = automatic; WMO code table 1860). That is an
     # observation of "no significant weather", so no dust. iX 3/6 (omitted: no observation) and
     # reports without SYNOP text (METAR, BUFR-only) stay "not observed" (user decision 2026-10-19).
-    nil = ix.is_in(["2", "5"]).fill_null(False) if cfg.synop_ix else pl.lit(False)
+    nil = (ix.is_in(["2", "5"]).fill_null(False) & ~derived) if cfg.synop_ix else pl.lit(False)
     # nil_inferred (rule V3, user decision 2026-10-20; validated in notebooks/02): a SYNOP report
     # with no code AND no iX whose visibility was reported (good QC) is inferred "nothing
     # significant", if its station passes the guard (nil_guard, computed from the station's iX
@@ -306,12 +327,26 @@ def classify_reports(
     # visibility shows an observation was made. Kept apart from the explicit nil_significant.
     inferred = (
         ~reported
+        & ~derived
         & ix.is_null()
         & pl.col("use_vis").fill_null(False)
         & pl.col("report_type").is_in(cfg.infer_nil_report_types).fill_null(False)
         if cfg.infer_nil and nil_guard
         else pl.lit(False)
     )
+    # METAR inference (user decision 2026-10-28; validated in notebooks/06): a METAR WITHOUT full
+    # text (before 2000 ISD keeps only fragments; or no REM) with no code and visibility above
+    # metar_nil_min_vis_m is "nothing significant, inferred" if its station passes the METAR guard
+    # (from the station's full-text METARs, process/guard.py). Same status as rule V3.
+    if cfg.metar_rules and cfg.metar_infer_nil and metar_guard:
+        inferred = inferred | (
+            pl.col("report_type").is_in(cfg.metar_report_types).fill_null(False)
+            & (pl.col("metar_text") != "full").fill_null(True)
+            & ~reported
+            & ~metar_cavok
+            & pl.col("use_vis").fill_null(False)
+            & (pl.col("vis_raw") > cfg.metar_nil_min_vis_m).fill_null(False)
+        )
     # METAR: CAVOK is an explicit "nothing significant" (WMO FM 15.10), like iX 2/5. A missing
     # group is only implied (FM 15.8.2) and kept apart as "nil_metar".
     nil = nil | (metar_cavok & ~reported)
@@ -330,7 +365,7 @@ def classify_reports(
         .otherwise(pl.lit("not_observed"))
     )
     rank = (
-        pl.when(metar_unusable)
+        pl.when(unusable)
         .then(pl.lit(0))
         .otherwise(pl.max_horizontal([fam_rank[f] for f in fields]))
         .fill_null(0)
@@ -384,7 +419,7 @@ def classify_reports(
             list(au_vic.values())
             + [ok & pl.col(f"mv{n}_code").is_in(MV_VICINITY) for n, ok in mv_ok.items()]
         ).fill_null(False)
-        & ~metar_unusable
+        & ~unusable
     )
     # Past weather (AY 3, AZ 2) can be snow or sand: resolved by temperature like AW 27-29.
     past_codes = [ok & pl.col(f"ay{n}_code").is_in(AY_DUST_OR_SNOW) for n, ok in ay_ok.items()] + [
@@ -413,6 +448,7 @@ def classify_reports(
         flag_past=past,
         flag_ambiguous=ambiguous,
         flag_daily_dust=daily_dust,
+        synop_derived=derived,
         _cls=cls,
     )
     r = pl.col("dust_rank")
