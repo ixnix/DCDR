@@ -11,16 +11,16 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 
 | Method | Date | Change | Decision | Commit |
 |---|---|---|---|---|
-| 1.0.0 | 2026-10-15 | Plan 1: decoding, QC, classification, haze/RH, one report per 3-hourly slot, daily gold | design | 9d59be0 (plan) |
-| 1.1.0 | 2026-10-17 | a missing weather field = "not observed"; past-weather and daily-summary dust evidence | user | 1b9d533 |
-| 1.2.0 | 2026-10-19 | SYNOP iX rule: 2/5 nothing significant, 3/6 not observed, 7 = WMO table 4680 | user | ba0cafe |
-| 1.3.0 | 2026-10-20 | rule V3: SYNOP without iX inferred "nothing significant" if visibility is reported (station guard) | user | 4a7f623 |
-| 1.4.0 | 2026-10-20 | METAR/SPECI rules (AUTO, `//`, CAVOK, no group by visibility); `dusty_day_vis5`; vicinity flag | user + rulings | d801e9a |
-| 1.5.0 | 2026-10-20 | SYNOP and METAR judged independently per slot; dusty if either reports dust | user | 4ed465a |
-| 1.6.0 | 2026-10-20 | weather values from the slot's SYNOP whenever present | user | 4b1e238 |
-| (no change) | 2026-10-27 | V3 kept for all years after tests across decades | user | 3ac72e3 |
-| 1.7.0 | 2026-10-27 | fix: METAR text without the word METAR (2000s) is read | bug fix | 510905e |
-| 1.8.0 | 2026-10-28 | METAR fragments (`CAVOK`), guarded METAR inference, derived SYNOPs, METAR visibility fallback | user | cddead4 |
+| 1.0.0 | 2026-10-15 | Plan 1: decoding, QC, classification, haze/RH, one report per 3-hourly slot, daily gold | design | 9b6e439 (plan) |
+| 1.1.0 | 2026-10-17 | a missing weather field = "not observed"; past-weather and daily-summary dust evidence | user | b804f56 |
+| 1.2.0 | 2026-10-19 | SYNOP iX rule: 2/5 nothing significant, 3/6 not observed, 7 = WMO table 4680 | user | c1ae416 |
+| 1.3.0 | 2026-10-20 | rule V3: SYNOP without iX inferred "nothing significant" if visibility is reported (station guard) | user | df90c43 |
+| 1.4.0 | 2026-10-20 | METAR/SPECI rules (AUTO, `//`, CAVOK, no group by visibility); `dusty_day_vis5`; vicinity flag | user + rulings | 20d7575 |
+| 1.5.0 | 2026-10-20 | SYNOP and METAR judged independently per slot; dusty if either reports dust | user | cb3b298 |
+| 1.6.0 | 2026-10-20 | weather values from the slot's SYNOP whenever present | user | 13c4674 |
+| (no change) | 2026-10-27 | V3 kept for all years after tests across decades | user | 34e633f |
+| 1.7.0 | 2026-10-27 | fix: METAR text without the word METAR (2000s) is read | bug fix | 6329264 |
+| 1.8.0 | 2026-10-28 | METAR fragments (`CAVOK`), guarded METAR inference, derived SYNOPs, METAR visibility fallback | user | 39d6c88 |
 
 ---
 

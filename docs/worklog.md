@@ -33,7 +33,9 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   `science.md` split into `rules.md` (the rules as implemented, method 1.8.0; section numbers kept
   for 1-12) and `rules_history.md` (per method version: change, evidence, superseded rule,
   decision; the validation results of notebooks 02-06; resolved questions). References in code,
-  docs, README and CLAUDE.md updated. `docs/superpowers/` (design spec and plans) made local only.
+  docs, README and CLAUDE.md updated. `docs/superpowers/` (design spec and plans) made local only
+  and removed from the whole history (user decision; force-pushed; commit hashes changed again,
+  references in this log and in rules_history.md updated).
 
 - **Method 1.8.0: METARs without full text, derived SYNOPs, visibility** (user decisions, after
   notebook 06; tests first, 265 pass).
@@ -169,14 +171,14 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
     whose SYNOPs are auto-generated (guard against METAR dust).
 
 - **Weather variables from the SYNOP whenever the slot has one** (method **1.6.0**, follows
-  4ed465a; user decision). In 1.5.0 the primary report (wind, temperature, humidity, pressure,
+  cb3b298; user decision). In 1.5.0 the primary report (wind, temperature, humidity, pressure,
   visibility statistics) was the observed SYNOP, else the METAR, so an unobserved SYNOP gave way
   to the METAR and a station's series could switch report types from slot to slot. Now the
   primary report is the slot's SYNOP, observed or not, and the METAR only in slots without SYNOP.
   Dust is unchanged (either source). *Ruling:* a value missing from that SYNOP stays missing (no
   per-variable filling from the METAR). Tests: 2 new, 226 pass.
 
-- **SYNOP and METAR judged independently per slot** (method **1.5.0**, follows d801e9a;
+- **SYNOP and METAR judged independently per slot** (method **1.5.0**, follows 20d7575;
   tests first, 224 pass).
   - *Found:* US SYNOPs rarely carry the dust their METARs report. Pairing each dusty METAR with the
     next SYNOP within 15 min (2015-2024): El Paso 103 pairs, SYNOP dust in 1; Phoenix 12, 1. Of El
@@ -237,7 +239,7 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   besides METARs at :51. Notebook 03 found no same-minute pairs and called them METAR-only; fixed
   in the notebook text, rules.md, and the notes in `config/stations/contrast.csv`. METAR fills
   about half of Phoenix's 2020 slots.
-- **Docs fix:** rules.md 5.2 had been inserted after section 10 (4aebd15); moved under section 5.
+- **Docs fix:** rules.md 5.2 had been inserted after section 10 (bd8bb79); moved under section 5.
 
 - **Notebook 03: METAR present weather validated** (`notebooks/03_metar_present_weather.ipynb`;
   pilot_100 2015-2024, 3.18 M METAR/SPECI, 680 k paired with a SYNOP that observed the weather).
@@ -261,11 +263,11 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 - **FMH-1 2005 is the reference edition** (user decision): the 2019 edition's official link is
   broken and no other official copy exists; the 1995 copy was removed as redundant (same rules,
-  d610f61). Extract and index now cite 2005 only.
+  fe4bb0b). Extract and index now cite 2005 only.
 
 - **Only published editions** (user decision): the FMH-1 2026 draft was removed and replaced by the
   published FCM-H1-1995 and FCM-H1-2005; FMH-2 change 4 removed (a one-page notice). The METAR
-  extract now quotes FCM-H1-2005 (25afa54 had quoted the draft); the rules used are identical in
+  extract now quotes FCM-H1-2005 (5a731d7 had quoted the draft); the rules used are identical in
   2005 and in the draft, and 1995 has the same body/Remarks, obscuration and DS/SS rules (its
   text layer is damaged, so the "7 miles" cannot be machine-read there). The 2005 copy comes from
   a third-party mirror (everyspec.com stamp), recorded as such in references.md.
@@ -280,7 +282,7 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   - `AUTO` = no human involvement; a corrected report carries COR instead of AUTO. AO1/AO2 appear in
     all reports of an automated station, augmented or not, so they do not identify AUTO reports.
 
-- **Official references saved** (c357bfd; user decision: local copies of official documents only; extract
+- **Official references saved** (1cd4d1d; user decision: local copies of official documents only; extract
   the relevant parts into docs/, keep the full copies git-ignored). Full copies in `references/`,
   re-created by `scripts/fetch_references.py`; index with checksums in `docs/references.md`;
   extracts in `docs/references/` (SYNOP group 7 and iX, BUFR 0-20-003, METAR and ASOS).
@@ -357,7 +359,7 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   "valid" only if ≥ 4 slots carried a weather code, and at Zabol codes are mostly dust, so valid
   days were mostly long dust days (357 days, 92 % dusty); 1,460 clear or short-episode days were
   discarded.
-- **SYNOP iX rule** (user decision; `ba0cafe`, method 1.2.0). The raw SYNOP text in `REM` carries
+- **SYNOP iX rule** (user decision; `c1ae416`, method 1.2.0). The raw SYNOP text in `REM` carries
   iX (WMO code table 1860). iX 2/5 = weather group omitted because nothing significant happened →
   observed, class none; iX 3/6 = not observed; iX 7 = automatic station → its AW codes read with
   WMO table 4680 (differs from ISD's AW list for codes 05 and 07). Confirmed in the official WMO
@@ -368,49 +370,49 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   iX says so explicitly.
 - **Finding:** in NOAA's CSV, some sub-fields are ordered differently from the ISD document
   (OD: speed before direction). Field positions must be checked against real CSV strings.
-- **Bug fixed** (`6cf4928`): pruning old gold versions failed on the exFAT SSD (macOS deletes the
+- **Bug fixed** (`0e96759`): pruning old gold versions failed on the exFAT SSD (macOS deletes the
   hidden `._x` twin with `x`). Reproduced on the SSD, test added, fixed.
-- **pilot_20** (`9440b42`): the 2-3 dustiest stations per region from pilot_100, for end-to-end
+- **pilot_20** (`a51fe26`): the 2-3 dustiest stations per region from pilot_100, for end-to-end
   tests. First full run (2020-2024): 103 station-years ingested, 84 silver, gold OK; ~30 s.
   Found: 4 selected stations without usable recent data; 3 with no dust reported recently.
-- Default station list is pilot_100; thin_slice.csv removed (user decision; `6fd8967`).
+- Default station list is pilot_100; thin_slice.csv removed (user decision; `fdf32c3`).
 - Documentation started: `docs/engineering.md`, `docs/science.md`, this log (user request; renamed
   2026-10-28: `code_design.md`, and `rules.md` + `rules_history.md`).
 
 ## 2026-10-18
 
-- **Pilot station list** (user decisions; `33f8a27` … `b377de8`). Notebook ranks duISD v1
+- **Pilot station list** (user decisions; `e4be473` … `b71a99e`). Notebook ranks duISD v1
   stations by mean dust frequency 1991-2019 (all dust codes incl. 06), regions = box + country
   filter, dusty = ≥ 1 %, up to 12 per region at ≥ 50 km → 88 dusty + 12 contrast = `pilot_100.csv`.
   Findings on the way: duISD v1 is SYNOP-only (most North American stations missing); ≥ 30 or
   ≥ 15 valid years left whole regions empty (→ ≥ 10 in 1991-2019); every duISD station has
   `flagDU = True`; `flagDU = False` stations may simply never report weather (Hong Kong
   automatic stations), so clean controls must also report weather (Zhang Ping, Haikou).
-- **Naming** (user decision; `3f573f6`): code and commands named by action (ingest, process,
+- **Naming** (user decision; `e47f9f8`): code and commands named by action (ingest, process,
   aggregate; later enrich, forecast), data by layer (bronze, silver, gold).
-- **Packaging** (`aeeb920` … `761ddb1`): SQL and default config inside the package; user paths
+- **Packaging** (`b77b6f0` … `b1679e2`): SQL and default config inside the package; user paths
   relative to the working directory; package version in run records; a test builds, installs and
   runs the wheel outside the repo.
-- **Code documentation** (`f217be3`): module guides, docstrings and comments; verified that only
+- **Code documentation** (`f36ca4f`): module guides, docstrings and comments; verified that only
   comments changed (syntax-tree comparison).
 
 ## 2026-10-17
 
-- **Missing weather = not observed** (user decision, "interpretation 2"; `1b9d533`). Added dust
+- **Missing weather = not observed** (user decision, "interpretation 2"; `b804f56`). Added dust
   evidence from AT/AX (daily summaries), AY/AZ (past weather) and `dusty_day_any_source`.
-- **Final review fixes** (`fb7768e`): summary-of-day reports dated to the day they summarise;
+- **Final review fixes** (`487b19e`): summary-of-day reports dated to the day they summarise;
   slots counted on the slot's local day; last-year 31-December reports kept; one failing
   station-year no longer stops processing; gold refuses stale silver; missing-longitude sentinels.
-- **Data root** (user decision; `1d801ec`): default `./data`; the SSD is a user choice via
+- **Data root** (user decision; `4a37f15`): default `./data`; the SSD is a user choice via
   `DCDR_DATA`, not a rule.
 
 ## 2026-10-15
 
-- **Design spec** (`ae641cb`) and **Plan 1** (`9d59be0`): scaffolding + thin slice.
-- **Plan 1 implemented** (`7b51302` … `88df768`): config, state, ingest, parse, QC, classify,
+- **Design spec** (`a6cc1d9`) and **Plan 1** (`9b6e439`): scaffolding + thin slice.
+- **Plan 1 implemented** (`e86de45` … `82f7644`): config, state, ingest, parse, QC, classify,
   haze/RH, sampling, silver build, gold daily, CLI; test-first throughout.
-- **Thin slice on real data** (Kuwait, Las Vegas; `f3204be`). Found: year-boundary slot selected
-  in two files (fixed, `59f6654`); at METAR-heavy stations few slots carry weather codes.
+- **Thin slice on real data** (Kuwait, Las Vegas; `516ffaf`). Found: year-boundary slot selected
+  in two files (fixed, `8401d24`); at METAR-heavy stations few slots carry weather codes.
 - Rulings: QC ranges from the ISD document MIN/MAX; OD gust types 3 and 4; ruff excludes
   `legacy/` and `docs/`.
 
