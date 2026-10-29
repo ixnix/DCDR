@@ -567,6 +567,10 @@ be set for the published products, from the station catalog.
 
 1. NOAA's ISD files end on 2025-08-27: is ISD still updated?
 2. Coverage criteria for the published products (valid days per year and decade).
+3. Off-grid SYNOP schedules (notebook 07): Australian FM-12 reports one hour off the synoptic
+   hours (1970-1999; some automatic stations since 2002) and type `AUST` (1945-1984) never fill a
+   slot (section 8). Shift the slot grid per station-year to its schedule, add `AUST` as a source,
+   or leave these years out?
 
 Resolved questions: [rules_history.md](rules_history.md), "Resolved questions".
 

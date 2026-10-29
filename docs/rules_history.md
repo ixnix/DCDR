@@ -21,7 +21,8 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | (no change) | 2026-10-27 | V3 kept for all years after tests across decades | user | 34e633f |
 | 1.7.0 | 2026-10-27 | fix: METAR text without the word METAR (2000s) is read | bug fix | 6329264 |
 | 1.8.0 | 2026-10-28 | METAR fragments (`CAVOK`), guarded METAR inference, derived SYNOPs, METAR visibility fallback | user | 39d6c88 |
-| 1.9.0 | 2026-10-29 | humidity screen only on haze-based classes; `remarks_dust_day` | user | (this commit) |
+| 1.9.0 | 2026-10-29 | humidity screen only on haze-based classes; `remarks_dust_day` | user | 7acc64d |
+| (no change) | 2026-10-29 | daily product checked as a whole (notebook 07); off-grid Australian SYNOPs found | — | (worklog) |
 
 ---
 
@@ -263,6 +264,19 @@ most of the ~10,000 uncoded ones were not observed).
   matches were an observer's initials at Woomera, `OBS SA`), nor `SS` (its one match was a
   direction); begin/end times (`BLDUB1845`) are matched. Result: 8,333 reports (BLDU 4,991, DU
   1,284, VCBLDU 1,138, DUST 964, PO 77, DS 27).
+
+## Daily product check (2026-10-29, notebook 07): rules pass, a sampling gap found
+
+Gold for pilot_100 under 1.9.0 (1,916,268 station-days, 1931 to 2025-08), checked as a whole.
+- **V3 does not distort the series.** The share of valid days that need inferred "nothing" jumps
+  from ~0 to 0.65 in 1985 and falls to ~0.1 in 2013; the dusty share among valid days runs
+  smoothly through both (~17-20 %); the explicit-only share jumps to ~35 % (selection bias).
+- **Physics:** expected seasonal cycles per region; raised dust peaks in the afternoon; 86 of 88
+  stations windier on dusty days.
+- **duISD v1:** Spearman 0.86 for station means (1991-2019); median year-to-year r = 0.81.
+- **Gap:** at all 12 Australian stations and Sydney the weather reports miss the +-30 min UTC
+  slots: FM-12 on a 3-hourly schedule one hour off the synoptic hours (1970-1999, and some
+  automatic stations since 2002), and type `AUST` (1945-1984), not a slot source. Open question.
 
 ---
 

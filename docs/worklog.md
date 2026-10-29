@@ -7,8 +7,11 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] **Rebuild pilot_100 silver and gold for method 1.9.0** (user), then notebook 07: maps,
-      distributions and time series of the daily product to check the rules again.
+- [ ] **Decide: off-grid SYNOP schedules** (notebook 07; rules.md §11 item 3). Australian
+      FM-12 one hour off the synoptic hours and `AUST` reports never fill a slot: no 1991-2020
+      climatology for 10 of 12 Australian stations.
+- [ ] Check Niamey (Diori Hamani) before ~1975 (almost no dust, then >= 150 days a year) and the
+      fall at Ciudad Constitucion (2000-2023): reporting changes or real?
 - [ ] NOAA's S3 ISD files end on 2025-08-27 (no 2026): check whether ISD is still updated or
       replaced (e.g. by another NCEI hourly product) before relying on recent years.
 - [ ] FMH-1: replace the 2005 mirror copy (everyspec.com) with an ICAMS/NOAA copy if one appears.
@@ -23,6 +26,23 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 ---
 
 ## 2026-10-29
+
+- **pilot_100 rebuilt for method 1.9.0** (user): silver and gold 1931-2025; gold version
+  `20261029T160035Z-48964f` (one Parquet file, 1,916,268 station-days, 100 stations).
+- **Notebook 07 (local): the daily product checked as a whole** (coverage, 1991-2020 maps per
+  measure, distributions, seasonal and diurnal cycles, wind, time series, rule diagnostics,
+  duISD v1). Results in rules_history.md ("Daily product check"):
+  - Rules pass: no break in the dusty share where the inferred share jumps (1985, 2013); seasonal
+    and diurnal cycles and wind as expected (86 of 88 stations windier on dusty days); duISD v1
+    Spearman 0.86, median year-to-year r 0.81.
+  - Gap found: 497 station-years at 17 stations (all Australian stations, Sydney, three 1930s
+    Central Asian years) have observed reports that miss the slots. Australian FM-12 on a
+    3-hourly schedule +-1 h off the synoptic hours (east/centre 1 h before, west 1 h after; not
+    copies of on-grid reports: temperature identical in 3-6 %); `AUST` (1945-1984, 339k reports)
+    is not a slot source. Decision pending.
+  - Measures differ: Sudan stations 190-260 dusty days a year, mostly suspended dust above
+    5 km (`dusty_day_vis5` 10-35 % of `dusty_day`); dust_haze-only days 5 % pilot-wide (29 % at
+    Ciudad Constitucion).
 
 - **Open questions decided** (user decisions, all recommended options; rules.md §11 now lists only
   NOAA's data currency and product coverage criteria):
