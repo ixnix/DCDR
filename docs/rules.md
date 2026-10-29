@@ -6,7 +6,7 @@ records, and briefly why. Part 1 ([code_design.md](code_design.md)) covers the s
 [rules_history.md](rules_history.md) records how each rule came about, with the evidence, the
 superseded rules and the decisions; [worklog.md](worklog.md) is the dated log.
 
-> Describes the method **as implemented** (method version **1.9.0**). Planned steps are marked
+> Describes the method **as implemented** (method version **1.10.0**). Planned steps are marked
 > *planned*. Last updated: 2026-10-29.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`,
@@ -475,7 +475,25 @@ slots (00, 03, ..., 21 UTC), with a fixed number of reports per slot.
 
 Rules (user decisions 2026-10-20):
 - Candidates: reports within ±30 min of the slot whose type belongs to a source
-  (`sampling.sources`: SYNOP = FM-12 and the merged SY-* types; METAR = FM-15, SAO, AUTO).
+  (`sampling.sources`: SYNOP = FM-12, the merged SY-* types and `AUST`; METAR = FM-15, SAO, AUTO).
+  `AUST` ("Dataset from Australia", ISD format document p. 6; 1945-1984) carries the same
+  observations as FM-12 at complementary hours (dust in 1.25 % vs 1.45 % of observed reports in
+  the same station-years); it was not a source before 1.10.0.
+- **Off-grid schedules** (method 1.10.0, user decision 2026-10-29). Some stations observe every
+  3 hours but one hour off the synoptic hours, by local clock time: Australia (east and centre
+  02, 05, ... UTC; west 01, 04, ... UTC; the offset moves with daylight saving), Sydney, and
+  Central Asian stations in the 1930s. Per station and UTC month, from the SYNOP-source reports
+  that **observed the weather**: if >= 30 of them, < 10 % within ±30 min of the synoptic hours and
+  >= 80 % within ±30 min of one offset (+60 or -60 min), that month's slots move by the offset
+  (`slot_offset_min`; e.g. 01, 04, ..., 22 UTC). Each slot still takes one report per source, 8 a
+  day. *Why observed reports:* since 2000 these stations also send automatic on-grid SYNOPs that
+  rarely observe the weather (iX 6, 91-96 % not observed); counting them would hide the schedule.
+  *Why per month:* the schedule follows the local clock (Woomera 2005: +60 min in summer, -60 min
+  in winter) and can change within a year (Meekatharra 1975). Settings: `sampling.schedule_*`.
+  *Validation* (notebook 07 follow-up): where the METAR at the same minute reports dust, the
+  offset SYNOP does too in 91 % (-60 min) and 68 % (+60 min, 19 cases), against 94 % for on-grid
+  SYNOPs at the other pilot stations. On pilot_100, 7,084 station-months at 16 stations are
+  shifted, none elsewhere.
   Summaries (SOD, SOM) and SPECI are never candidates.
 - Per source, one report per slot: weather observed (`has_pw`) first, then the type order, then
   the closest in time, then fixed tie-breakers (`source_rank`, `is_source_selected`).
@@ -567,10 +585,7 @@ be set for the published products, from the station catalog.
 
 1. NOAA's ISD files end on 2025-08-27: is ISD still updated?
 2. Coverage criteria for the published products (valid days per year and decade).
-3. Off-grid SYNOP schedules (notebook 07): Australian FM-12 reports one hour off the synoptic
-   hours (1970-1999; some automatic stations since 2002) and type `AUST` (1945-1984) never fill a
-   slot (section 8). Shift the slot grid per station-year to its schedule, add `AUST` as a source,
-   or leave these years out?
+
 
 Resolved questions: [rules_history.md](rules_history.md), "Resolved questions".
 

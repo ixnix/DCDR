@@ -118,6 +118,15 @@ class SamplingCfg(_Section):
     # source contributes at most one report per slot; types listed first are preferred. Types in
     # no source (e.g. SPECI FM-16) never fill a slot.
     sources: dict[str, list[str]]
+    # Off-grid schedules (method 1.10.0): a station-month whose observed SYNOPs keep a 3-hourly
+    # schedule offset from the synoptic hours gets its slot grid moved by that offset.
+    schedule_shift: bool
+    schedule_offsets_min: list[int]  # offsets tried, minutes (e.g. [60, -60])
+    schedule_max_on_grid: (
+        float  # shift only if fewer observed SYNOPs than this share are on the grid
+    )
+    schedule_min_share: float  # ... and at least this share sit at one offset
+    schedule_min_reports: int  # ... out of at least this many observed SYNOPs in the month
 
 
 class ProductsCfg(_Section):

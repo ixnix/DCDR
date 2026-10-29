@@ -58,6 +58,7 @@ CORE_COLUMNS = [
     "slot_time",
     "slot_lmst_date",
     "slot_delta_min",
+    "slot_offset_min",
     "is_candidate",
     "is_excluded_type",
     "selection_rank",

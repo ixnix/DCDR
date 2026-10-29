@@ -15,7 +15,7 @@ Bumping it makes the next run rebuild every silver file, because each file recor
 that built it (see pipeline._silver_is_current).
 """
 
-METHOD_VERSION = "1.9.0"  # 1.8.0: METAR fragments (CAVOK), METAR inference, derived SYNOPs;
+METHOD_VERSION = "1.10.0"  # 1.8.0: METAR fragments (CAVOK), METAR inference, derived SYNOPs;
 # 1.7.0: METAR text without the word METAR (2000s) is read;
 # 1.6.0: SYNOP is the primary report whenever present;
 # 1.5.0: SYNOP and METAR per slot; 1.4.0: METAR rules, vis5;

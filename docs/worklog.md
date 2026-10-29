@@ -7,9 +7,7 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] **Decide: off-grid SYNOP schedules** (notebook 07; rules.md §11 item 3). Australian
-      FM-12 one hour off the synoptic hours and `AUST` reports never fill a slot: no 1991-2020
-      climatology for 10 of 12 Australian stations.
+- [ ] **Rebuild pilot_100 for method 1.10.0** (user), then re-run notebook 07 (Australia).
 - [ ] Check Niamey (Diori Hamani) before ~1975 (almost no dust, then >= 150 days a year) and the
       fall at Ciudad Constitucion (2000-2023): reporting changes or real?
 - [ ] NOAA's S3 ISD files end on 2025-08-27 (no 2026): check whether ISD is still updated or
@@ -26,6 +24,18 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 ---
 
 ## 2026-10-29
+
+- **Method 1.10.0: off-grid SYNOP schedules** (user decision: option a; tests first, 291 pass).
+  `sampling.py`: `schedule_offsets` finds, per station and UTC month, a 3-hourly schedule one hour
+  off the synoptic hours from the observed SYNOP-source reports, and moves that month's slots
+  (`slot_offset_min`); `AUST` added as the last SYNOP type. Verification before the code changed
+  the design twice: (1) the on-grid Australian SYNOPs since 2000 rarely observe the weather, so the
+  schedule is read from observed reports only (the first stream comparison was invalid for this
+  reason; the report-by-report METAR check passes: 0.91 / 0.68 vs 0.94 elsewhere); (2) the
+  schedule follows daylight saving (Woomera 2005), so detection is per month, not per year.
+  *Rulings:* thresholds (< 10 % on grid, >= 80 % at one offset, >= 30 a month). On pilot_100,
+  7,084 station-months at 16 stations shift (12 Australian, Sydney, 3 Central Asian in the 1930s),
+  none elsewhere. Details: rules.md §8, rules_history.md 1.10.0.
 
 - **pilot_100 rebuilt for method 1.9.0** (user): silver and gold 1931-2025; gold version
   `20261029T160035Z-48964f` (one Parquet file, 1,916,268 station-days, 100 stations).

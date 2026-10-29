@@ -5,7 +5,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 *ruling*, a choice made during implementation and open to review). The dated log of all work is
 [worklog.md](worklog.md); notebooks are kept locally (not in the public repository).
 
-> Last updated: 2026-10-29 (current method version 1.9.0). Commit hashes refer to this repository.
+> Last updated: 2026-10-29 (current method version 1.10.0). Commit hashes refer to this repository.
 
 ## Versions at a glance
 
@@ -22,7 +22,8 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | 1.7.0 | 2026-10-27 | fix: METAR text without the word METAR (2000s) is read | bug fix | 6329264 |
 | 1.8.0 | 2026-10-28 | METAR fragments (`CAVOK`), guarded METAR inference, derived SYNOPs, METAR visibility fallback | user | 39d6c88 |
 | 1.9.0 | 2026-10-29 | humidity screen only on haze-based classes; `remarks_dust_day` | user | 7acc64d |
-| (no change) | 2026-10-29 | daily product checked as a whole (notebook 07); off-grid Australian SYNOPs found | — | (worklog) |
+| (no change) | 2026-10-29 | daily product checked as a whole (notebook 07); off-grid Australian SYNOPs found | — | d51d7e6 |
+| 1.10.0 | 2026-10-29 | slot grid follows off-grid SYNOP schedules (per station-month); `AUST` a SYNOP source | user | (this commit) |
 
 ---
 
@@ -278,6 +279,34 @@ Gold for pilot_100 under 1.9.0 (1,916,268 station-days, 1931 to 2025-08), checke
   slots: FM-12 on a 3-hourly schedule one hour off the synoptic hours (1970-1999, and some
   automatic stations since 2002), and type `AUST` (1945-1984), not a slot source. Open question.
 
+## 1.10.0 (2026-10-29): off-grid SYNOP schedules and `AUST`
+
+*User decision* (option a of three: shift the slot grid; b, a ±90 min window, would change
+selection at every hourly station; c, leaving the years out, loses most of Australia).
+*Superseded:* slots only at 00, 03, ..., 21 UTC ±30 min; `AUST` not a source. *Evidence*
+(notebook 07 and follow-up checks on pilot_100 silver, method 1.9.0):
+- 497 station-years at 17 stations had >= 1,000 observed reports of which < 10 % filled a slot;
+  10 of 12 Australian stations had no 1991-2020 climatology.
+- Meekatharra 1975: FM-12 at 01, 04, 10, 16, 22 UTC and `AUST` at 07, 13, 19 UTC together form
+  one 3-hourly schedule one hour after the synoptic hours (09, 12, ... local time).
+- The offset reports are separate observations, not copies of on-grid ones (temperature
+  identical in 3-6 % of hour pairs). Since 2000 the on-grid Australian SYNOPs are automatic and
+  rarely observe the weather (3.5-9 % observed, mostly iX 6); the offset ones observe it in
+  51-67 %.
+- A first comparison of the two SYNOP streams (dusty days from each alone; agreement 0.21-0.23
+  vs 0.61-0.73 for METARs one hour apart) was invalid for that reason: it compared an almost
+  unobserved stream with an observed one. The valid check is report by report against the METAR
+  at the same minute: SYNOP dust given METAR dust 0.91 (-60 min, 32 cases) and 0.68 (+60 min,
+  19 cases) vs 0.94 for on-grid SYNOPs at the other pilot stations.
+- `AUST` vs FM-12 in the same station-years: dust in 1.25 % vs 1.45 % of observed reports.
+- The offset follows local clock time: Woomera 2005 +60 min (summer, daylight saving), -60 min
+  (winter); Meekatharra 1975 on the grid in January-February, +60 min from March. Hence per month.
+*Rulings:* detection from observed SYNOP-source reports only; thresholds < 10 % on the grid,
+>= 80 % at one offset, >= 30 per month; the METAR follows the shifted grid. Real-data check (in
+memory): Woomera 1990 0 -> 362 valid days, Tennant Creek 1995 0 -> 357, Carnarvon 1960 (`AUST`)
+0 -> 366, Meekatharra 1975 0 -> 365, Sydney 1990 217 -> 366; Gimpo, El Paso, Zabol, Wadi Halfa
+unchanged. Birdsville 2010 stays invalid: it observes the weather ~2.4 times a day.
+
 ---
 
 ## Resolved questions
@@ -295,3 +324,4 @@ Gold for pilot_100 under 1.9.0 (1,916,268 station-days, 1931 to 2025-08), checke
 - `has_pw` before time distance in sampling: kept; "observed" includes "nothing" (2026-10-29).
 - Recent-data criterion: pilot_100 kept as a test set; coverage criteria come with the products
   (2026-10-29).
+- Off-grid SYNOP schedules (Australia) and `AUST`: slot grid per station-month (1.10.0).

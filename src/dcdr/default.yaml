@@ -84,8 +84,18 @@ sampling:
   # SYNOP if it observed the weather, otherwise the METAR. SPECI (FM-16) never fill a slot: they
   # are sent because conditions changed, often when dust arrives; they count in dusty_day_any.
   sources:
-    synop: [FM-12, SY-MT, SY-SA, SY-AE, SY-AU]
+    # AUST = "Dataset from Australia" (ISD format document p. 6), 1945-1984 (method 1.10.0)
+    synop: [FM-12, SY-MT, SY-SA, SY-AE, SY-AU, AUST]
     metar: [FM-15, SAO, AUTO]
+  # Off-grid schedules (method 1.10.0, user decision 2026-10-29; notebook 07): Australian SYNOPs
+  # are often made 3-hourly one hour off the synoptic hours, by local clock time (so the offset
+  # moves with daylight saving). If a station-month's observed SYNOPs are < 10 % on the grid and
+  # >= 80 % at one offset, that month's slots move by the offset.
+  schedule_shift: true
+  schedule_offsets_min: [60, -60]
+  schedule_max_on_grid: 0.10
+  schedule_min_share: 0.80
+  schedule_min_reports: 30  # per month: about one observed SYNOP a day
 
 products:
   min_slots_per_day: 4  # a day is valid with >= 4 of 8 slots carrying a weather observation

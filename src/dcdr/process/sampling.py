@@ -23,6 +23,10 @@ How a slot is filled (process pipeline step 6 of 6)
 1. Each report is assigned to its nearest slot. It is a CANDIDATE if it is within +-30 minutes of
    the slot time (config `sampling.window_min`), not a daily/monthly summary, and its type belongs
    to a source (`slot_source`: "synop" or "metar").
+   Off-grid schedules (method 1.10.0): some stations, mostly Australian, observe every 3 hours but
+   one hour off the synoptic hours (e.g. 01, 04, ..., 22 UTC). If a station-month's SYNOPs that
+   observed the weather keep such a schedule (`schedule_offsets`), its slots move by that offset
+   (`slot_offset_min`), so each slot still takes one report per source, 8 a day.
 2. Within each (station, slot, source), candidates are ranked by
      has_pw          reports that observed the weather first
      type order      the order of types in the source's list (e.g. FM-12 before SY-MT)
@@ -63,6 +67,50 @@ def _rank(
     )
 
 
+def schedule_offsets(df: pl.DataFrame, cfg: SamplingCfg) -> pl.DataFrame:
+    """Slot offset per UTC month (`month`, `slot_offset_min`): 0 (synoptic hours) or an offset tried.
+
+    Per month, not per year: the off-grid schedules follow local clock time, so they move with
+    daylight saving time (Woomera 2005: +60 min in summer, -60 min in winter) and can change within
+    a year. Read from the SYNOP-source reports that observed the weather (`has_pw`): automatic
+    on-grid SYNOPs that observe nothing (iX 6) must not hide the schedule of the ones that do. A
+    shift needs at least `schedule_min_reports` of them in the month, fewer than
+    `schedule_max_on_grid` within the window of the synoptic hours, and at least
+    `schedule_min_share` within the window of one offset. Months without a shift are absent.
+    `df` holds one station.
+    """
+    empty = pl.DataFrame(schema={"month": pl.Int8, "slot_offset_min": pl.Int16})
+    if not cfg.schedule_shift:
+        return empty
+    # minutes past the last synoptic hour, 0-179 (e.g. 04:10 -> 70)
+    m = (pl.col("time_utc").dt.hour() % 3) * 60 + pl.col("time_utc").dt.minute()
+
+    def near(minute: int) -> pl.Expr:
+        """Share of the month's reports within the window of `minute` past the hour (180-min circle)."""
+        d = (m - minute).abs()
+        return (pl.min_horizontal(d, 180 - d) <= cfg.window_min).mean()
+
+    offsets = cfg.schedule_offsets_min
+    shares = (
+        df.filter(pl.col("report_type").is_in(cfg.sources["synop"]) & pl.col("has_pw"))
+        .group_by(month=pl.col("time_utc").dt.month().cast(pl.Int8))
+        .agg(n=pl.len(), on_grid=near(0), **{f"o{i}": near(o % 180) for i, o in enumerate(offsets)})
+        .filter(
+            pl.col("n") >= cfg.schedule_min_reports, pl.col("on_grid") < cfg.schedule_max_on_grid
+        )
+    )
+    # the first offset (in config order) that holds enough of the month's reports
+    pick = pl.lit(None, dtype=pl.Int16)
+    for i, o in reversed(list(enumerate(offsets))):
+        pick = (
+            pl.when(pl.col(f"o{i}") >= cfg.schedule_min_share)
+            .then(pl.lit(o, pl.Int16))
+            .otherwise(pick)
+        )
+    out = shares.select("month", slot_offset_min=pick).drop_nulls()
+    return out if out.height else empty
+
+
 def select_synoptic(df: pl.DataFrame, cfg: SamplingCfg) -> pl.DataFrame:
     """Mark, per station and 3-hourly slot, one report per source and the primary report."""
     # Report type -> its source, the source's preference order, and the type's order in its list.
@@ -71,7 +119,15 @@ def select_synoptic(df: pl.DataFrame, cfg: SamplingCfg) -> pl.DataFrame:
     type_order = {t: i for types in cfg.sources.values() for i, t in enumerate(types)}
     # Nearest slot: shift by +90 min, then round DOWN to a multiple of 3 h. E.g. 04:20 -> 05:50
     # -> 03:00, and 04:40 -> 06:10 -> 06:00. So the slot is the closest of 00, 03, ..., 21 UTC.
-    df = df.with_columns(slot_time=(pl.col("time_utc") + pl.duration(minutes=90)).dt.truncate("3h"))
+    # With an offset the same is done on a grid moved by it (e.g. +60: 01, 04, ..., 22 UTC).
+    df = df.with_columns(_month=pl.col("time_utc").dt.month().cast(pl.Int8)).join(
+        schedule_offsets(df, cfg), left_on="_month", right_on="month", how="left"
+    )
+    df = df.with_columns(pl.col("slot_offset_min").fill_null(0)).drop("_month")
+    off = pl.duration(minutes=pl.col("slot_offset_min"))
+    df = df.with_columns(
+        slot_time=((pl.col("time_utc") - off) + pl.duration(minutes=90)).dt.truncate("3h") + off
+    )
     # the slot belongs to the LMST day of the SLOT time, not of whichever report fills it
     df = df.with_columns(
         slot_lmst_date=(pl.col("slot_time") + lmst_shift(pl.col("lon_used"))).dt.date()
