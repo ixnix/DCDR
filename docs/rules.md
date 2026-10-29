@@ -6,8 +6,8 @@ records, and briefly why. Part 1 ([code_design.md](code_design.md)) covers the s
 [rules_history.md](rules_history.md) records how each rule came about, with the evidence, the
 superseded rules and the decisions; [worklog.md](worklog.md) is the dated log.
 
-> Describes the method **as implemented** (method version **1.8.0**). Planned steps are marked
-> *planned*. Last updated: 2026-10-28.
+> Describes the method **as implemented** (method version **1.9.0**). Planned steps are marked
+> *planned*. Last updated: 2026-10-29.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`,
 local) and the WMO *Manual on Codes* (WMO-No. 306) as published in the WMO Codes Registry
@@ -157,6 +157,10 @@ cases. In ISD, iX exists mainly from 2013 on. Evidence and the selection bias th
 - Settings: `classify.infer_nil`, `infer_nil_report_types` ([FM-12]), `nil_guard_max_share` (0.02),
   `nil_guard_min_reports` (50). Gold keeps inferred slots visible (`n_slots_nil_inferred`,
   `valid_day_explicit`).
+- **BUFR-only SYNOPs** (`SYN004BUFR`, 17 % of SYNOPs) have no iX: the BUFR original says
+  "nothing significant" (508) or "not observed" (509), but ISD drops both. They follow the rows
+  above (a code is used; without one, V3 or not observed). ISD decodes their codes as well as text
+  SYNOPs (same dust share); no other source is pursued (user decision 2026-10-29).
 
 ### 5.2 METAR and SPECI
 
@@ -252,8 +256,20 @@ add 80 dust days at Las Vegas (40 dust days at the station in 2015-2024) and 33 
 are kept out of the dust counts and reported as the daily flag `vicinity_dust_day` (user decision),
 together with SYNOP vicinity codes (MV).
 
-**Not used yet.** Dust mentioned only in the remarks (US `BLDU ALQDS`, `BLDU DSNT SW`, `VCBLDU`;
-Malta `DU`): ISD does not decode it; 2 632 reports, 1 178 of them at El Paso.
+**Dust in the remarks** (method 1.9.0, user decision 2026-10-29). US practice (FMH-1) puts
+weather seen away from the station in the remarks (`BLDU ALQDS`, `BLDU DSNT SW`, `VCBLDU`,
+`BLDUB1845E1915`); Malta adds `DU` above 5 km. ISD does not decode remarks, so `parse.py` reads them
+from the full text (`metar_rmk_dust`, regex `METAR_RMK_DUST`): DU, BLDU, DRDU, BLSA, DRSA, DS, PO,
+DUST, with an optional intensity or `VC` and begin/end times. A forecast inside the remarks
+(`TEMPO`, `BECMG`, `NOSIG`, `FMhhmm`) is cut off; a bare `SA` and `SS` are not used (on pilot_100
+they were an observer's initials and a direction). Not counted as dust (not at the station); the
+daily flag `remarks_dust_day` keeps it, apart from `vicinity_dust_day` (beyond 16 km vs 8-16 km).
+pilot_100, all years: 8,333 reports, mostly El Paso, Las Vegas, Phoenix, Luqa, Mount Isa, Woomera.
+
+**Station caveat: Niamey** (user decision 2026-10-29, no rule change). When its SYNOP reports dust
+at <= 5 km, its METAR of the same time has no weather group in 5.8 % of cases (other stations
+<= 0.6 %). Its SYNOPs fill almost every slot and either source's dust counts, so `dusty_day` is
+barely affected; `dusty_day_metar` there is somewhat low.
 
 ### 5.3 Rule tables: every report type and situation
 
@@ -295,7 +311,7 @@ A missing value in the slot's SYNOP (e.g. no wind) stays missing; it is not take
 | S8 | code 05 (haze) | reported | haze; dust_haze if dust in the previous 24 h | 6.5 |
 | S9 | dust code; visibility <= 5 km / > 5 km / unknown | reported | dusty | `dusty_day_vis5`: dust / not dust / slot left out |
 | S10 | vicinity code (MV 03, 04, 05, 07, 08) | (as the rest) | not dust at the station | `vicinity_dust_day` |
-| S11 | RH > 90 % with suspended, haze or dust_haze | reported | screened (not dusty) | 6.6 |
+| S11 | RH > 90 % with haze, haze_or_suspended or dust_haze (not code 06) | reported | screened (not dusty) | 6.6 |
 | S12 | derived SYNOP (station-year copies its METARs; US since ~2005) | not_observed | unknown (codes, iX not used) | 5.2 rule 9 |
 
 **METAR (FM-15) and SPECI (FM-16)**
@@ -319,7 +335,7 @@ A missing value in the slot's SYNOP (e.g. no wind) stays missing; it is not take
 | M15 | group ISD did not decode | `TSDU` | not_observed | unknown | — |
 | M16 | recent weather only | `RESS`, `REDU` | ignored: the rest of the message decides | | |
 | M17 | trend forecast | `TEMPO 3000 DU`, `BECMG`, `NOSIG` | ignored | | |
-| M18 | dust only in the remarks | `RMK BLDU ALQDS` | ignored (not decoded by ISD; open item) | | |
+| M18 | dust only in the remarks | `RMK BLDU ALQDS`, `RMK DU` | the rest of the message decides | none | no dust; `remarks_dust_day` |
 | M19 | corrected report | `METAR COR ...` | as non-AUTO (`COR` replaces `AUTO` in the US: a rare unattended report may slip through) | | |
 | M20 | no full text (fragment or no `REM`), with a code | | reported | by the code | |
 | M21 | fragment with `CAVOK` before any trend word | `MET012CAVOK NOSIG` | nil_significant | none | no dust |
@@ -351,6 +367,7 @@ Pilot data, bronze 2020: FM-12 343 587, FM-15 305 980, FM-16 9 093, SOD 1 335, S
 | `n_slots_nil_inferred`, `n_slots_nil_metar` | slots with S6 / M5 |
 | `dusty_day_any` | any report of the day dusty (all types, selected or not, SPECI included) |
 | `vicinity_dust_day` | any report with vicinity dust (M11, S10) |
+| `remarks_dust_day` | any METAR with dust only in its remarks (M18) |
 
 ## 6. Dust classification (`classify.py`)
 
@@ -427,11 +444,13 @@ window (t − 24 h, t]. Setting `classify.haze_window_h` (0 switches it off).
 `HZ` in an AUTO METAR is not used at all (5.2): ASOS infers it from visibility and humidity.
 
 ### 6.6 Humidity screen
-If relative humidity > 90 %, the classes suspended, haze, haze_or_suspended and dust_haze become
-`screened` (not dusty). Blowing dust and storms are never screened.
-*Why:* in very humid air, haze-like reports are more likely humidity haze or mist.
-*To review:* many reports are screened at humid coastal or monsoon dust sites (pilot_20:
-Ciudad Constitución 375, Jaisalmer 171 in 2020-2024).
+If relative humidity > 90 %, the classes built from haze reports (haze, haze_or_suspended,
+dust_haze) become `screened` (not dusty). Dust an observer named (suspended, code 06 or `DU`),
+blowing dust and storms are never screened (method 1.9.0, user decision 2026-10-29).
+*Why:* in very humid air, haze is more likely humidity haze or mist; but an observer who codes 06
+has named dust, and transported dust often arrives with humid air. Before 1.9.0 suspended dust was
+screened too: 0.6 % of it overall (3,724 of 616,000 reports, pilot_100, all years) but 14 % at Luqa,
+4.5 % at Sal and 4.6 % at Bhairahawa.
 
 ## 7. Quality control (`qc.py`)
 
@@ -467,6 +486,9 @@ Rules (user decisions 2026-10-20):
   (different instruments, times and rounding; up to 2.4 m/s and 1.0 °C apart at some stations).
 - Gold combines the two sources per slot: dusty if either reports dust (table in 5.3).
 - Every candidate keeps its ranks and a `selection_reason`.
+- *Why `has_pw` first:* a report that observed the weather beats a closer one that did not.
+  "Observed" includes "nothing significant", so this does not favour dusty reports (kept, user
+  decision 2026-10-29).
 
 Example: Zabol 2023 has 8,226 METAR and 2,840 SYNOP. Its SYNOPs observe almost every slot and
 carry nearly all the dust (2020: 126 dusty days from SYNOP, 34 from METAR alone). Phoenix 2020 has
@@ -491,6 +513,7 @@ One row per station per local (LMST) day.
 | `n_slots_metar`, `n_slots_pw_metar`, `valid_day_metar`, `dusty_day_metar` | the same from each slot's METAR alone | METAR's contribution; misses light dust (5.2) |
 | `n_slots_pw_vis5`, `valid_day_vis5`, `dusty_day_vis5` | dust with visibility ≤ 5 km, either source | caught alike by SYNOP and METAR: compare stations and years with different report mixes |
 | `vicinity_dust_day` | any report with dust in the vicinity (METAR `VC`, SYNOP MV codes) | dust near, not at, the station; kept apart |
+| `remarks_dust_day` | any METAR with dust named only in its remarks (5.2) | distant dust (US `BLDU DSNT`, `ALQDS`); kept apart |
 | `dusty_day_any` | any report of the day dusty (all report types, SPECI included) | more sensitive; depends on reporting rate |
 | `past_weather_dust`, `daily_summary_dust` | past-weather or daily-summary dust evidence | evidence from other fields |
 | `dusty_day_any_source` | `dusty_day_any` or either evidence flag | most sensitive |
@@ -535,16 +558,15 @@ Method (`notebooks/01_duisd_v1_dusty_stations.ipynb`):
 
 Known issue (pilot_20 test, 2026-10-19): Wadi Halfa, Abu Hamed and Papunya have no ISD data in
 2020-2024; Dongola has no weather codes; Rabbit Flat (automatic) rarely reports weather; Ashchysai,
-Shakawe and Good Hope report no dust in 2020-2024. A recent-data criterion is being considered.
+Shakawe and Good Hope report no dust in 2020-2024. pilot_100 is kept as it is (user decision
+2026-10-29): it is a test set, and these gaps are useful test cases; stations with older data
+still count for a 1931-2025 climatology. Coverage criteria (valid days per year and decade) will
+be set for the published products, from the station catalog.
 
 ## 11. Open questions
 
-1. BUFR-only SYNOP (17 %): recover "omitted" information from the BUFR original?
-2. Dust in US remarks (`BLDU ALQDS`, `DSNT`, `VCBLDU`) as a "nearby/distant" flag.
-3. Why Niamey's METARs miss dust at <= 5 km in 5.8 % of SYNOP dust cases.
-4. Humidity screen at humid dust sites (6.6); `has_pw` before time distance in sampling (8).
-5. Station selection: require recent data and weather reporting.
-6. NOAA's ISD files end on 2025-08-27: is ISD still updated?
+1. NOAA's ISD files end on 2025-08-27: is ISD still updated?
+2. Coverage criteria for the published products (valid days per year and decade).
 
 Resolved questions: [rules_history.md](rules_history.md), "Resolved questions".
 

@@ -7,25 +7,38 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] **Rebuild all silver and gold for method 1.8.0** (user), then check pre-2000 METAR stations.
+- [ ] **Rebuild pilot_100 silver and gold for method 1.9.0** (user), then notebook 07: maps,
+      distributions and time series of the daily product to check the rules again.
 - [ ] NOAA's S3 ISD files end on 2025-08-27 (no 2026): check whether ISD is still updated or
       replaced (e.g. by another NCEI hourly product) before relying on recent years.
-- [ ] **Run the pipeline for method 1.6.0** (user): `dcdr process` rebuilds all silver (new method
-      version), then `dcdr aggregate`; per station compare `dusty_day`, `dusty_day_synop`,
-      `dusty_day_metar` and `dusty_day_vis5`, and `n_slots_pw_synop` against `n_slots_pw`.
-- [ ] Decode dust in US remarks (`BLDU ALQDS`, `DSNT`, `VCBLDU`) as a "nearby/distant" flag.
-- [ ] Niamey: why its METARs miss dust at <= 5 km in 5.8 % of SYNOP dust cases.
 - [ ] FMH-1: replace the 2005 mirror copy (everyspec.com) with an ICAMS/NOAA copy if one appears.
-- [ ] Station selection: add a recent-data criterion (data and weather reports in ≥ 3 of the last
-      5 years); replace Wadi Halfa, Abu Hamed, Papunya, Dongola, Rabbit Flat in pilot lists.
+- [ ] Coverage criteria for the published products (valid days per year and decade), from the
+      station catalog.
 - [ ] Investigate stations with no dust in 2020-2024 despite high duISD ranks (Ashchysai, Shakawe,
       Good Hope): change of observing practice or real decline?
-- [ ] BUFR-only SYNOP (17 %, no iX): any source for the "omitted" information?
-- [ ] Review humidity screen at humid dust sites and the `has_pw` sampling tie-break.
 - [ ] Plan 2: monthly/climatology gold products, station catalog, coverage, Uth, code-06 diagnostic.
-- [ ] Set up a GitHub remote; publish documentation (e.g. MkDocs) when stable.
+- [ ] Publish documentation (e.g. MkDocs) when stable.
+- [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
 
 ---
+
+## 2026-10-29
+
+- **Open questions decided** (user decisions, all recommended options; rules.md §11 now lists only
+  NOAA's data currency and product coverage criteria):
+  1. BUFR-only SYNOPs (no iX): current handling kept; no other source.
+  2. Dust only in METAR remarks: separate daily flag `remarks_dust_day` (method 1.9.0).
+  3. Niamey's METARs missing dust at <= 5 km: station caveat in rules.md §5.2, no rule change.
+  4. Humidity screen: only the haze-based classes (haze, haze_or_suspended, dust_haze); suspended
+     dust (06, `DU`) is kept (method 1.9.0). Evidence: 3,724 of 616k suspended reports screened
+     before, 14 % at Luqa. `has_pw` sampling tie-break kept.
+  5. pilot_100 kept as a test set; coverage criteria come with the products.
+- **Method 1.9.0** (tests first, 281 pass). `parse.py`: `metar_rmk_dust` from the remarks of a full
+  METAR (`METAR_RMK_DUST`); `daily.sql`: `remarks_dust_day`; `default.yaml`:
+  `rh_screen_classes: [haze, haze_or_suspended, dust_haze]`. *Rulings* from a check on pilot_100
+  bronze, all years: forecasts inside remarks are cut (`TEMPO`, `BECMG`, `NOSIG`, `FMhhmm`); bare
+  `SA` (Woomera observer initials, 102 of 102) and `SS` (a direction) not used. 8,333 reports
+  flagged.
 
 ## 2026-10-28
 

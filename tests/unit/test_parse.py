@@ -208,6 +208,46 @@ def test_metar_text_is_read_from_the_raw_message(
     assert (r["metar_auto"], r["metar_wx"]) == (auto, wx)
 
 
+# Dust named only in the remarks (US practice, FMH-1 2005: weather away from the station; Malta:
+# DU with visibility above 5 km). ISD does not decode remarks (user decision 2026-10-29).
+_KELP = "MET100KELP 011851Z 12012G27KT 10SM CLR 30/02 A3027 RMK AO2 "
+
+
+@pytest.mark.parametrize(
+    "rem,dust",
+    [
+        (_KELP + "PK WND 08037/1841 SLP176 BLDU ALQDS MTNS OBSCD SW T03000017 (DJD)", True),
+        (_KELP + "SLP042 BLDU DSNT SW AND NW T02001056", True),
+        (_KELP + "SLP038 OCNL VCBLDU VIRGA NE ACSL SW T01610022 $", True),
+        (_KELP + "BLDUB1845E1915 SLP042", True),  # begin and end times
+        ("MET060LMML 121650Z 15012KT 9999 FEW020 24/18 Q1012 NOSIG RMK DU;", True),
+        (_KELP + "SLP176 DSNT LTG T03000017", False),  # DSNT is not DS
+        (_KELP + "SLP176 T03000017", False),
+        # a forecast inside the remarks is not an observation: cut at TEMPO, BECMG, NOSIG, FMhhmm
+        (
+            "MET060DRRN 121200Z 18010KT 9999 FEW020 38/05 Q1008 RMK CB SECTEUR S/SW TEMPO 1500 BLDU;",
+            False,
+        ),
+        ("MET060YPDN 120300Z 33020KT 9999 NSC 35/10 Q1004 RMK BLDU TO N FM0400 9000 DU NSC=", True),
+        (
+            "MET060YPDN 120300Z 33020KT 9999 NSC 35/10 Q1004 RMK FM0400 33030G50KT 9000 DU NSC=",
+            False,
+        ),
+        (_KELP + "SLP068 SHRA DSNT SS P0001", False),  # SS here is a direction, not sandstorm
+        # bare SA: at Woomera always an observer's initials in a closure note (102 of 102)
+        (
+            "MET060YPWR 120600Z 18010KT 9999 FEW020 25/05 Q1012 RMK STN CLOSE REOPEN 1915Z OBS SA=",
+            False,
+        ),
+        ("MET060LFML 232300Z 13018G28KT 3000 BLDU SCT020 17/11 Q1007;", False),  # body, no RMK
+        ("MET012CAVOK NOSIG?", None),  # fragment: no full text
+        ("SYN08040829 12960 03406 10062 21002=", None),
+    ],
+)
+def test_dust_in_metar_remarks_is_flagged(rem: str, dust: bool | None) -> None:
+    assert _one(REM=rem)["metar_rmk_dust"] is dust
+
+
 def test_metar_text_is_null_without_remarks() -> None:
     r = _one()
     assert (r["metar_auto"], r["metar_wx"]) == (None, None)

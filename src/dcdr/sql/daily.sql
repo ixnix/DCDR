@@ -166,7 +166,9 @@ all_daily AS (
         max(gust) FILTER (WHERE use_gust) AS gust_max,
         bool_or(flag_past) AS past_weather_dust,  -- past-weather codes (AY/AZ) resolved as sand
         -- dust in the vicinity (METAR "VC", SYNOP MV codes), not at the station: a separate flag
-        bool_or(flag_vicinity) AS vicinity_dust_day
+        bool_or(flag_vicinity) AS vicinity_dust_day,
+        -- dust named only in METAR remarks (away from the station, e.g. "BLDU DSNT SW"): separate
+        bool_or(coalesce(metar_rmk_dust, false)) AS remarks_dust_day
     FROM silver
     WHERE NOT is_excluded_type
     GROUP BY station_id, lmst_date
@@ -222,6 +224,7 @@ joined AS (
         coalesce(a.past_weather_dust, false) AS past_weather_dust,
         coalesce(m.daily_summary_dust, false) AS daily_summary_dust,
         coalesce(a.vicinity_dust_day, false) AS vicinity_dust_day,
+        coalesce(a.remarks_dust_day, false) AS remarks_dust_day,
         -- The most sensitive definition: dust from any report, past weather or daily summary.
         coalesce(a.dusty_day_any, false) OR coalesce(a.past_weather_dust, false)
             OR coalesce(m.daily_summary_dust, false) AS dusty_day_any_source,

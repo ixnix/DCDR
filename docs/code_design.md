@@ -6,7 +6,7 @@ how they came about.
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-10-28 (method version 1.8.0).
+> Last updated: 2026-10-29 (method version 1.9.0).
 
 ---
 
@@ -203,7 +203,7 @@ local time, dust class and evidence, synoptic selection. Core columns come first
 |---|---|
 | Identity, time | `station_id, time_utc, time_lmst, lmst_date, lmst_hour, summary_lmst_date, report_type, source, lat, lon, lon_used, elev` |
 | Sampling | `slot_time, slot_lmst_date, slot_delta_min, is_candidate, is_excluded_type, slot_source` (synop/metar), `source_rank, is_source_selected` (the slot's report for its source), `selection_rank, selection_reason, is_synoptic_selected` (the slot's primary report: its SYNOP if any, else its METAR) |
-| Weather observed? | `has_pw`, `pw_status` (reported, nil_significant, nil_inferred, nil_metar, not_observed), `syn_ix`, `metar_text` (full, fragment), `metar_auto`, `metar_wx` (missing, group, cavok, none), `synop_derived` |
+| Weather observed? | `has_pw`, `pw_status` (reported, nil_significant, nil_inferred, nil_metar, not_observed), `syn_ix`, `metar_text` (full, fragment), `metar_auto`, `metar_wx` (missing, group, cavok, none), `metar_rmk_dust`, `synop_derived` |
 | Dust | `dust_rank, dust_class_rule, dust_rule_id, dust_class_final, dust_haze, rh_screened, flag_du, flag_duhz, flag_susp, flag_bd, flag_ds, flag_vicinity, flag_past, flag_ambiguous, flag_daily_dust, pw_evidence` |
 | Weather values | `wsd, use_wsd, wind_dir, use_wind_dir, gust, use_gust, gust_src, vis_raw, vis_capped, use_vis, t, use_t, td, use_td, rh, slp, use_slp` |
 | Bookkeeping | `parse_status, dup_count, row_key, source_key` |
@@ -218,7 +218,7 @@ One row per station per local (LMST) day. Columns (definitions in Part 2, sectio
 n_slots_nil_inferred, n_slots_nil_metar, n_slots_synop, n_slots_pw_synop, valid_day_synop,
 dusty_day_synop, n_slots_metar, n_slots_pw_metar, valid_day_metar, dusty_day_metar,
 n_slots_pw_vis5, valid_day_vis5, dusty_day_vis5, dusty_day_any, past_weather_dust,
-daily_summary_dust, vicinity_dust_day, dusty_day_any_source, n_dust_slots_{suspended, blowing,
+daily_summary_dust, vicinity_dust_day, remarks_dust_day, dusty_day_any_source, n_dust_slots_{suspended, blowing,
 whirls, storm, dust_haze}, n_slots_rh_screened, dust_first_lmst_hour, wsd_mean, wsd_max, gust_max,
 vis_min, vis_hmean, n_vis_zero, n_vis_from_metar, t_mean, t_min, t_max, td_mean, rh_mean, slp_mean, dup6_mean,
 d_t_mean, d_slp_mean`.

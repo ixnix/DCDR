@@ -29,7 +29,8 @@ qc:
   accept: [ok]  # flags a value may have and still be used (add "suspect" to be more lenient)
   vis_cap_m: 10000  # cap visibility at 10 km (stations report "unlimited" differently)
   rh_screen_pct: 90  # above this relative humidity ...
-  rh_screen_classes: [suspended, haze, haze_or_suspended, dust_haze]  # ... these classes are screened
+  # ... these classes (built from haze reports) are screened; dust an observer named is kept
+  rh_screen_classes: [haze, haze_or_suspended, dust_haze]
 
 classify:
   fields: [MW, AU, AW]  # present-weather families used (manual, METAR-style, automated)

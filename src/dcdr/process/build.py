@@ -72,6 +72,7 @@ CORE_COLUMNS = [
     "metar_text",
     "metar_auto",
     "metar_wx",
+    "metar_rmk_dust",
     "synop_derived",
     "dust_rank",
     "dust_class_rule",

@@ -5,7 +5,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 *ruling*, a choice made during implementation and open to review). The dated log of all work is
 [worklog.md](worklog.md); notebooks are kept locally (not in the public repository).
 
-> Last updated: 2026-10-28 (current method version 1.8.0). Commit hashes refer to this repository.
+> Last updated: 2026-10-29 (current method version 1.9.0). Commit hashes refer to this repository.
 
 ## Versions at a glance
 
@@ -21,6 +21,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | (no change) | 2026-10-27 | V3 kept for all years after tests across decades | user | 34e633f |
 | 1.7.0 | 2026-10-27 | fix: METAR text without the word METAR (2000s) is read | bug fix | 6329264 |
 | 1.8.0 | 2026-10-28 | METAR fragments (`CAVOK`), guarded METAR inference, derived SYNOPs, METAR visibility fallback | user | 39d6c88 |
+| 1.9.0 | 2026-10-29 | humidity screen only on haze-based classes; `remarks_dust_day` | user | (this commit) |
 
 ---
 
@@ -243,6 +244,26 @@ reuses `nil_inferred`; derived detection compares FM-12 with FM-15 only. Real-da
 1985, of 16,076 METARs: 5,656 `CAVOK` from fragments and 4,073 inferred, 93 not observed (before,
 most of the ~10,000 uncoded ones were not observed).
 
+## 1.9.0 (2026-10-29): humidity screen and dust in the remarks
+
+*User decisions* (the recommended options for the open questions of 1.8.0).
+- **Humidity screen.** *Superseded:* above 90 % relative humidity, suspended, haze,
+  haze_or_suspended and dust_haze were screened (from duISD v1). *Evidence* (pilot_100 silver,
+  method 1.7.0, all years): screened were 3,724 of 615,979 suspended-dust reports (0.6 %),
+  1,603 of 132,771 dust_haze, 134 haze_or_suspended (and 27,246 haze, not dusty anyway); but at
+  humid sites with transported dust much more: Luqa 675 of 4,879 (14 %), Sal 1,002 of 22,115,
+  Bhairahawa 190 of 4,160, Gimpo 241 of 4,445, Gran Canaria 182 of 7,559. An observer coding 06
+  has named dust, not haze. *Adopted:* only haze, haze_or_suspended and dust_haze are screened.
+- **Dust in the remarks.** *Superseded:* ignored (ISD does not decode remarks). *Evidence:*
+  notebook 03 found 2,632 reports with dust only in the remarks (El Paso 1,178 vs 568 in the
+  weather group); FMH-1 puts weather away from the station there. *Adopted:* a separate daily flag
+  `remarks_dust_day`, not counted as dust. *Rulings,* from a check on pilot_100 bronze, all years
+  (6.5 M full METARs, 1.1 M with remarks): forecasts inside the remarks are cut off (`TEMPO 1500
+  BLDU` at Niamey, `FM0400 ... DU` in Australia); a bare `SA` is not used (all 102
+  matches were an observer's initials at Woomera, `OBS SA`), nor `SS` (its one match was a
+  direction); begin/end times (`BLDUB1845`) are matched. Result: 8,333 reports (BLDU 4,991, DU
+  1,284, VCBLDU 1,138, DUST 964, PO 77, DS 27).
+
 ---
 
 ## Resolved questions
@@ -253,3 +274,10 @@ most of the ~10,000 uncoded ones were not observed).
 - Rule V3 before 2013: kept for all years (2026-10-27).
 - METARs without full text and their selection bias: 1.8.0.
 - Visibility under SYNOP-first weather values: from the METAR when the SYNOP has none (1.8.0).
+- BUFR-only SYNOPs without iX (17 %): current handling kept, no other source (2026-10-29).
+- Dust in METAR remarks: separate flag `remarks_dust_day` (1.9.0).
+- Niamey's METARs missing dust at <= 5 km (5.8 %): a station caveat, no rule change (2026-10-29).
+- Humidity screen at humid dust sites: haze-based classes only (1.9.0).
+- `has_pw` before time distance in sampling: kept; "observed" includes "nothing" (2026-10-29).
+- Recent-data criterion: pilot_100 kept as a test set; coverage criteria come with the products
+  (2026-10-29).

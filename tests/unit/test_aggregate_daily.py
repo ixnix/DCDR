@@ -270,6 +270,18 @@ def test_vicinity_dust_day_is_a_separate_flag(settings: Settings) -> None:
     )
 
 
+def test_remarks_dust_day_is_a_separate_flag(settings: Settings) -> None:
+    rows = _slots(
+        "2024-04-02",
+        REPORT_TYPE="FM-15",
+        REM="MET000METAR KELP 020000Z 25020G33KT 10SM FEW250 27/M20 A2986 RMK AO2 BLDU ALQDS",
+        VIS="016093,1,N,1",
+    )
+    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
+    got = (d["remarks_dust_day"], d["vicinity_dust_day"], d["dusty_day"], d["dusty_day_any"])
+    assert got == (True, False, False, False)
+
+
 # --- SYNOP and METAR as independent sources per slot (user decision 2026-10-20) --------------
 # A slot is dusty if the selected SYNOP OR the selected METAR reports dust; it is observed if
 # either observed the weather. Per-source flags keep the two apart. Wind, temperature and

@@ -472,7 +472,8 @@ def apply_haze_and_rh(df: pl.DataFrame, cfg: ClassifyCfg, qc: QcCfg) -> pl.DataF
        dust lingering, so it becomes "dust_haze", which counts as dusty.
     2. RH screen: in very humid air (RH above qc.rh_screen_pct, default 90 %) haze-like classes
        are probably humidity haze or mist, not dust. Those reports become "screened".
-       Only the classes in qc.rh_screen_classes are screened; blowing dust and storms are not.
+       Only the classes in qc.rh_screen_classes are screened: by default those built from haze
+       reports. Dust an observer named (suspended, blowing, storms) is kept (method 1.9.0).
     """
     haze_like = pl.col("dust_class_rule").is_in(["haze", "haze_or_suspended"])
     if cfg.haze_window_h > 0:

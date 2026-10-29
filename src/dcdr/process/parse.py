@@ -43,6 +43,15 @@ METAR_WX_TOKEN = (
     r"|PY|PO|SQ|FC|SS|DS)+$"
 )
 
+# Dust named in a METAR's remarks (after "RMK"): US practice (FMH-1 2005) puts weather seen away
+# from the station there, e.g. "BLDU ALQDS" (all quadrants), "BLDU DSNT SW", "VCBLDU", or with
+# begin/end times "BLDUB1845E1915"; Malta adds "DU" with visibility above 5 km. ISD does not
+# decode remarks, so this is read from the text and kept apart from dust at the station.
+# Checked on pilot_100 (all years, 2026-10-29): some stations put a forecast in the remarks
+# ("TEMPO 1500 BLDU", "FM0400 ... DU"), which is cut off. Left out: "SS" (its only match was a
+# direction, "DSNT SS") and a bare "SA" (all 102 matches were an observer's initials, "OBS SA").
+METAR_RMK_DUST = r"(^| )[+-]?(?:VC)?(?:DU|BLDU|DRDU|BLSA|DRSA|DS|PO|DUST)(?:[BE]\d{2,4})*( |$)"
+
 
 def metar_tokens(rem: pl.Expr) -> pl.Expr:
     """The observed part of a METAR/SPECI message as a list of groups (null if REM is not one).
@@ -165,6 +174,17 @@ def parse_reports(raw: pl.DataFrame) -> pl.DataFrame:
         .when(frag_cavok)
         .then(pl.lit("cavok"))
         .alias("metar_wx"),
+        # Dust named in the remarks of a full message (null without full text).
+        pl.when(tokens.is_not_null())
+        .then(
+            _raw(d, "REM")
+            .str.extract(r" RMK (.*)$", 1)
+            .str.replace(r"[=;]\s*$", "")
+            .str.replace(r"(^| )(?:TEMPO|BECMG|NOSIG|FM\d{4})( .*)?$", "")  # forecast part
+            .str.contains(METAR_RMK_DUST)
+            .fill_null(False)
+        )
+        .alias("metar_rmk_dust"),
         # --- WND: direction, dir QC, type, speed (x10), speed QC ---
         _num(_part(d, "WND", 0), ("999",)).alias("wind_dir"),
         _part(d, "WND", 1).alias("wind_dir_qc"),
