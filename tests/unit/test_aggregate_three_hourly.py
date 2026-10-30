@@ -216,3 +216,29 @@ def test_lmst_of_bin_start(settings: Settings) -> None:
     r = _one(settings, rows)
     assert r["lmst_date"] == date(2023, 12, 31)
     assert r["lmst_hour"] == pytest.approx(22.3226, abs=0.001)
+
+
+def test_type_groups_follow_config_and_saosp_is_a_special(settings: Settings) -> None:
+    # AUST is a SYNOP source and SAO a METAR source (config sampling.sources); SAOSP is the
+    # pre-1996 US airways special (ISD format document p. 6), counted with the SPECIs.
+    r = _one(
+        settings,
+        [
+            _row("00:00", REPORT_TYPE="SAO"),
+            _row("00:30", REPORT_TYPE="SAOSP"),
+            _row("01:00", REPORT_TYPE="AUST"),
+        ],
+    )
+    got = (r["n_synop"], r["n_metar"], r["n_speci"], r["n_other"])
+    assert got == (1, 1, 1, 0)
+
+
+def test_lmst_uses_the_state_reports_longitude(settings: Settings) -> None:
+    # A station that moved within the bin: local time follows the state report (deterministic).
+    rows = [
+        isd_row("2024-01-01T06:10:00", LONGITUDE="0.0", REPORT_TYPE="FM-16"),
+        isd_row("2024-01-01T07:00:00", LONGITUDE="-115.16343"),  # the state report
+    ]
+    r = _one(settings, rows)
+    assert r["lmst_date"] == date(2023, 12, 31)
+    assert r["lmst_hour"] == pytest.approx(22.3226, abs=0.001)

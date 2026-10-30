@@ -40,6 +40,14 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   unchanged). Legacy check: its 3-hourly dust flags came from the largest MW code in the bin, so
   rain or thunderstorm codes hid dust. Details: rules.md §10, code_design.md §7.4,
   rules_history.md.
+- **Review of `three_hourly`** (fresh reviewer, whole branch): no critical or important findings;
+  the SQL run over all real pilot silver (97.5M reports, method 1.9.0 files) gave 30.76M bins with
+  all six checks at 0, in 577 s and 3.4 GB peak memory (reading from the external drive), so
+  `dcdr aggregate` now takes about 10 minutes longer. Fixed (tests first): `SAOSP` (pre-1996 US
+  airways special, ISD format document p. 6; 486k reports) counted with the SPECIs, not in
+  `n_other`, so `n_speci` doesn't jump at the SAO-to-METAR change; LMST of the bin from the state
+  report's offset (was `any_value` of the longitude: not reproducible if a station moved within a
+  bin). *Rulings (reviewer's minors, deferred):* none open beyond the run time noted above.
 - **Why daily dust uses 8 slots, not every report** (discussion): on 1.9.0 gold, 1991-2020 valid
   days, `dusty_day_any` / `dusty_day` = 1.02 pilot-wide but 3.4 at Phoenix, 1.9 at El Paso, 1.7 at
   Las Vegas and 1.00 at the Sudan SYNOP stations, rising with reports per day (Spearman 0.79);

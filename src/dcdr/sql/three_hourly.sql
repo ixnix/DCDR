@@ -26,6 +26,9 @@ WITH rep AS (
         list_contains(getvariable('synop_types'), report_type) AS is_synop,
         list_contains(getvariable('metar_types'), report_type) AS is_metar,
         is_synop OR is_metar AS is_regular,
+        -- special reports, sent because conditions changed: SPECI (FM-16) and its pre-1996 US
+        -- predecessor SAOSP, "Airways special report" (ISD format document p. 6)
+        NOT is_regular AND report_type IN ('FM-16', 'SAOSP') AS is_special,
         -- Is this report dusty? (same list as classify.DUSTY_CLASSES and daily.sql)
         list_contains(
             ['suspended', 'blowing', 'whirls', 'storm', 'storm_severe', 'storm_thunder', 'dust_haze'],
@@ -53,6 +56,9 @@ state AS (
         bin_time,
         time_utc AS state_time_utc,
         report_type AS state_report_type,
+        -- the state report's LMST offset (silver: time_lmst = time_utc + longitude x 4 min); taken
+        -- from one report so a station that moved within the bin still gets one, fixed, answer
+        time_lmst - time_utc AS lmst_offset,
         CASE WHEN use_wsd THEN wsd END AS wsd,
         CASE WHEN use_wind_dir THEN wind_dir END AS wind_dir,
         CASE WHEN use_t THEN t END AS t,
@@ -91,23 +97,22 @@ agg AS (
         bool_or(flag_vicinity) AS vicinity_dust,
         bool_or(flag_past) AS past_weather_dust,
         bool_or(coalesce(metar_rmk_dust, false)) AS remarks_dust,
-        -- local mean solar time offset: 4 minutes per degree of longitude (docs/rules.md 4.2)
-        any_value(lon_used) AS lon_used,
         -- counts: how often the station reported in this bin, and with which report types
         count(*) AS n_reports,
         count(*) FILTER (WHERE has_pw) AS n_reports_pw,
         count(*) FILTER (WHERE is_synop) AS n_synop,
         count(*) FILTER (WHERE is_metar) AS n_metar,
-        count(*) FILTER (WHERE report_type = 'FM-16') AS n_speci,  -- SPECI
-        count(*) FILTER (WHERE NOT is_regular AND report_type <> 'FM-16') AS n_other
+        count(*) FILTER (WHERE is_special) AS n_speci,  -- SPECI and SAOSP
+        count(*) FILTER (WHERE NOT is_regular AND NOT is_special) AS n_other
     FROM rep
     GROUP BY station_id, bin_time
 )
 SELECT
     s.station_id,
     s.bin_time,
-    CAST(l.lmst AS DATE) AS lmst_date,
-    hour(l.lmst) + minute(l.lmst) / 60 + microsecond(l.lmst) / 3.6e9 AS lmst_hour,
+    CAST(s.bin_time + s.lmst_offset AS DATE) AS lmst_date,
+    hour(s.bin_time + s.lmst_offset) + minute(s.bin_time + s.lmst_offset) / 60
+        + microsecond(s.bin_time + s.lmst_offset) / 3.6e9 AS lmst_hour,
     s.state_time_utc,
     s.state_report_type,
     s.wsd,
@@ -142,8 +147,4 @@ SELECT
     a.n_other
 FROM state AS s
 JOIN agg AS a ON s.station_id = a.station_id AND s.bin_time = a.bin_time
--- local mean solar time of the bin start (lon_used degrees x 4 minutes)
-CROSS JOIN LATERAL (
-    SELECT s.bin_time + to_microseconds(CAST(round(a.lon_used * 240e6) AS BIGINT)) AS lmst
-) AS l
 ORDER BY s.station_id, s.bin_time

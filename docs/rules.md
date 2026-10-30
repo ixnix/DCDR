@@ -576,8 +576,8 @@ decision 2026-10-30: "aggregate all reports"). No slots, no ±30 min window, no 
 | `c_suspended`, `c_blowing`, `c_whirls`, `c_storm`, `c_dust_haze`, `c_screened` | any report in that class; null when not observed | intensity and type of dust |
 | `first_dust_time_utc` | time of the first dusty report in the bin | onset timing |
 | `vicinity_dust`, `past_weather_dust`, `remarks_dust` | as in the daily table (section 9); not part of `dusty` | other evidence, kept apart |
-| `n_reports`, `n_reports_pw`, `n_synop`, `n_metar`, `n_speci`, `n_other` | reports in the bin: all, observed, and per type group (SPECI = FM-16) | sampling rate |
-| `lmst_date`, `lmst_hour` | local mean solar time of the bin start (section 4.2) | join with the daily table; local timing |
+| `n_reports`, `n_reports_pw`, `n_synop`, `n_metar`, `n_speci`, `n_other` | reports in the bin: all, observed, and per type group (synop and metar = the slot source types; speci = special reports, FM-16 SPECI and its pre-1996 US predecessor SAOSP, "Airways special report", ISD format document p. 6) | sampling rate |
+| `lmst_date`, `lmst_hour` | local mean solar time of the bin start (section 4.2), with the state report's longitude | join with the daily table; local timing |
 
 **Caution: sampling rate.** `dusty`, `gust_max` and `vis_min` use every report, so they grow with how
 often a station reports (an hourly airport with SPECIs sees more of each bin than a 3-hourly SYNOP
