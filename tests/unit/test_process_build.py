@@ -6,6 +6,7 @@ order, bad dates, empty input, silver metadata, the silver contract, which file 
 """
 
 import random
+from datetime import date
 from pathlib import Path
 
 import polars as pl
@@ -77,6 +78,7 @@ def test_write_silver_records_metadata(settings: Settings, tmp_path: Path) -> No
         "source_md5": "m1",
         "prev_source_md5": "m0",
         "next_year_present": "0",
+        "next_source_md5": "",
         "nil_guard": "",
         "metar_guard": "",
     }
@@ -160,3 +162,37 @@ def test_inferred_nil_needs_the_station_guard(settings: Settings, tmp_path: Path
         on, path, run_id="r", config_hash="h", source_md5="m", prev_source_md5="", nil_guard=True
     )
     assert read_parquet_metadata(path)["nil_guard"] == "1"
+
+
+def _hourly(start: str, days: int, hours: range, **fields: str) -> list[dict]:
+    """Observed reports (MW1 02) at the given UTC hours on `days` days from `start` (YYYY-MM-DD)."""
+    from datetime import datetime, timedelta
+
+    t0 = datetime.fromisoformat(start)
+    return [
+        isd_row((t0 + timedelta(days=d, hours=h)).isoformat(), MW1="02,1", **fields)
+        for d in range(days)
+        for h in hours
+    ]
+
+
+def test_year_files_agree_on_the_grid_at_new_year(settings: Settings) -> None:
+    # Method 1.10.1. At 134 E the local day 1 January 2024 starts at 31 December 15:04 UTC, so
+    # part of it lies in the 2023 file. December is on the synoptic grid, January one hour before
+    # it (-60). Both files must use January's grid for that day: the 2023 file reads the next
+    # year's January, the 2024 file the previous year's December.
+    east = {"LONGITUDE": "134.0"}
+    dec = _hourly("2023-12-01", 31, range(0, 24, 3), **east)
+    jan = _hourly("2024-01-01", 31, range(2, 24, 3), **east)
+    y2023 = build_station_year(
+        bronze_frame(dec), None, 2023, settings, next_year_exists=True, next_year=bronze_frame(jan)
+    )
+    y2024 = build_station_year(bronze_frame(jan), bronze_frame(dec), 2024, settings)
+    sel = pl.concat([y2023, y2024], how="diagonal_relaxed").filter(pl.col("is_source_selected"))
+    per_day = sel.group_by("slot_lmst_date").agg(
+        n=pl.col("slot_time").n_unique(), offs=pl.col("slot_offset_min").unique()
+    )
+    assert per_day["n"].max() <= 8
+    offs = {r["slot_lmst_date"]: r["offs"] for r in per_day.iter_rows(named=True)}
+    assert offs[date(2024, 1, 1)] == [-60]
+    assert offs[date(2023, 12, 31)] == [0]

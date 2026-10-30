@@ -7,7 +7,7 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] **Rebuild pilot_100 for method 1.10.0** (user), then re-run notebook 07 (Australia) and
+- [ ] **Rebuild pilot_100 for method 1.10.1** (user), then re-run notebook 07 (Australia) and
       look at the first `three_hourly` table (e.g. one outbreak at Phoenix and one at Niamey).
 - [ ] Daily slots: a ±90 min fallback window instead of the 1.10.0 grid shift? Not needed while
       the shift works; revisit only if notebook 07 shows off-hour reports the shift misses.
@@ -28,6 +28,22 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## 2026-10-30
 
+- **Method 1.10.1: slot grid per local month** (user decision: option A; this commit; tests
+  first, 311 pass). The first gold build after the user's 1.10.0 rebuild failed the check "at most
+  8 slots per day": 68 local days with 9 slots at 7 Australian stations, each the first local day
+  of a month whose grid changed (1.10.0 switched grids at the UTC month change, inside the local
+  day). Now the grid is chosen per local month and a slot uses its local month's grid; year files
+  read the neighbouring December and January for the decision (a local month can straddle New
+  Year) and store the next year's bronze fingerprint. *Rulings:* a report beside a local
+  midnight where the grid changes may fit no slot; derived SYNOPs ignored for detection. Checked
+  in memory on real bronze: Sydney 1995-2025 and Tennant Creek 2018-2025 at most 8 slots per local
+  day; El Paso 2010 selection identical to 1.10.0. My error in 1.10.0: month changes were tested
+  only at longitude 0. Details: rules.md §8, rules_history.md 1.10.1.
+- **Dusty-station list** (discussion, open): proposed criteria from pilot gold 1991-2020 (dusty on
+  >= 1 day per 365 observed days, dust in >= 50 % of observed years and in >= 5 years; separate
+  "insufficient observation" and "borderline" groups; aridity and raised-dust share as
+  attributes, not filters). Tombouctou, Gao and Tidjikja have no year with >= 200 valid days, so
+  inclusion must not require dense coverage. Open: recent window or any 30-year window.
 - **New gold table `three_hourly`** (this commit; tests first, 15 new tests). One row per station
   and 3-hour UTC bin (00:00-02:59, ...), from all reports except summaries.
   *User decisions:* the product and its bins; all reports, SPECIs included; state values from one

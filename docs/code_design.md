@@ -6,7 +6,7 @@ how they came about.
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-10-30 (method version 1.10.0).
+> Last updated: 2026-10-30 (method version 1.10.1).
 
 ---
 
@@ -117,6 +117,12 @@ uv run dcdr status
 
 `ingest` also downloads the year before the first requested year: the haze rule looks back 24 h,
 which on 1 January reaches the previous year.
+
+`process` builds each station-year from its own bronze plus its neighbours' when on disk: the
+previous year's last day (haze look-back) and December, and the next year's January. The two
+months feed only the slot-grid detection (method 1.10.1: a local month can straddle New Year, and
+both year files must decide it from the same reports). Their fingerprints (`prev_source_md5`,
+`next_source_md5`) are stored, so a change in either neighbour rebuilds the year.
 
 ## 5. Configuration
 
@@ -264,7 +270,7 @@ file; `build_gold` runs every entry against the same silver view.
 ### 7.5 Provenance
 - Bronze metadata: `dcdr_layer, source_md5, source_key, run_id`.
 - Silver metadata: `dcdr_layer, method_version, config_hash, run_id, source_md5,
-  prev_source_md5, next_year_present, nil_guard` (`1` pass, `0` fail, empty = no decision).
+  prev_source_md5, next_year_present, next_source_md5, nil_guard` (`1` pass, `0` fail, empty = no decision).
 - Run log: `run_id, command, started_at, finished_at, status, git_commit, git_dirty,
   dcdr_version, config_hash, summary` (JSON with counts and failures).
 

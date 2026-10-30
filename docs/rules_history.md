@@ -5,7 +5,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 *ruling*, a choice made during implementation and open to review). The dated log of all work is
 [worklog.md](worklog.md); notebooks are kept locally (not in the public repository).
 
-> Last updated: 2026-10-30 (current method version 1.10.0). Commit hashes refer to this repository.
+> Last updated: 2026-10-30 (current method version 1.10.1). Commit hashes refer to this repository.
 
 ## Versions at a glance
 
@@ -24,7 +24,8 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | 1.9.0 | 2026-10-29 | humidity screen only on haze-based classes; `remarks_dust_day` | user | 7acc64d |
 | (no change) | 2026-10-29 | daily product checked as a whole (notebook 07); off-grid Australian SYNOPs found | — | d51d7e6 |
 | 1.10.0 | 2026-10-29 | slot grid follows off-grid SYNOP schedules (per station-month); `AUST` a SYNOP source | user | a5fb8ed |
-| (no change) | 2026-10-30 | new gold table `three_hourly` (all reports per 3-hour UTC bin) | user | (this commit) |
+| (no change) | 2026-10-30 | new gold table `three_hourly` (all reports per 3-hour UTC bin) | user | 21510c3, d5228e8 |
+| 1.10.1 | 2026-10-30 | fix: slot grid chosen per local (LMST) month; year files read the neighbouring December/January | user (option A) | (this commit) |
 
 ---
 
@@ -326,6 +327,29 @@ first report of any type; missing state values are not filled from other reports
 the bin start. Why not use all reports for the daily product too: `dusty_day_any` / `dusty_day`
 reaches 3.4 at Phoenix and 1.9 at El Paso (1991-2020) and tracks reports per day (Spearman 0.79),
 while pilot reports per day doubled 1975-2020; the slot rule keeps daily counts comparable.
+
+## 1.10.1 (2026-10-30): slot grid per local month (fix)
+
+*Found by* the gold check "at most 8 slots per day", which stopped the first gold build after
+the 1.10.0 rebuild: 68 local days with 9 slots at 7 Australian stations (Sydney 35, Woomera 10, Rabbit
+Flat and Mount Isa 6 each, Tennant Creek and Learmonth 5 each, Murrin Murrin 1). *Cause:* 1.10.0 chose the grid
+per UTC month, but the daily product's days are local days. Every one of the 68 was the first
+local day of a month whose grid changed (offsets -60/0 32 days, 0/+60 23, -60/+60 13): at 134 E
+the local 1 November starts at 31 October 15:04 UTC, so it got 3 slots of October's grid and 6 of
+November's, two of them one hour apart. *User decision* (option A of three; B, a gold-only
+filter, would leave silver and gold disagreeing; C, allowing 9 slots, breaks equal sampling):
+fix it in silver. *Superseded:* grid per UTC month, detected within each station-year file.
+*Now:* the grid is detected per local month, and a report fills a slot only on the grid of the
+slot's local month (a report beside a local midnight where the grid changes may fit no slot).
+Each year file also reads the previous December and the next January for the detection, and
+"observed" is judged there without the per-year derived-SYNOP decision, so both files at a year
+boundary decide a local month that straddles New Year from the same reports; the next year's
+bronze fingerprint is stored, so its changes rebuild the year. *Rulings:* the report rule
+beside local midnight (costs at most a few reports on the first local day after a grid change);
+derived SYNOPs ignored for detection (they are on-grid US copies of METARs, so no shift either
+way). *Check on real bronze* (in memory): Sydney 1995-2025 and Tennant Creek 2018-2025 have at
+most 8 slots per local day and no day with two grids; El Paso 2010 selects exactly the same 5,819
+reports as under 1.10.0.
 
 ---
 

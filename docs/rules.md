@@ -6,7 +6,7 @@ and 3-hourly records, and briefly why. Part 1 ([code_design.md](code_design.md))
 [rules_history.md](rules_history.md) records how each rule came about, with the evidence, the
 superseded rules and the decisions; [worklog.md](worklog.md) is the dated log.
 
-> Describes the method **as implemented** (method version **1.10.0**). Planned steps are marked
+> Describes the method **as implemented** (method version **1.10.1**). Planned steps are marked
 > *planned*. Last updated: 2026-10-30.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`,
@@ -482,7 +482,8 @@ Rules (user decisions 2026-10-20):
 - **Off-grid schedules** (method 1.10.0, user decision 2026-10-29). Some stations observe every
   3 hours but one hour off the synoptic hours, by local clock time: Australia (east and centre
   02, 05, ... UTC; west 01, 04, ... UTC; the offset moves with daylight saving), Sydney, and
-  Central Asian stations in the 1930s. Per station and UTC month, from the SYNOP-source reports
+  Central Asian stations in the 1930s. Per station and **local (LMST) month** (method 1.10.1),
+  from the SYNOP-source reports
   that **observed the weather**: if >= 30 of them, < 10 % within ±30 min of the synoptic hours and
   >= 80 % within ±30 min of one offset (+60 or -60 min), that month's slots move by the offset
   (`slot_offset_min`; e.g. 01, 04, ..., 22 UTC). Each slot still takes one report per source, 8 a
@@ -490,6 +491,16 @@ Rules (user decisions 2026-10-20):
   rarely observe the weather (iX 6, 91-96 % not observed); counting them would hide the schedule.
   *Why per month:* the schedule follows the local clock (Woomera 2005: +60 min in summer, -60 min
   in winter) and can change within a year (Meekatharra 1975). Settings: `sampling.schedule_*`.
+  *Why local months* (method 1.10.1): the daily product's days are local days. With UTC months
+  (1.10.0) the first local day of a month at an eastern station mixed two grids, and where they
+  met two slots were one hour apart: 68 days with 9 slots at 7 Australian stations (the gold
+  check "at most 8 slots" stopped the build). Now a report fills a slot only on the grid of the
+  **slot's** local month, so a local day always uses one grid. A report just beside a local
+  midnight where the grid changes may fit no slot (it stays in silver, not a candidate): the first
+  local day after a change can have fewer than 8 slots. A local month can straddle New Year (at
+  134 E the local 1 January starts on 31 December UTC), so each year file also reads the previous
+  December and the next January for this decision, and "observed" is judged here without the
+  per-year derived-SYNOP decision: both year files decide from the same reports.
   *Validation* (notebook 07 follow-up): where the METAR at the same minute reports dust, the
   offset SYNOP does too in 91 % (-60 min) and 68 % (+60 min, 19 cases), against 94 % for on-grid
   SYNOPs at the other pilot stations. On pilot_100, 7,084 station-months at 16 stations are

@@ -8,7 +8,7 @@ and that row order never changes the result.
 """
 
 import random
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import polars as pl
 
@@ -260,3 +260,29 @@ def test_aust_reports_are_a_synop_source(settings: Settings) -> None:
     out = select_synoptic(_frame([("2024-01-01T03:00:00", "AUST", True, "a")]), settings.sampling)
     assert out.row(0, named=True)["slot_source"] == "synop"
     assert out.row(0, named=True)["is_source_selected"]
+
+
+def _month(year: int, month: int, days: int, hours: range, tag: str) -> list[tuple]:
+    """Observed FM-12 reports at the given UTC hours on every day of one month."""
+    start = datetime(year, month, 1)
+    return [
+        ((start + timedelta(days=d, hours=h)).isoformat(), "FM-12", True, f"{tag}{d}-{h}")
+        for d in range(days)
+        for h in hours
+    ]
+
+
+def test_a_local_day_uses_one_grid_at_a_month_change(settings: Settings) -> None:
+    # Method 1.10.1: the grid is chosen per LOCAL month. At 134 E (LMST = UTC + 8 h 56 min) the
+    # local day 1 February starts at 31 January 15:04 UTC; with the grid switched at the UTC
+    # month change it got 3 slots of January's grid and 6 of February's: 9 slots.
+    rows = _month(2024, 1, 31, range(2, 24, 3), "jan") + _month(2024, 2, 29, range(0, 24, 3), "feb")
+    out = select_synoptic(_frame(rows).with_columns(lon_used=pl.lit(134.0)), settings.sampling)
+    sel = out.filter(pl.col("is_source_selected"))
+    per_day = sel.group_by("slot_lmst_date").agg(
+        n=pl.col("slot_time").n_unique(), offs=pl.col("slot_offset_min").unique()
+    )
+    assert per_day["n"].max() <= 8
+    offs = {r["slot_lmst_date"]: r["offs"] for r in per_day.iter_rows(named=True)}
+    assert offs[date(2024, 1, 31)] == [-60]
+    assert offs[date(2024, 2, 1)] == [0]

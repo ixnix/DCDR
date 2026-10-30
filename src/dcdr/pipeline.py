@@ -179,12 +179,14 @@ def _silver_is_current(
     next_present: bool,
     guard: bool | None,
     metar_guard: bool | None = None,
+    next_md5: str = "",
 ) -> bool:
     """True if the silver file exists and was built from exactly the current inputs and method.
 
     Any mismatch means a rebuild: new code (METHOD_VERSION), new settings (cfg_hash), a changed
     source file (md5), a changed previous year (prev_md5, used by the haze look-back), or the next
-    year's bronze appearing/disappearing (decides who owns 31-December slot candidates).
+    year's bronze appearing/disappearing (decides who owns 31-December slot candidates) or
+    changing (next_md5: its January feeds the slot-grid detection, method 1.10.1).
     """
     if not path.exists():
         return False
@@ -195,6 +197,7 @@ def _silver_is_current(
         and meta.get("source_md5") == md5
         and meta.get("prev_source_md5") == prev_md5
         and meta.get("next_year_present") == ("1" if next_present else "0")
+        and meta.get("next_source_md5", "") == next_md5
         and meta.get("nil_guard") == {True: "1", False: "0", None: ""}[guard]
         and meta.get("metar_guard", "") == {True: "1", False: "0", None: ""}[metar_guard]
     )
@@ -231,23 +234,27 @@ def run_process(
                 summary.missing_bronze += 1
                 continue
             prev_path = bronze_path(ctx.root, year - 1, station)
-            next_present = bronze_path(ctx.root, year + 1, station).exists()
+            next_path = bronze_path(ctx.root, year + 1, station)
+            next_present = next_path.exists()
             md5, prev_md5 = _bronze_md5(bpath), _bronze_md5(prev_path)
+            next_md5 = _bronze_md5(next_path)
             spath = silver_path(ctx.root, year, station)
             if not force and _silver_is_current(
-                spath, cfg_hash, md5, prev_md5, next_present, guard, metar_guard
+                spath, cfg_hash, md5, prev_md5, next_present, guard, metar_guard, next_md5
             ):
                 summary.skipped += 1
                 summary.paths.append(spath)
                 continue
             try:  # one bad station-year never aborts the stage; the previous silver file stays
                 previous = pl.read_parquet(prev_path) if prev_path.exists() else None
+                following = pl.read_parquet(next_path) if next_present else None
                 df = build_station_year(
                     pl.read_parquet(bpath),
                     previous,
                     year,
                     ctx.settings,
                     next_year_exists=next_present,
+                    next_year=following,
                     nil_guard=guard,
                     metar_guard=metar_guard,
                 )
@@ -259,6 +266,7 @@ def run_process(
                     source_md5=md5,
                     prev_source_md5=prev_md5,
                     next_year_present=next_present,
+                    next_source_md5=next_md5,
                     nil_guard=guard,
                     metar_guard=metar_guard,
                 )
