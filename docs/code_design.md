@@ -6,7 +6,7 @@ how they came about.
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-10-29 (method version 1.10.0).
+> Last updated: 2026-10-30 (method version 1.10.0).
 
 ---
 
@@ -67,6 +67,7 @@ DCDR/
 │   │   └── build.py            runs the above for one station-year, writes silver
 │   ├── aggregate.py            silver -> gold (versioned, checked, CURRENT pointer)
 │   ├── sql/daily.sql           the gold `daily` table, in SQL (run by DuckDB)
+│   ├── sql/three_hourly.sql    the gold `three_hourly` table, in SQL
 │   └── schemas.py              the silver data contract
 ├── config/stations/            run inputs: station lists and region definitions
 ├── notebooks/                  (local only, not in the public repo) analyses (01: pilot station selection; 02: validating inferred "nothing significant";
@@ -88,7 +89,7 @@ and `forecast` (ML).
 ## 4. Commands
 
 All commands run as `uv run dcdr <command>` from the repo (or `dcdr <command>` in an activated
-environment). Every pipeline command records a run (section 7.3).
+environment). Every pipeline command records a run (section 7.5).
 
 | Command | What it does | Main options |
 |---|---|---|
@@ -181,7 +182,8 @@ Everything goes under the data root:
 │   ├── CURRENT                          text file: run ID of the active version
 │   └── versions/<run_id>/
 │       ├── silver_version.json          which silver (method version, config hash) built it
-│       └── daily/part-000.parquet
+│       ├── daily/part-000.parquet
+│       └── three_hourly/part-000.parquet
 └── _state/
     ├── sources.parquet                  download manifest (one row per S3 file)
     ├── runs.parquet                     run log (one row per command run)
@@ -189,7 +191,7 @@ Everything goes under the data root:
 ```
 
 `year=YYYY` folders are "Hive-style" partitions: DuckDB and Polars can filter by year from the
-folder name. Parquet files carry provenance in their footer metadata (section 7.4).
+folder name. Parquet files carry provenance in their footer metadata (section 7.5).
 
 ### 7.1 Bronze
 All columns of the NOAA CSV, **as text**, unchanged, plus `source_key`, `source_md5`,
@@ -233,10 +235,33 @@ slots ≤ slots; `dusty_day` = `dusty_day_synop` OR `dusty_day_metar`; the narro
 imply `dusty_day`; every `valid_day*` matches its definition; dusty days have slots; one row per
 station-day; day-to-day changes only between valid days.
 
-Planned gold products (spec §7.3, not built yet): `synoptic3h`, `monthly`, `annual`,
+Planned gold products (spec §7.3, not built yet): `monthly`, `annual`,
 `station_year_coverage`, `stations` catalog, `climatology`, `diurnal`, `trends`, Uth, code-6 diagnostic.
 
-### 7.4 Provenance
+### 7.4 Gold `three_hourly`
+One row per station per 3-hour UTC bin (00 = 00:00-02:59, ..., 21), for every bin with a report.
+Built from silver in the same gold run as `daily`, but independently of it (no slots). Columns
+(definitions in Part 2, section 10): `station_id, bin_time, lmst_date, lmst_hour, state_time_utc,
+state_report_type, wsd, wind_dir, t, td, rh, slp, vis, dup6, gust_max, vis_min, observed,
+observed_explicit, dusty, c_{suspended, blowing, whirls, storm, dust_haze, screened},
+first_dust_time_utc, vicinity_dust, past_weather_dust, remarks_dust, n_reports, n_reports_pw,
+n_synop, n_metar, n_speci, n_other`.
+
+The state values come from one report per bin (the first regular SYNOP or METAR), chosen with a
+window function: `row_number() OVER (PARTITION BY station_id, bin_time ORDER BY ...)` numbers the
+reports of each bin, and row 1 is kept. "Regular" means a slot source type: `build_gold` passes the
+config lists `sampling.sources.synop` and `.metar` to the SQL as DuckDB variables `synop_types` and
+`metar_types` (`SET VARIABLE`, like `min_slots`), so the SQL and sampling can't drift apart.
+
+Checks run before activation (each must return 0 rows): one row per station and bin; bins start
+at 00, 03, ..., 21 on the full hour; the state report lies inside its bin; observed reports ≤
+reports, and the type counts add up to `n_reports`; `dusty` is null exactly when nothing was
+observed; `first_dust_time_utc` is set exactly when the bin is dusty.
+
+Adding a gold product is one entry in `aggregate.PRODUCTS` (name, SQL file, checks) plus the SQL
+file; `build_gold` runs every entry against the same silver view.
+
+### 7.5 Provenance
 - Bronze metadata: `dcdr_layer, source_md5, source_key, run_id`.
 - Silver metadata: `dcdr_layer, method_version, config_hash, run_id, source_md5,
   prev_source_md5, next_year_present, nil_guard` (`1` pass, `0` fail, empty = no decision).
@@ -332,7 +357,7 @@ paths (`/Users/xinxi/Projects/DCDR`, `/Volumes/CrucialX8/dcdr`) to your machine.
 ## 10. Testing and quality checks
 
 ```bash
-uv run pytest                  # unit + integration tests (offline; ~160 tests)
+uv run pytest                  # unit + integration tests (offline; ~300 tests)
 uv run pytest -m network       # smoke test against the real NOAA bucket
 uv run ruff check . && uv run ruff format --check . && uv run mypy src
 ```

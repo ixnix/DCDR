@@ -2,12 +2,12 @@
 
 The rules DCDR applies **now** to NOAA ISD station reports: how they are decoded, how DCDR decides
 what was observed, how dust is classified, how reports are sampled and aggregated into daily
-records, and briefly why. Part 1 ([code_design.md](code_design.md)) covers the software;
+and 3-hourly records, and briefly why. Part 1 ([code_design.md](code_design.md)) covers the software;
 [rules_history.md](rules_history.md) records how each rule came about, with the evidence, the
 superseded rules and the decisions; [worklog.md](worklog.md) is the dated log.
 
 > Describes the method **as implemented** (method version **1.10.0**). Planned steps are marked
-> *planned*. Last updated: 2026-10-29.
+> *planned*. Last updated: 2026-10-30.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`,
 local) and the WMO *Manual on Codes* (WMO-No. 306) as published in the WMO Codes Registry
@@ -554,7 +554,51 @@ trends, wind threshold Uth (source stations only), code-06 diagnostic.
 **Uth (threshold wind)** must be fitted with all observed reports in the denominator and on raised
 dust (codes 07 and up); why: [rules_history.md](rules_history.md), method 1.2.0.
 
-## 10. Station selection (pilot)
+## 10. 3-hourly aggregation (gold `three_hourly`, `sql/three_hourly.sql`)
+
+One row per station per **3-hour UTC bin**: 00 = 00:00–02:59, 03 = 03:00–05:59, …, 21 = 21:00–23:59
+(`bin_time` = start of the bin). Only bins with at least one report have a row. Purpose: follow the
+weather through dust outbreaks, bin by bin (user decision 2026-10-30). It replaces the legacy
+3-hourly files (`resample_raw_into_3hrly` in `legacy/master_DCDR.py`) and supports the analyses
+they fed (threshold wind, wind and visibility on dusty bins). Built from silver, **independently of
+the daily table**: the daily product keeps its slots (section 8) and does not use this table.
+
+**Reports:** every report except daily and monthly summaries (SOD, SOM), SPECIs included (user
+decision 2026-10-30: "aggregate all reports"). No slots, no ±30 min window, no grid shift.
+
+| Column(s) | Definition | Why |
+|---|---|---|
+| `state_time_utc`, `state_report_type` | the **state report**: the first regular report (a slot source type: SYNOP or METAR, section 8) in the bin; at the same minute a SYNOP before a METAR; with no regular report, the first report of any type (e.g. a SPECI) | one report per row (user decision 2026-10-30) |
+| `wsd`, `wind_dir`, `t`, `td`, `rh`, `slp`, `vis`, `dup6` | from the state report only, each only if it passed QC (section 7); a missing value is **not** filled from another report | values in a row belong to the same time |
+| `gust_max`, `vis_min` | maximum gust and minimum visibility over all reports in the bin | extremes during an outbreak |
+| `observed`, `observed_explicit` | any report observed the weather (section 5); any explicit observation (code, iX 2/5, CAVOK) | basis of the dust verdict |
+| `dusty` | any report dusty (`dust_class_final`, after the haze rule and the RH screen); **null when not observed** | "if it cannot be verified, it is 'not observed'" |
+| `c_suspended`, `c_blowing`, `c_whirls`, `c_storm`, `c_dust_haze`, `c_screened` | any report in that class; null when not observed | intensity and type of dust |
+| `first_dust_time_utc` | time of the first dusty report in the bin | onset timing |
+| `vicinity_dust`, `past_weather_dust`, `remarks_dust` | as in the daily table (section 9); not part of `dusty` | other evidence, kept apart |
+| `n_reports`, `n_reports_pw`, `n_synop`, `n_metar`, `n_speci`, `n_other` | reports in the bin: all, observed, and per type group (SPECI = FM-16) | sampling rate |
+| `lmst_date`, `lmst_hour` | local mean solar time of the bin start (section 4.2) | join with the daily table; local timing |
+
+**Caution: sampling rate.** `dusty`, `gust_max` and `vis_min` use every report, so they grow with how
+often a station reports (an hourly airport with SPECIs sees more of each bin than a 3-hourly SYNOP
+station). Use the counts to compare like with like; for dust climatology and trends use
+`dusty_day` (section 9), which is built on equal sampling.
+
+**Where the state report sits in the bin depends on the network:** a SYNOP station's is at the bin
+start (00:00); a US METAR station's is at :51 (00:51), and its routine report for 03 UTC (02:51)
+falls in bin 00. `state_time_utc` shows it.
+
+Differences from the legacy 3-hourly files:
+
+| Legacy | Now | Why |
+|---|---|---|
+| `first` value of each column: values could come from different reports | one state report | user decision 2026-10-30 |
+| dust flags from the numerically largest MW code of all reports | any report's dust class | a rain (6x) or thunderstorm (95) code hid dust |
+| manual MW codes only | full classification (sections 5-6) | METAR and automated codes count |
+| missing MW → no flag, otherwise 0 | null unless observed (rule V3 and METAR-implied "nothing" count as observed) | section 5 |
+| no counts | counts per bin | sampling rate |
+
+## 11. Station selection (pilot)
 
 Method (`notebooks/01_duisd_v1_dusty_stations.ipynb`):
 1. Ranking data: duISD v1 (SYNOP reports only, monthly counts, 1940-2019), used **only to rank**.
@@ -581,15 +625,14 @@ Shakawe and Good Hope report no dust in 2020-2024. pilot_100 is kept as it is (u
 still count for a 1931-2025 climatology. Coverage criteria (valid days per year and decade) will
 be set for the published products, from the station catalog.
 
-## 11. Open questions
+## 12. Open questions
 
 1. NOAA's ISD files end on 2025-08-27: is ISD still updated?
 2. Coverage criteria for the published products (valid days per year and decade).
 
-
 Resolved questions: [rules_history.md](rules_history.md), "Resolved questions".
 
-## 12. References
+## 13. References
 
 Official code manuals and tables, with URLs and checksums of the local copies:
 [references.md](references.md).

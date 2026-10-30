@@ -7,7 +7,10 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] **Rebuild pilot_100 for method 1.10.0** (user), then re-run notebook 07 (Australia).
+- [ ] **Rebuild pilot_100 for method 1.10.0** (user), then re-run notebook 07 (Australia) and
+      look at the first `three_hourly` table (e.g. one outbreak at Phoenix and one at Niamey).
+- [ ] Daily slots: a ±90 min fallback window instead of the 1.10.0 grid shift? Not needed while
+      the shift works; revisit only if notebook 07 shows off-hour reports the shift misses.
 - [ ] Check Niamey (Diori Hamani) before ~1975 (almost no dust, then >= 150 days a year) and the
       fall at Ciudad Constitucion (2000-2023): reporting changes or real?
 - [ ] NOAA's S3 ISD files end on 2025-08-27 (no 2026): check whether ISD is still updated or
@@ -22,6 +25,28 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
 
 ---
+
+## 2026-10-30
+
+- **New gold table `three_hourly`** (this commit; tests first, 15 new tests). One row per station
+  and 3-hour UTC bin (00:00-02:59, ...), from all reports except summaries.
+  *User decisions:* the product and its bins; all reports, SPECIs included; state values from one
+  report, the first regular SYNOP or METAR (not the legacy per-column `first`); the daily product
+  stays independent (still built from silver with slots). *Rulings:* summaries excluded; SYNOP
+  before METAR at the same minute; a bin without a regular report uses its first report of any type;
+  missing state values not filled from other reports; columns `dup6`, `first_dust_time_utc`,
+  `observed_explicit`, vicinity/past/remarks flags, LMST of the bin start; product name
+  `three_hourly` (a DuckDB view name can't start with a digit); `METHOD_VERSION` unchanged (silver
+  unchanged). Legacy check: its 3-hourly dust flags came from the largest MW code in the bin, so
+  rain or thunderstorm codes hid dust. Details: rules.md §10, code_design.md §7.4,
+  rules_history.md.
+- **Why daily dust uses 8 slots, not every report** (discussion): on 1.9.0 gold, 1991-2020 valid
+  days, `dusty_day_any` / `dusty_day` = 1.02 pilot-wide but 3.4 at Phoenix, 1.9 at El Paso, 1.7 at
+  Las Vegas and 1.00 at the Sudan SYNOP stations, rising with reports per day (Spearman 0.79);
+  pilot reports per day went from 10.8 (1975) to 19.9 (2020). Equal sampling keeps stations and
+  years comparable; `dusty_day_any` and `three_hourly` serve event studies.
+- **rules.md renumbered:** new §10 (3-hourly); station selection §11, open questions §12,
+  references §13.
 
 ## 2026-10-29
 

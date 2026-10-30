@@ -3,7 +3,8 @@
 Where this fits
 ---------------
 Last stage: `dcdr aggregate` (or `dcdr run`). Input is every silver file (one row per report);
-output is GOLD, the analysis-ready tables (for now `daily`: one row per station per local day).
+output is GOLD, the analysis-ready tables: `daily` (one row per station per local day) and
+`three_hourly` (one row per station per 3-hour UTC bin), both built from silver.
 
 How gold is built
 -----------------
@@ -100,6 +101,42 @@ PRODUCTS = [
             "d_t_only_valid": "SELECT count(*) FROM daily WHERE d_t_mean IS NOT NULL AND NOT valid_day",
         },
     ),
+    Product(
+        # Named without a leading digit: the name is also the DuckDB view the checks query.
+        "three_hourly",
+        "three_hourly.sql",
+        {
+            # Exactly one row per station and bin.
+            "unique_station_bin": (
+                "SELECT count(*) FROM (SELECT station_id, bin_time FROM three_hourly "
+                "GROUP BY ALL HAVING count(*) > 1)"
+            ),
+            # Bins start at 00, 03, ..., 21 UTC on the full hour.
+            "bin_aligned": (
+                "SELECT count(*) FROM three_hourly WHERE hour(bin_time) % 3 <> 0 "
+                "OR minute(bin_time) <> 0 OR second(bin_time) <> 0"
+            ),
+            # The state report lies inside its bin.
+            "state_in_bin": (
+                "SELECT count(*) FROM three_hourly WHERE state_time_utc < bin_time "
+                "OR state_time_utc >= bin_time + INTERVAL 3 HOUR"
+            ),
+            # Observed reports are a subset of all reports; the type counts add up.
+            "counts_consistent": (
+                "SELECT count(*) FROM three_hourly WHERE n_reports_pw > n_reports "
+                "OR n_synop + n_metar + n_speci + n_other <> n_reports"
+            ),
+            # No dust verdict without an observation, and always one with an observation.
+            "dust_null_iff_unobserved": (
+                "SELECT count(*) FROM three_hourly WHERE (dusty IS NULL) <> (NOT observed)"
+            ),
+            # A first-dust time exactly when the bin is dusty.
+            "first_dust_iff_dusty": (
+                "SELECT count(*) FROM three_hourly "
+                "WHERE (first_dust_time_utc IS NOT NULL) <> coalesce(dusty, false)"
+            ),
+        },
+    ),
 ]
 
 
@@ -133,6 +170,14 @@ def _sql_path(path: Path) -> str:
     return text
 
 
+def _sql_list(items: list[str]) -> str:
+    """A list of strings as an SQL list literal, e.g. ['FM-12', 'FM-15']. As in `_sql_path`, a
+    quote (') would break the SQL, so such items are refused rather than escaped."""
+    if any("'" in item for item in items):
+        raise ValueError(f"unsupported character in list: {items}")
+    return "[" + ", ".join(f"'{item}'" for item in items) + "]"
+
+
 def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Path:
     """Build every gold product into gold/versions/<run_id>/, check it, then activate it.
 
@@ -160,6 +205,10 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     con.execute(f"SET VARIABLE min_slots = {int(settings.products.min_slots_per_day)}")
     # ... and the visibility limit of dusty_day_vis5 as getvariable('vis5_max_m').
     con.execute(f"SET VARIABLE vis5_max_m = {float(settings.products.vis5_max_m)}")
+    # ... and the report types of each slot source, which three_hourly.sql calls "regular".
+    for source in ("synop", "metar"):
+        types = _sql_list(settings.sampling.sources[source])
+        con.execute(f"SET VARIABLE {source}_types = {types}::VARCHAR[]")
     try:
         # Record which silver this gold version was built from (lineage).
         lineage = {"silver_method_version": expected[0], "silver_config_hash": expected[1]}

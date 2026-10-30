@@ -5,7 +5,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 *ruling*, a choice made during implementation and open to review). The dated log of all work is
 [worklog.md](worklog.md); notebooks are kept locally (not in the public repository).
 
-> Last updated: 2026-10-29 (current method version 1.10.0). Commit hashes refer to this repository.
+> Last updated: 2026-10-30 (current method version 1.10.0). Commit hashes refer to this repository.
 
 ## Versions at a glance
 
@@ -23,7 +23,8 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | 1.8.0 | 2026-10-28 | METAR fragments (`CAVOK`), guarded METAR inference, derived SYNOPs, METAR visibility fallback | user | 39d6c88 |
 | 1.9.0 | 2026-10-29 | humidity screen only on haze-based classes; `remarks_dust_day` | user | 7acc64d |
 | (no change) | 2026-10-29 | daily product checked as a whole (notebook 07); off-grid Australian SYNOPs found | — | d51d7e6 |
-| 1.10.0 | 2026-10-29 | slot grid follows off-grid SYNOP schedules (per station-month); `AUST` a SYNOP source | user | (this commit) |
+| 1.10.0 | 2026-10-29 | slot grid follows off-grid SYNOP schedules (per station-month); `AUST` a SYNOP source | user | a5fb8ed |
+| (no change) | 2026-10-30 | new gold table `three_hourly` (all reports per 3-hour UTC bin) | user | (this commit) |
 
 ---
 
@@ -306,6 +307,25 @@ selection at every hourly station; c, leaving the years out, loses most of Austr
 memory): Woomera 1990 0 -> 362 valid days, Tennant Creek 1995 0 -> 357, Carnarvon 1960 (`AUST`)
 0 -> 366, Meekatharra 1975 0 -> 365, Sydney 1990 217 -> 366; Gimpo, El Paso, Zabol, Wadi Halfa
 unchanged. Birdsville 2010 stays invalid: it observes the weather ~2.4 times a day.
+
+## Gold `three_hourly` added (2026-10-30, no method version change)
+
+*User decision:* a second gold table with one row per station and fixed 3-hour UTC bin
+(00:00-02:59, 03:00-05:59, ...), aggregating **all** reports in the bin, SPECIs included, to follow
+the weather through dust outbreaks; the daily product stays built from silver with its slots.
+State values (wind, temperature, humidity, pressure, visibility) come from **one report**, the
+first regular SYNOP or METAR in the bin; the user considered the legacy per-column `first` (values
+could come from different reports) and chose one report. *Superseded:* the legacy 3-hourly files
+(`resample_raw_into_3hrly`, `add_dust_flags_3hrly` in `legacy/master_DCDR.py`). *Evidence* (legacy
+code read 2026-10-30): legacy dust flags came from the numerically largest MW code of all reports in
+the bin, so a rain (6x) or thunderstorm (95) code hid dust, and only manual MW codes were read; the
+new table uses each report's `dust_class_final` and `has_pw`. *Rulings:* summaries (SOD, SOM)
+excluded; a SYNOP before a METAR at the same minute; a bin without a regular report takes its
+first report of any type; missing state values are not filled from other reports; extra columns
+`dup6`, `first_dust_time_utc`, `observed_explicit`, the vicinity/past/remarks flags and LMST of
+the bin start. Why not use all reports for the daily product too: `dusty_day_any` / `dusty_day`
+reaches 3.4 at Phoenix and 1.9 at El Paso (1991-2020) and tracks reports per day (Spearman 0.79),
+while pilot reports per day doubled 1975-2020; the slot rule keeps daily counts comparable.
 
 ---
 
