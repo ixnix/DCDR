@@ -103,6 +103,9 @@ products:
   # caught equally by SYNOP and METAR; used to compare stations and years with mixed reports.
   vis5_max_m: 5000
   gold_keep_versions: 3  # old gold versions kept on disk (for rollback)
+  # yearly n_months_covered: months with at least this many valid days (a coverage count only;
+  # no row is dropped)
+  min_valid_days_month: 10
 
 stations:
   station_list: config/stations/pilot_100.csv  # default for --stations (relative to working dir)

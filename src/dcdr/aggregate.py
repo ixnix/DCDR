@@ -4,7 +4,8 @@ Where this fits
 ---------------
 Last stage: `dcdr aggregate` (or `dcdr run`). Input is every silver file (one row per report);
 output is GOLD, the analysis-ready tables: `daily` (one row per station per local day) and
-`three_hourly` (one row per station per 3-hour UTC bin), both built from silver.
+`three_hourly` (one row per station per 3-hour UTC bin), both built from silver, and the
+statistics `monthly` (from `daily`), which a product later in the list reads as a view.
 
 How gold is built
 -----------------
@@ -52,7 +53,30 @@ class Product:
     checks: dict[str, str]  # name -> SQL returning a count that must be 0
 
 
+# The dusty-day definitions counted in the statistics tables: the column suffix of each (primary,
+# SYNOP alone, METAR alone, visibility <= 5 km, explicit observations only).
+STAT_VARIANTS = ("", "_synop", "_metar", "_vis5", "_explicit")
+
+
+def _count_order_checks(table: str) -> dict[str, str]:
+    """Checks shared by the statistics tables: for each definition, dusty valid days <= valid days
+    <= observed days <= days <= calendar days, and dusty valid days <= dusty days on any day; and
+    the rate is null exactly when there is no valid day."""
+    checks = {}
+    for v in STAT_VARIANTS:
+        checks[f"count_order{v or '_primary'}"] = (
+            f"SELECT count(*) FROM {table} WHERE NOT (n_dusty_days{v} <= n_valid_days{v} "
+            f"AND n_valid_days{v} <= n_obs_days{v} AND n_obs_days{v} <= n_days "
+            f"AND n_days <= n_calendar_days AND n_dusty_days{v} <= n_dusty_days_obs{v})"
+        )
+    checks["freq_null_iff_no_valid_day"] = (
+        f"SELECT count(*) FROM {table} WHERE (dusty_freq IS NULL) <> (n_valid_days = 0)"
+    )
+    return checks
+
+
 # The registry of gold products. Adding a product = adding an entry here plus a .sql file.
+# Products run in this order, and each can read the products before it (as a view of its name).
 PRODUCTS = [
     Product(
         "daily",
@@ -142,6 +166,30 @@ PRODUCTS = [
             ),
         },
     ),
+    Product(
+        # Statistics from `daily` (docs/rules.md section 11).
+        "monthly",
+        "monthly.sql",
+        {
+            # Exactly one row per station and month.
+            "unique_station_month": (
+                "SELECT count(*) FROM (SELECT station_id, year, month FROM monthly "
+                "GROUP BY ALL HAVING count(*) > 1)"
+            ),
+            # The main counts recomputed from daily match (no day lost or counted twice).
+            "matches_daily": (
+                "SELECT count(*) FROM (SELECT station_id, year(lmst_date) AS year, "
+                "month(lmst_date) AS month, count(*) AS n_days, "
+                "count(*) FILTER (WHERE valid_day) AS n_valid_days, "
+                "count(*) FILTER (WHERE valid_day AND dusty_day) AS n_dusty_days "
+                "FROM daily GROUP BY ALL) d FULL JOIN monthly m USING (station_id, year, month) "
+                "WHERE d.n_days IS DISTINCT FROM m.n_days "
+                "OR d.n_valid_days IS DISTINCT FROM m.n_valid_days "
+                "OR d.n_dusty_days IS DISTINCT FROM m.n_dusty_days"
+            ),
+            **_count_order_checks("monthly"),
+        },
+    ),
 ]
 
 
@@ -210,6 +258,10 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     con.execute(f"SET VARIABLE min_slots = {int(settings.products.min_slots_per_day)}")
     # ... and the visibility limit of dusty_day_vis5 as getvariable('vis5_max_m').
     con.execute(f"SET VARIABLE vis5_max_m = {float(settings.products.vis5_max_m)}")
+    # ... and the coverage threshold of a month in the yearly table.
+    con.execute(
+        f"SET VARIABLE min_valid_days_month = {int(settings.products.min_valid_days_month)}"
+    )
     # ... and the report types of each slot source, which three_hourly.sql calls "regular".
     for source in ("synop", "metar"):
         types = _sql_list(settings.sampling.sources[source])

@@ -2,12 +2,12 @@
 
 The rules DCDR applies **now** to NOAA ISD station reports: how they are decoded, how DCDR decides
 what was observed, how dust is classified, how reports are sampled and aggregated into daily
-and 3-hourly records, and briefly why. Part 1 ([code_design.md](code_design.md)) covers the software;
+and 3-hourly records and monthly, yearly and decadal statistics, and briefly why. Part 1 ([code_design.md](code_design.md)) covers the software;
 [rules_history.md](rules_history.md) records how each rule came about, with the evidence, the
 superseded rules and the decisions; [worklog.md](worklog.md) is the dated log.
 
 > Describes the method **as implemented** (method version **1.10.1**). Planned steps are marked
-> *planned*. Last updated: 2026-10-30.
+> *planned*. Last updated: 2026-10-31.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`,
 local) and the WMO *Manual on Codes* (WMO-No. 306) as published in the WMO Codes Registry
@@ -560,8 +560,8 @@ Analyses of dust frequency use **valid days only** (e.g. dusty days per year =
 (`dusty_day_synop` with `valid_day_synop`, `dusty_day_vis5` with `valid_day_vis5`, ...). A day known
 only from a daily summary has no row. Rule tables for every report type: section 5.3.
 
-*Planned:* monthly and annual products, coverage, station catalog, climatology, diurnal cycle,
-trends, wind threshold Uth (source stations only), code-06 diagnostic.
+Monthly, yearly and decadal statistics: section 11. *Planned:* station catalog, climatology,
+diurnal cycle, trends, wind threshold Uth (source stations only), code-06 diagnostic.
 
 **Uth (threshold wind)** must be fitted with all observed reports in the denominator and on raised
 dust (codes 07 and up); why: [rules_history.md](rules_history.md), method 1.2.0.
@@ -610,7 +610,49 @@ Differences from the legacy 3-hourly files:
 | missing MW → no flag, otherwise 0 | null unless observed (rule V3 and METAR-implied "nothing" count as observed) | section 5 |
 | no counts | counts per bin | sampling rate |
 
-## 11. Station selection (pilot)
+## 11. Monthly, yearly and decadal statistics (gold `monthly`, `yearly`, `decadal`)
+
+Per-station statistics built from the gold `daily` table in the same run, for station selection and
+the website. They are a **record of counts with their coverage**: every count is kept and no row
+is dropped for low coverage, so any filter can be applied later (user decision 2026-10-31). A
+period has a row only if it has at least one `daily` row; periods follow the LMST day. No weather
+variables except visibility, and visibility only in `monthly` (user decisions 2026-10-31).
+
+Two questions, two kinds of count (accepted 2026-10-31):
+- *Has dust been reported?* Any day with a dusty observed slot, whatever its coverage
+  (`n_dusty_days_obs`): a dust report is verified on its own.
+- *How often?* Valid days (section 9) in numerator and denominator: `dusty_freq` =
+  `n_dusty_days / n_valid_days`, so a day with too little observation is never counted dust-free
+  ("if it cannot be verified, it is 'not observed'").
+
+### 11.1 Monthly (`monthly`)
+
+One row per station per calendar month of `lmst_date`.
+
+| Column(s) | Definition | Why |
+|---|---|---|
+| `n_calendar_days`, `n_days` | days in the calendar month; days with a `daily` row | coverage |
+| `n_obs_days{v}` | days with at least one observed slot (`n_slots_pw{v} ≥ 1`) | coverage |
+| `n_valid_days{v}` | valid days (`valid_day{v}`) | the denominator of frequencies |
+| `n_dusty_days{v}` | dusty valid days | the numerator of frequencies |
+| `n_dusty_days_obs{v}` | dusty days at any coverage | presence of dust |
+| `n_dusty_days_any` | valid days with `dusty_day_any` (any report, SPECI included) | more sensitive count |
+| `n_days_suspended`, `n_days_blowing`, `n_days_whirls`, `n_days_storm`, `n_days_dust_haze` | valid days with a slot of that class | class mix (code 06 share) |
+| `n_days_raised` | valid days with blowing, whirls or storm slots (codes 07 and up) | locally raised dust |
+| `n_days_vicinity`, `n_days_remarks`, `n_days_past_weather`, `n_days_daily_summary` | days with each evidence flag, any coverage | kept apart, as in `daily` |
+| `n_slots`, `n_slots_pw`, `n_slots_pw_synop`, `n_slots_pw_metar`, `n_slots_nil_inferred`, `n_slots_nil_metar`, `n_slots_rh_screened`, `n_dust_slots_<class>`, `n_slots_dusty` | sums of the daily slot counts | observing density and report mix |
+| `n_slots_pw_valid`, `n_slots_dusty_valid` | observed and dusty slots on valid days | slots per valid day; slot frequency of dust |
+| `dusty_freq` | `n_dusty_days / n_valid_days`; null without valid days | the one stored rate |
+| `n_days_vis`, `ext_mean` | days with `vis_hmean > 0`; mean of `1000 / vis_hmean` (km⁻¹) over them | extinction (≈ 1/visibility) averages linearly |
+| `n_days_vis_dusty`, `ext_mean_dusty` | the same over `dusty_day` days (any coverage; the whole day's visibility) | how strongly dust reduced visibility |
+| `vis_min`, `n_slots_vis_zero` | minimum visibility; slots with visibility 0 (no extinction value) | extremes |
+
+`{v}` is each dusty-day definition with its own validity (section 9): primary (no suffix),
+`_synop`, `_metar`, `_vis5`, and `_explicit` (`dusty_day` with `valid_day_explicit`, since a dust
+slot always carries an explicit code). Inhomogeneity (observing density, report mix, code-06 share)
+is detected from these counts, not corrected.
+
+## 12. Station selection (pilot)
 
 Method (`notebooks/01_duisd_v1_dusty_stations.ipynb`):
 1. Ranking data: duISD v1 (SYNOP reports only, monthly counts, 1940-2019), used **only to rank**.
@@ -637,14 +679,14 @@ Shakawe and Good Hope report no dust in 2020-2024. pilot_100 is kept as it is (u
 still count for a 1931-2025 climatology. Coverage criteria (valid days per year and decade) will
 be set for the published products, from the station catalog.
 
-## 12. Open questions
+## 13. Open questions
 
 1. NOAA's ISD files end on 2025-08-27: is ISD still updated?
 2. Coverage criteria for the published products (valid days per year and decade).
 
 Resolved questions: [rules_history.md](rules_history.md), "Resolved questions".
 
-## 13. References
+## 14. References
 
 Official code manuals and tables, with URLs and checksums of the local copies:
 [references.md](references.md).

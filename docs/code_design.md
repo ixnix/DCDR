@@ -6,7 +6,7 @@ how they came about.
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-10-30 (method version 1.10.1).
+> Last updated: 2026-10-31 (method version 1.10.1).
 
 ---
 
@@ -89,7 +89,7 @@ and `forecast` (ML).
 ## 4. Commands
 
 All commands run as `uv run dcdr <command>` from the repo (or `dcdr <command>` in an activated
-environment). Every pipeline command records a run (section 7.5).
+environment). Every pipeline command records a run (section 7.6).
 
 | Command | What it does | Main options |
 |---|---|---|
@@ -197,7 +197,7 @@ Everything goes under the data root:
 ```
 
 `year=YYYY` folders are "Hive-style" partitions: DuckDB and Polars can filter by year from the
-folder name. Parquet files carry provenance in their footer metadata (section 7.5).
+folder name. Parquet files carry provenance in their footer metadata (section 7.6).
 
 ### 7.1 Bronze
 All columns of the NOAA CSV, **as text**, unchanged, plus `source_key`, `source_md5`,
@@ -242,8 +242,8 @@ imply `dusty_day`; every `valid_day*` matches its definition; dusty days have sl
 dusty slots ≤ observed slots, and `n_slots_dusty > 0` exactly on `dusty_day` days; one row per
 station-day; day-to-day changes only between valid days.
 
-Planned gold products (spec §7.3, not built yet): `monthly`, `annual`,
-`station_year_coverage`, `stations` catalog, `climatology`, `diurnal`, `trends`, Uth, code-6 diagnostic.
+Planned gold products (not built yet): `stations` catalog, `climatology`, `diurnal`, `trends`, Uth,
+code-6 diagnostic.
 
 ### 7.4 Gold `three_hourly`
 One row per station per 3-hour UTC bin (00 = 00:00-02:59, ..., 21), for every bin with a report.
@@ -268,7 +268,22 @@ observed; `first_dust_time_utc` is set exactly when the bin is dusty.
 Adding a gold product is one entry in `aggregate.PRODUCTS` (name, SQL file, checks) plus the SQL
 file; `build_gold` runs every entry against the same silver view.
 
-### 7.5 Provenance
+### 7.5 Gold statistics: `monthly`
+Built from `daily` in the same gold run. `PRODUCTS` runs in list order and `build_gold` re-reads
+each written table as a view of its name, so `monthly.sql` reads the view `daily` (already checked).
+`monthly`: one row per station and month of `lmst_date`, key `station_id, year, month`; columns and
+definitions in Part 2, section 11. Every additive count starts with `n_` and is `BIGINT` (DuckDB
+sums `BIGINT` into `HUGEINT`, so sums are cast back); only rates and visibility values are
+`DOUBLE`.
+
+Checks run before activation (each must return 0 rows): one row per station and month; days,
+valid days and dusty days recomputed from `daily` match; for each dusty-day definition
+(`aggregate.STAT_VARIANTS`) dusty valid days ≤ valid days ≤ observed days ≤ days ≤ calendar days
+and dusty valid days ≤ dusty days at any coverage; `dusty_freq` is null exactly when there is no
+valid day. The last two come from `aggregate._count_order_checks(table)`, shared by the statistics
+tables.
+
+### 7.6 Provenance
 - Bronze metadata: `dcdr_layer, source_md5, source_key, run_id`.
 - Silver metadata: `dcdr_layer, method_version, config_hash, run_id, source_md5,
   prev_source_md5, next_year_present, next_source_md5, nil_guard` (`1` pass, `0` fail, empty = no decision).
