@@ -536,6 +536,7 @@ One row per station per local (LMST) day.
 | `n_slots`, `n_slots_pw` | slots with a SYNOP or METAR on the day; of those, slots observed by either | basis of validity |
 | `valid_day` | `n_slots_pw ≥ 4` (of 8) | a day can only be judged dusty or not if enough was observed |
 | `dusty_day` | a slot where either source reports dust, at any visibility (**primary definition**) | all dust the observers reported (5.2) |
+| `n_slots_dusty` | slots where either source reports dust (> 0 exactly on `dusty_day` days) | dust duration within the day; slot frequency in the statistics (section 11) |
 | `n_slots_pw_explicit`, `valid_day_explicit` | slots with an explicit observation (code, iX 2/5, CAVOK); `≥ 4` | validity without inferred or implied "nothing", for sensitivity checks |
 | `n_slots_nil_inferred`, `n_slots_nil_metar` | slots with "nothing significant" inferred (V3) or implied by a METAR without group | keeps them visible |
 | `n_slots_synop`, `n_slots_pw_synop`, `valid_day_synop`, `dusty_day_synop` | the same from each slot's SYNOP alone | comparable with duISD v1 and SYNOP-only stations |

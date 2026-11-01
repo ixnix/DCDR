@@ -88,6 +88,7 @@ slot_daily AS (
         count(*) FILTER (WHERE nil_inferred) AS n_slots_nil_inferred,
         count(*) FILTER (WHERE nil_metar) AS n_slots_nil_metar,
         bool_or(dusty) AS dusty_day,  -- the PRIMARY dusty-day definition: either source
+        count(*) FILTER (WHERE dusty) AS n_slots_dusty,  -- slots with dust from either source
         bool_or(dusty_synop) AS dusty_day_synop,
         bool_or(dusty_metar) AS dusty_day_metar,
         bool_or(dusty_vis5) AS dusty_day_vis5,
@@ -202,6 +203,7 @@ joined AS (
         -- Valid day: enough slots WITH a weather observation to judge whether it was dusty.
         coalesce(s.n_slots_pw, 0) >= getvariable('min_slots') AS valid_day,
         coalesce(s.dusty_day, false) AS dusty_day,
+        coalesce(s.n_slots_dusty, 0) AS n_slots_dusty,
         -- the same from explicit observations only (codes, iX, CAVOK): no inferred or implied nil
         coalesce(s.n_slots_pw_explicit, 0) AS n_slots_pw_explicit,
         coalesce(s.n_slots_pw_explicit, 0) >= getvariable('min_slots') AS valid_day_explicit,

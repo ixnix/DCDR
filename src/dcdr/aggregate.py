@@ -92,6 +92,11 @@ PRODUCTS = [
             ),
             # A dusty day needs at least one slot.
             "dusty_needs_slots": "SELECT count(*) FROM daily WHERE dusty_day AND n_slots = 0",
+            # Dusty slots are observed slots, and a day has some exactly when it is dusty.
+            "slots_dusty_le_pw": "SELECT count(*) FROM daily WHERE n_slots_dusty > n_slots_pw",
+            "slots_dusty_iff_dusty": (
+                "SELECT count(*) FROM daily WHERE (n_slots_dusty > 0) <> dusty_day"
+            ),
             # Exactly one row per station and day.
             "unique_station_day": (
                 "SELECT count(*) FROM (SELECT station_id, lmst_date FROM daily "

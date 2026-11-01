@@ -431,3 +431,13 @@ def test_visibility_comes_from_the_metar_when_the_synop_has_none(settings: Setti
     ]
     d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
     assert (d["vis_min"], d["n_vis_from_metar"]) == (5000.0, 1)
+
+
+def test_daily_counts_dusty_slots(settings: Settings) -> None:
+    mw = {3: "06,1", 6: "06,1", 9: "07,1"}
+    rows = [
+        isd_row(f"2024-01-01T{h:02d}:00:00", **LON0, MW1=mw.get(h, "02,1")) for h in range(0, 24, 3)
+    ]
+    rows += _slots("2024-01-02", MW1="02,1")
+    d = _daily(settings, [_silver(settings, rows)]).sort("lmst_date")
+    assert d["n_slots_dusty"].to_list() == [3, 0]

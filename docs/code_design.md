@@ -222,7 +222,7 @@ allowed values, unique `row_key`, at most one primary report and one report per 
 
 ### 7.3 Gold `daily`
 One row per station per local (LMST) day. Columns (definitions in Part 2, section 9):
-`n_reports, n_slots, n_slots_pw, valid_day, dusty_day, n_slots_pw_explicit, valid_day_explicit,
+`n_reports, n_slots, n_slots_pw, valid_day, dusty_day, n_slots_dusty, n_slots_pw_explicit, valid_day_explicit,
 n_slots_nil_inferred, n_slots_nil_metar, n_slots_synop, n_slots_pw_synop, valid_day_synop,
 dusty_day_synop, n_slots_metar, n_slots_pw_metar, valid_day_metar, dusty_day_metar,
 n_slots_pw_vis5, valid_day_vis5, dusty_day_vis5, dusty_day_any, past_weather_dust,
@@ -238,7 +238,8 @@ sections 5.2, 5.3 and 9.
 Checks run before activation (each must return 0 rows): at most 8 slots per day; observed slots ≤
 slots; explicit, per-source, inferred, implied and vis5-judgeable slots ≤ observed slots; per-source
 slots ≤ slots; `dusty_day` = `dusty_day_synop` OR `dusty_day_metar`; the narrower dusty-day flags
-imply `dusty_day`; every `valid_day*` matches its definition; dusty days have slots; one row per
+imply `dusty_day`; every `valid_day*` matches its definition; dusty days have slots;
+dusty slots ≤ observed slots, and `n_slots_dusty > 0` exactly on `dusty_day` days; one row per
 station-day; day-to-day changes only between valid days.
 
 Planned gold products (spec §7.3, not built yet): `monthly`, `annual`,
