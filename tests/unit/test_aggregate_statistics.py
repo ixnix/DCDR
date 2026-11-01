@@ -130,11 +130,56 @@ def test_visibility_only_in_monthly(settings: Settings) -> None:
     assert vis & set(t["yearly"].columns) == set()
 
 
+# --- decadal ---------------------------------------------------------------------------------
+
+
+def _period(d: pl.DataFrame, decade: int, period: str) -> dict:
+    return d.filter((pl.col("decade") == decade) & (pl.col("period") == period)).row(0, named=True)
+
+
+def test_decadal_periods_decades_and_calendar(settings: Settings) -> None:
+    paths = [
+        _silver(settings, _day("1991-01-05", {3: "06,1"}), 1991),
+        _silver(settings, _day("2000-12-15", {3: "07,1"}), 2000),
+        _silver(
+            settings,
+            _day("2001-01-10") + _day("2001-01-11", {0: "07,1"}, hours=range(0, 6, 3)),
+            2001,
+        ),
+    ]
+    d = _tables(settings, paths)["decadal"]
+    # 1991-2000 has data only in January and December: no rows for the other months and seasons
+    assert sorted(d.filter(pl.col("decade") == 1991)["period"]) == ["01", "12", "DJF", "annual"]
+    djf = _period(d, 1991, "DJF")  # pools December 2000 with January 1991
+    got = (djf["n_valid_days"], djf["n_dusty_days"], djf["n_years_valid"], djf["n_dust_years"])
+    assert got == (2, 2, 2, 2)
+    # full calendar lengths: DJF over 10 years with 3 leap Februaries; 10 Decembers; the decade
+    cal = [_period(d, 1991, p)["n_calendar_days"] for p in ("DJF", "12", "annual")]
+    assert cal == [903, 310, 3653]
+    a01 = _period(d, 2001, "annual")
+    assert (a01["n_calendar_days"], a01["n_dust_years"], a01["n_dust_years_obs"]) == (3652, 0, 1)
+    assert djf["dusty_days_mean"] == pytest.approx(90.3) and a01["dusty_days_mean"] == 0.0
+
+
+def test_decadal_means_scale_the_frequency_to_the_period(settings: Settings) -> None:
+    rows = (
+        _day("2024-03-01", {3: "06,1"})
+        + _day("2024-03-02")
+        + _day("2024-04-01", hours=range(0, 6, 3))  # not valid: April has no frequency
+    )
+    d = _tables(settings, [_silver(settings, rows, 2024)])["decadal"]
+    mean = dict(d.select("period", "dusty_days_mean").rows())
+    assert mean["03"] == pytest.approx(0.5 * 31) and mean["MAM"] == pytest.approx(0.5 * 92)
+    assert mean["annual"] == pytest.approx(0.5 * 365.2) and mean["04"] is None
+    assert "ext_mean" not in d.columns
+
+
 # --- all statistics tables -------------------------------------------------------------------
 
 
 def test_statistics_counts_are_int64(settings: Settings) -> None:
     t = _tables(settings, [_silver(settings, _day("2024-01-01"), 2024)])
+    assert set(t) == set(STATISTICS)
     for name, df in t.items():
         bad = [c for c, dt in df.schema.items() if c.startswith("n_") and dt != pl.Int64]
         assert bad == [], name

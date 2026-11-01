@@ -5,8 +5,8 @@ Where this fits
 Last stage: `dcdr aggregate` (or `dcdr run`). Input is every silver file (one row per report);
 output is GOLD, the analysis-ready tables: `daily` (one row per station per local day) and
 `three_hourly` (one row per station per 3-hour UTC bin), both built from silver, and the
-statistics `monthly` (from `daily`) and `yearly` (from `monthly`): a product reads the products
-before it in the list as views.
+statistics `monthly` (from `daily`), `yearly` and `decadal` (from `monthly`): a product reads the
+products before it in the list as views.
 
 How gold is built
 -----------------
@@ -74,6 +74,23 @@ def _count_order_checks(table: str) -> dict[str, str]:
         f"SELECT count(*) FROM {table} WHERE (dusty_freq IS NULL) <> (n_valid_days = 0)"
     )
     return checks
+
+
+# The main counts compared when one statistics table must add up to another.
+_SUM_CHECK_COLS = ("n_days", "n_valid_days", "n_dusty_days", "n_dusty_days_obs")
+
+
+def _decadal_parts_check(periods: list[str]) -> str:
+    """A check that the given decadal periods (the 12 months, or the 4 seasons) add up to the
+    `annual` row of each station and decade."""
+    sums = ", ".join(f"sum({c}) AS {c}" for c in _SUM_CHECK_COLS)
+    differ = " OR ".join(f"p.{c} IS DISTINCT FROM a.{c}" for c in _SUM_CHECK_COLS)
+    return (
+        f"SELECT count(*) FROM (SELECT station_id, decade, {sums} FROM decadal "
+        f"WHERE period IN {tuple(periods)} GROUP BY ALL) p "
+        "FULL JOIN (SELECT * FROM decadal WHERE period = 'annual') a USING (station_id, decade) "
+        f"WHERE {differ}"
+    )
 
 
 # The registry of gold products. Adding a product = adding an entry here plus a .sql file.
@@ -220,6 +237,48 @@ PRODUCTS = [
                 "AND n_months_valid <= n_months_obs AND n_months_obs <= 12)"
             ),
             **_count_order_checks("yearly"),
+        },
+    ),
+    Product(
+        "decadal",
+        "decadal.sql",
+        {
+            # Exactly one row per station, decade and period.
+            "unique_station_decade_period": (
+                "SELECT count(*) FROM (SELECT station_id, decade, period FROM decadal "
+                "GROUP BY ALL HAVING count(*) > 1)"
+            ),
+            # Decades start in a year ending in 1; periods are the year, a season or a month.
+            "decade_aligned": "SELECT count(*) FROM decadal WHERE decade % 10 <> 1",
+            "period_known": (
+                "SELECT count(*) FROM decadal WHERE period NOT IN ('annual', 'DJF', 'MAM', "
+                "'JJA', 'SON', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', "
+                "'11', '12')"
+            ),
+            # The annual rows equal the yearly counts summed over the decade ...
+            "annual_matches_yearly": (
+                "SELECT count(*) FROM (SELECT station_id, year - (year - 1) % 10 AS decade, "
+                + ", ".join(f"sum({c}) AS {c}" for c in _SUM_CHECK_COLS)
+                + " FROM yearly GROUP BY ALL) y "
+                "FULL JOIN (SELECT * FROM decadal WHERE period = 'annual') a "
+                "USING (station_id, decade) WHERE "
+                + " OR ".join(f"y.{c} IS DISTINCT FROM a.{c}" for c in _SUM_CHECK_COLS)
+            ),
+            # ... and so do the 12 months and the 4 seasons.
+            "months_sum_to_annual": _decadal_parts_check([f"{m:02d}" for m in range(1, 13)]),
+            "seasons_sum_to_annual": _decadal_parts_check(["DJF", "MAM", "JJA", "SON"]),
+            # Years with dust are valid years, valid years are observed years, at most 10.
+            "years_le_10": (
+                "SELECT count(*) FROM decadal WHERE NOT (n_dust_years <= n_years_valid "
+                "AND n_years_valid <= n_years_obs AND n_years_obs <= 10 "
+                "AND n_dust_years <= n_dust_years_obs)"
+            ),
+            # The mean exists exactly when the frequency does.
+            "mean_null_iff_freq_null": (
+                "SELECT count(*) FROM decadal "
+                "WHERE (dusty_days_mean IS NULL) <> (dusty_freq IS NULL)"
+            ),
+            **_count_order_checks("decadal"),
         },
     ),
 ]

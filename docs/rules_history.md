@@ -5,7 +5,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 *ruling*, a choice made during implementation and open to review). The dated log of all work is
 [worklog.md](worklog.md); notebooks are kept locally (not in the public repository).
 
-> Last updated: 2026-10-30 (current method version 1.10.1). Commit hashes refer to this repository.
+> Last updated: 2026-10-31 (current method version 1.10.1). Commit hashes refer to this repository.
 
 ## Versions at a glance
 
@@ -25,7 +25,8 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | (no change) | 2026-10-29 | daily product checked as a whole (notebook 07); off-grid Australian SYNOPs found | — | d51d7e6 |
 | 1.10.0 | 2026-10-29 | slot grid follows off-grid SYNOP schedules (per station-month); `AUST` a SYNOP source | user | a5fb8ed |
 | (no change) | 2026-10-30 | new gold table `three_hourly` (all reports per 3-hour UTC bin) | user | 21510c3, d5228e8 |
-| 1.10.1 | 2026-10-30 | fix: slot grid chosen per local (LMST) month; year files read the neighbouring December/January | user (option A) | (this commit) |
+| 1.10.1 | 2026-10-30 | fix: slot grid chosen per local (LMST) month; year files read the neighbouring December/January | user (option A) | 715cb41 |
+| (no change) | 2026-10-31 | new gold tables `monthly`, `yearly`, `decadal` (statistics); daily `n_slots_dusty` | user + rulings | 0002138, c02f436, 7cdc26c, (this commit) |
 
 ---
 
@@ -350,6 +351,25 @@ derived SYNOPs ignored for detection (they are on-grid US copies of METARs, so n
 way). *Check on real bronze* (in memory): Sydney 1995-2025 and Tennant Creek 2018-2025 have at
 most 8 slots per local day and no day with two grids; El Paso 2010 selects exactly the same 5,819
 reports as under 1.10.0.
+
+## Gold statistics added (2026-10-31, no method version change)
+
+*Why:* station selection ("build the decadal statistics first and then use the statistics for
+station selection", user, 2026-10-30) and the website map and time series. *User decisions*
+(2026-10-31): the valid day stays at least 4 of 8 observed slots (a day with any observation was
+considered and rejected); every count is reported, so filters can be applied later; no weather
+variables except visibility, and visibility only in `monthly`; `decadal` gives decadal, month-wise
+and season-wise means. *Accepted proposals:* presence of dust from any day with a dusty observed
+slot (`n_dusty_days_obs`), frequency from valid days only (`dusty_freq`); inhomogeneity (observing
+density, SYNOP/METAR mix, code-06 share) detected from stored counts, not corrected.
+*Superseded:* legacy `reample_daily_into_monthly` (`legacy/master_DCDR.py`), which summed daily
+flags with no coverage counts, and duISD v1's report-based monthly frequencies (% of reports),
+which rise and fall with the number of reports. *Rulings:* full calendar lengths, also for partial
+decades; DJF pooled within the decade; decades fixed to start in a year ending in 1;
+`ext_mean_dusty` over dusty days at any coverage with the whole day's visibility; `n_slots_dusty`
+for the primary definition only; `products.min_valid_days_month` = 10 for `n_months_covered`;
+`dusty_days_mean` frequency-scaled (`dusty_freq × n_calendar_days / 10`), so gaps are not counted
+as dust-free.
 
 ---
 

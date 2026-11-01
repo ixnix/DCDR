@@ -268,10 +268,10 @@ observed; `first_dust_time_utc` is set exactly when the bin is dusty.
 Adding a gold product is one entry in `aggregate.PRODUCTS` (name, SQL file, checks) plus the SQL
 file; `build_gold` runs every entry against the same silver view.
 
-### 7.5 Gold statistics: `monthly`, `yearly`
+### 7.5 Gold statistics: `monthly`, `yearly`, `decadal`
 Built from `daily` in the same gold run. `PRODUCTS` runs in list order and `build_gold` re-reads
 each written table as a view of its name, so `monthly.sql` reads the view `daily` (already checked)
-and `yearly.sql` reads `monthly`.
+and `yearly.sql` and `decadal.sql` read `monthly`.
 `monthly`: one row per station and month of `lmst_date`, key `station_id, year, month`; columns and
 definitions in Part 2, section 11. Every additive count starts with `n_` and is `BIGINT` (DuckDB
 sums `BIGINT` into `HUGEINT`, so sums are cast back); only rates and visibility values are
@@ -279,7 +279,11 @@ sums `BIGINT` into `HUGEINT`, so sums are cast back); only rates and visibility 
 expression, `CAST(sum(COLUMNS(c -> starts_with(c, 'n_') AND c NOT IN (...))) AS BIGINT)`, which
 keeps each column's name; the excluded columns are `n_calendar_days` (recomputed) and the visibility
 counts (visibility is reported in `monthly` only). So a new monthly count reaches `yearly` without
-editing `yearly.sql`, as long as it follows the `n_` contract. The coverage threshold
+editing `yearly.sql`, as long as it follows the `n_` contract. `decadal` (key `station_id,
+decade, period`) maps each month to its three periods (`annual`, its season, itself) with a small
+`periods` table built in SQL, joins it to `monthly`, and sums the same way per station, decade and
+period; a `calendar` CTE gives each period's days over the decade's 10 years, and
+`dusty_days_mean` = `dusty_freq * n_calendar_days / 10`. The coverage threshold
 `products.min_valid_days_month` reaches the SQL as the variable `min_valid_days_month`.
 
 Checks run before activation (each must return 0 rows): one row per station and month; days,
@@ -288,7 +292,12 @@ valid days and dusty days recomputed from `daily` match; for each dusty-day defi
 and dusty valid days ≤ dusty days at any coverage; `dusty_freq` is null exactly when there is no
 valid day. The last two come from `aggregate._count_order_checks(table)`, shared by the statistics
 tables. `yearly` adds: one row per station and year; days, observed, valid and dusty days and
-observed slots equal the sums over `monthly`; covered ≤ valid ≤ observed months ≤ 12.
+observed slots equal the sums over `monthly`; covered ≤ valid ≤ observed months ≤ 12. `decadal`
+adds: one row per station, decade and period; decades start in a year ending in 1; periods are
+known names; days, valid days, dusty days and dusty days at any coverage of the `annual` rows equal
+the `yearly` sums over the decade, and the 12 months and the 4 seasons each add up to `annual`;
+dust years ≤ valid years ≤ observed years ≤ 10 and dust years ≤ dust years at any coverage;
+`dusty_days_mean` is null exactly when `dusty_freq` is.
 
 ### 7.6 Provenance
 - Bronze metadata: `dcdr_layer, source_md5, source_key, run_id`.

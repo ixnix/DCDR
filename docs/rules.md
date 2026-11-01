@@ -667,6 +667,34 @@ coverage across the months:
 The threshold only sets a count; no row is dropped. Seasonally balanced annual rates can be
 computed from `monthly`.
 
+### 11.3 Decadal (`decadal`)
+
+One row per station, decade and `period`. Decades start in a year ending in 1 (1931-1940, ...,
+1991-2000, 2001-2010, 2011-2020, 2021-2030), like the WMO normal periods and legacy
+`compute_decadal_uth`. Periods (user decision 2026-10-31: decadal, month-wise and season-wise
+means):
+
+| `period` | Months pooled over the decade's years |
+|---|---|
+| `annual` | all |
+| `01` ... `12` | that month (e.g. every March of 1991-2000) |
+| `DJF`, `MAM`, `JJA`, `SON` | the season's months; DJF pools December, January and February of the decade's years (December 2000 is in 1991-2000), not winters spanning two years |
+
+Columns: every `n_` count of `monthly` summed over the period's months (no visibility);
+`n_calendar_days` = the full calendar length of those months over the 10 years, also for the
+partial decade 2021-2030 (e.g. DJF 1991-2000 = 903 days); `dusty_freq` from the summed counts; and:
+
+| Column | Definition | Why |
+|---|---|---|
+| `dusty_days_mean` | `dusty_freq × n_calendar_days / 10`: mean dusty days per year in the period; null without valid days | the decadal, month-wise or season-wise mean |
+| `n_years_obs`, `n_years_valid` | years of the decade with an observed / a valid day in the period | coverage across years |
+| `n_dust_years`, `n_dust_years_obs` | years with a dusty valid day / a dusty day at any coverage in the period | how regular dust is |
+
+`dusty_days_mean` is frequency-scaled (*ruling*): with every day valid it equals the decade's dusty
+days / 10; with gaps, and in the partial decade 2021-2030, missing days are not counted as
+dust-free. So the `annual` mean need not equal the sum of the month-wise means when coverage
+differs between months; the counts are exact and add up (months and seasons sum to `annual`).
+
 ## 12. Station selection (pilot)
 
 Method (`notebooks/01_duisd_v1_dusty_stations.ipynb`):

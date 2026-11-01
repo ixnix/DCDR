@@ -7,8 +7,15 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] **Rebuild pilot_100 for method 1.10.1** (user), then re-run notebook 07 (Australia) and
-      look at the first `three_hourly` table (e.g. one outbreak at Phoenix and one at Niamey).
+- [ ] **Rebuild gold for the statistics** (user; silver unchanged):
+      `uv run dcdr aggregate --years 1931-2025 --stations config/stations/pilot_100.csv`, then a
+      first look at `monthly`, `yearly` and `decadal` (coverage, dusty-station candidates).
+- [ ] Re-run notebook 07 (Australia) and look at the first `three_hourly` table (e.g. one outbreak
+      at Phoenix and one at Niamey).
+- [ ] Station catalog with aridity index and the dust-source flag (criteria from the statistics,
+      window 1991-2020), then wind histograms and Uth for source stations (decisions 2026-10-31).
+- [ ] Papunya is dusty on 43 % of its valid days in the 1.10.1 gold (1,489 of 3,449; other
+      Australian stations 8-11 %): real (central desert) or a station habit?
 - [ ] Daily slots: a ±90 min fallback window instead of the 1.10.0 grid shift? Not needed while
       the shift works; revisit only if notebook 07 shows off-hour reports the shift misses.
 - [ ] Check Niamey (Diori Hamani) before ~1975 (almost no dust, then >= 150 days a year) and the
@@ -20,11 +27,45 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
       station catalog.
 - [ ] Investigate stations with no dust in 2020-2024 despite high duISD ranks (Ashchysai, Shakawe,
       Good Hope): change of observing practice or real decline?
-- [ ] Plan 2: monthly/climatology gold products, station catalog, coverage, Uth, code-06 diagnostic.
+- [ ] Later gold products: climatology, diurnal cycle, trends, code-06 diagnostic.
 - [ ] Publish documentation (e.g. MkDocs) when stable.
 - [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
 
 ---
+
+## 2026-10-31
+
+- **1.10.1 rebuild checked** (user ran it 2026-10-30; gold 20261030T221323Z-eb6488, all checks
+  pass): the per-local-month grid gave the Australian off-grid SYNOP stations their valid days
+  (e.g. Papunya 0 → 3,449, Rabbit Flat 53 → 6,367); `three_hourly` has 12.2 million bins.
+  Website: design can start; build after the statistics.
+- **Gold statistics `monthly`, `yearly`, `decadal`** (commits 0002138, c02f436, 7cdc26c, this
+  commit; tests first, 12 new tests). *User decisions:* valid day unchanged (≥ 4 of 8 observed
+  slots); report every count, filter later; visibility only in `monthly`, no other weather
+  variables; `decadal` with decadal, month-wise and season-wise means. *Accepted proposals:*
+  presence from any day, frequency from valid days; inhomogeneity detected from stored counts
+  (slots, report mix, class shares), not corrected. *Rulings:* full calendar lengths; DJF pooled
+  within the decade; decades fixed (years ending in 1); `ext_mean_dusty` over dusty days at any
+  coverage; `n_slots_dusty` primary only; `min_valid_days_month` = 10; `dusty_days_mean` =
+  `dusty_freq × n_calendar_days / 10` (frequency-scaled, so gaps are not counted dust-free). No
+  `METHOD_VERSION` change (silver unchanged). Details: rules.md §11, code_design.md §7.5,
+  rules_history.md.
+- **Uth and dust-source stations** (user decisions, future work): Uth computed record by record
+  as in legacy `calculate_uth`, over 3- or 5-year centred windows, only at dust-source stations.
+  Source = aridity index < 0.5 (hyper-arid, arid, semi-arid), decadal mean dusty days > 14 a year,
+  enough coverage (e.g. ≥ 5 years with valid days) and raised-dust evidence (accepted proposals);
+  thresholds set from the statistics over 1991-2020 (30 years, configurable). A station that is a
+  source over that window is a source for all years; changes show in the Uth trend. Wind
+  histograms (station × year × month × 1 m/s bin) for all stations; a `uth` table only for
+  sources, with fit-quality checks per window. Order: statistics → catalog with aridity and source
+  flag → Uth.
+- **Incident (Claude's error):** a scratch check of the decadal sum checks ran outside pytest with
+  the user's `DCDR_DATA` set, which overrides `load_settings` overrides. It wrote a fake silver file
+  (`silver/year=2024/S.parquet`) and a fake gold version to the SSD and moved `gold/CURRENT`;
+  pruning (keep 3) then deleted the oldest kept gold version, 20261020T192837Z-ab3f05 (built
+  2026-10-20 from that day's silver). Restored `CURRENT` to 20261030T221323Z-eb6488 and moved the
+  fake files off the SSD; the pruned version is lost (rebuildable only from bronze with the code
+  of that date). Rule now: scratch builds run with `env -u DCDR_DATA`.
 
 ## 2026-10-30
 
