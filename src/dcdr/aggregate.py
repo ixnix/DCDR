@@ -5,7 +5,8 @@ Where this fits
 Last stage: `dcdr aggregate` (or `dcdr run`). Input is every silver file (one row per report);
 output is GOLD, the analysis-ready tables: `daily` (one row per station per local day) and
 `three_hourly` (one row per station per 3-hour UTC bin), both built from silver, and the
-statistics `monthly` (from `daily`), which a product later in the list reads as a view.
+statistics `monthly` (from `daily`) and `yearly` (from `monthly`): a product reads the products
+before it in the list as views.
 
 How gold is built
 -----------------
@@ -188,6 +189,37 @@ PRODUCTS = [
                 "OR d.n_dusty_days IS DISTINCT FROM m.n_dusty_days"
             ),
             **_count_order_checks("monthly"),
+        },
+    ),
+    Product(
+        "yearly",
+        "yearly.sql",
+        {
+            # Exactly one row per station and year.
+            "unique_station_year": (
+                "SELECT count(*) FROM (SELECT station_id, year FROM yearly "
+                "GROUP BY ALL HAVING count(*) > 1)"
+            ),
+            # The main counts equal the sums of the monthly counts.
+            "matches_monthly": (
+                "SELECT count(*) FROM (SELECT station_id, year, sum(n_days) AS n_days, "
+                "sum(n_obs_days) AS n_obs_days, sum(n_valid_days) AS n_valid_days, "
+                "sum(n_dusty_days) AS n_dusty_days, sum(n_dusty_days_obs) AS n_dusty_days_obs, "
+                "sum(n_slots_pw) AS n_slots_pw FROM monthly GROUP BY ALL) m "
+                "FULL JOIN yearly y USING (station_id, year) "
+                "WHERE m.n_days IS DISTINCT FROM y.n_days "
+                "OR m.n_obs_days IS DISTINCT FROM y.n_obs_days "
+                "OR m.n_valid_days IS DISTINCT FROM y.n_valid_days "
+                "OR m.n_dusty_days IS DISTINCT FROM y.n_dusty_days "
+                "OR m.n_dusty_days_obs IS DISTINCT FROM y.n_dusty_days_obs "
+                "OR m.n_slots_pw IS DISTINCT FROM y.n_slots_pw"
+            ),
+            # Covered months are valid months, valid months are observed months, at most 12.
+            "months_le_12": (
+                "SELECT count(*) FROM yearly WHERE NOT (n_months_covered <= n_months_valid "
+                "AND n_months_valid <= n_months_obs AND n_months_obs <= 12)"
+            ),
+            **_count_order_checks("yearly"),
         },
     ),
 ]

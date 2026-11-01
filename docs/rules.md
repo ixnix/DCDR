@@ -652,6 +652,21 @@ One row per station per calendar month of `lmst_date`.
 slot always carries an explicit code). Inhomogeneity (observing density, report mix, code-06 share)
 is detected from these counts, not corrected.
 
+### 11.2 Yearly (`yearly`)
+
+One row per station per calendar year of `lmst_date`: every `n_` count of `monthly` summed (no
+visibility), `n_calendar_days` = 365 or 366, `dusty_freq` recomputed from the summed counts, and
+coverage across the months:
+
+| Column | Counts months with | Why |
+|---|---|---|
+| `n_months_obs` | an observed day (`n_obs_days > 0`) | coverage |
+| `n_months_valid` | a valid day | coverage |
+| `n_months_covered` | at least `products.min_valid_days_month` (10) valid days | seasonal coverage: a year with few covered months can miss the dust season |
+
+The threshold only sets a count; no row is dropped. Seasonally balanced annual rates can be
+computed from `monthly`.
+
 ## 12. Station selection (pilot)
 
 Method (`notebooks/01_duisd_v1_dusty_stations.ipynb`):

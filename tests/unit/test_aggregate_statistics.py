@@ -12,7 +12,7 @@ import polars as pl
 import pytest
 
 from dcdr.aggregate import build_gold
-from dcdr.config import Settings, silver_config_hash
+from dcdr.config import Settings, load_settings, silver_config_hash
 from dcdr.process.build import build_station_year, write_silver
 from tests.fixtures.isd import bronze_frame, isd_row
 
@@ -88,6 +88,49 @@ def test_monthly_follows_the_local_month(settings: Settings) -> None:
     rows = [isd_row("2024-02-01T06:00:00", LONGITUDE="-115.16343", MW1="02,1")]
     m = _tables(settings, [_silver(settings, rows, 2024)])["monthly"]
     assert m.select("year", "month").rows() == [(2024, 1)]
+
+
+def test_february_leap_year_calendar_days(settings: Settings) -> None:
+    m = _tables(settings, [_silver(settings, _day("2024-02-10"), 2024)])["monthly"]
+    assert m["n_calendar_days"].item() == 29
+
+
+# --- yearly ----------------------------------------------------------------------------------
+
+
+def _days(month: int, n: int, **kw: str) -> list[dict]:
+    """Days 1..n of `month` in 2024, each fully observed and clear."""
+    return [r for d in range(1, n + 1) for r in _day(f"2024-{month:02d}-{d:02d}", **kw)]
+
+
+def test_yearly_sums_months_and_counts_covered_months(settings: Settings) -> None:
+    rows = _days(1, 10) + _days(2, 2)
+    y = _tables(settings, [_silver(settings, rows, 2024)])["yearly"].row(0, named=True)
+    assert (y["year"], y["n_calendar_days"], y["n_valid_days"]) == (2024, 366, 12)
+    assert (y["n_months_obs"], y["n_months_valid"], y["n_months_covered"]) == (2, 2, 1)
+    assert (y["n_valid_days_vis5"], y["n_obs_days_vis5"]) == (12, 12)
+
+
+def test_yearly_covered_months_threshold_from_config(settings: Settings) -> None:
+    s = load_settings(
+        overrides={
+            "paths": {"data_root": str(settings.data_root)},
+            "products": {"min_valid_days_month": 2},
+        }
+    )
+    rows = _days(1, 10) + _days(2, 2)
+    assert _tables(s, [_silver(s, rows, 2024)])["yearly"]["n_months_covered"].item() == 2
+
+
+def test_visibility_only_in_monthly(settings: Settings) -> None:
+    t = _tables(settings, [_silver(settings, _day("2024-01-01", VIS="010000,1,N,1"), 2024)])
+    vis = {"n_days_vis", "ext_mean", "n_days_vis_dusty", "ext_mean_dusty", "vis_min"}
+    vis.add("n_slots_vis_zero")
+    assert vis <= set(t["monthly"].columns)
+    assert vis & set(t["yearly"].columns) == set()
+
+
+# --- all statistics tables -------------------------------------------------------------------
 
 
 def test_statistics_counts_are_int64(settings: Settings) -> None:
