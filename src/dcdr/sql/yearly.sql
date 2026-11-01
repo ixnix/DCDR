@@ -26,3 +26,4 @@ SELECT
     count(*) FILTER (WHERE n_valid_days >= getvariable('min_valid_days_month')) AS n_months_covered
 FROM monthly
 GROUP BY station_id, year
+ORDER BY station_id, year  -- reproducible files

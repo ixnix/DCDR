@@ -50,6 +50,15 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   `dusty_freq × n_calendar_days / 10` (frequency-scaled, so gaps are not counted dust-free). No
   `METHOD_VERSION` change (silver unchanged). Details: rules.md §11, code_design.md §7.5,
   rules_history.md.
+- **Review of the statistics** (fresh reviewer, whole branch): no critical findings; on the real
+  pilot `daily` (1.92M rows, 100 stations; read in memory, nothing written) monthly 65,611 rows,
+  yearly 5,675, decadal 12,288, built in under 0.5 s with every check at 0. Fixed (test first): the
+  three tables had no `ORDER BY`, so identical runs wrote rows in different orders (not
+  reproducible); now sorted by their keys. *Deferred minors:* no lower bound (`ge=1`) on
+  `min_slots_per_day` and `min_valid_days_month` (0 fails the build with a check error); no
+  two-station decadal test of the calendar join; worklog entries came only with the last commit;
+  the `n_` summing contract is enforced by comments, not a column-set test; the annual
+  `dusty_days_mean` can reach 365.3 (one sentence for website readers).
 - **Uth and dust-source stations** (user decisions, future work): Uth computed record by record
   as in legacy `calculate_uth`, over 3- or 5-year centred windows, only at dust-source stations.
   Source = aridity index < 0.5 (hyper-arid, arid, semi-arid), decadal mean dusty days > 14 a year,

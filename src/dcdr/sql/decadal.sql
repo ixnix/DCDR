@@ -80,3 +80,4 @@ SELECT
     a.dusty_freq * c.n_calendar_days / 10 AS dusty_days_mean
 FROM agg a
 JOIN calendar c USING (decade, period)
+ORDER BY a.station_id, a.decade, a.period  -- reproducible files

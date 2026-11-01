@@ -97,3 +97,5 @@ SELECT
     CAST(coalesce(sum(n_vis_zero), 0) AS BIGINT) AS n_slots_vis_zero
 FROM d
 GROUP BY station_id, year, month
+-- sorted, so the same input gives the same file (as daily.sql and three_hourly.sql)
+ORDER BY station_id, year, month

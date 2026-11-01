@@ -283,7 +283,8 @@ editing `yearly.sql`, as long as it follows the `n_` contract. `decadal` (key `s
 decade, period`) maps each month to its three periods (`annual`, its season, itself) with a small
 `periods` table built in SQL, joins it to `monthly`, and sums the same way per station, decade and
 period; a `calendar` CTE gives each period's days over the decade's 10 years, and
-`dusty_days_mean` = `dusty_freq * n_calendar_days / 10`. The coverage threshold
+`dusty_days_mean` = `dusty_freq * n_calendar_days / 10`. All three tables are written sorted by
+their key (as `daily` and `three_hourly`), so the same input gives the same file. The coverage threshold
 `products.min_valid_days_month` reaches the SQL as the variable `min_valid_days_month`.
 
 Checks run before activation (each must return 0 rows): one row per station and month; days,

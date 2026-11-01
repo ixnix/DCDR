@@ -20,9 +20,9 @@ LON0 = {"LONGITUDE": "0.0"}  # LMST == UTC keeps expectations readable
 STATISTICS = ("monthly", "yearly", "decadal")
 
 
-def _silver(settings: Settings, rows: list[dict], year: int) -> Path:
+def _silver(settings: Settings, rows: list[dict], year: int, name: str = "S") -> Path:
     df = build_station_year(bronze_frame(rows), None, year, settings)
-    path = settings.data_root / "silver" / f"year={year}" / "S.parquet"
+    path = settings.data_root / "silver" / f"year={year}" / f"{name}.parquet"
     cfg_hash = silver_config_hash(settings)
     write_silver(df, path, run_id="r", config_hash=cfg_hash, source_md5="m", prev_source_md5="")
     return path
@@ -175,6 +175,25 @@ def test_decadal_means_scale_the_frequency_to_the_period(settings: Settings) -> 
 
 
 # --- all statistics tables -------------------------------------------------------------------
+
+
+def test_statistics_rows_are_sorted_by_key(settings: Settings) -> None:
+    # Reproducible files: the same input gives the same row order (and the same Parquet bytes).
+    paths = []
+    for station in ("40582099999", "10010099999"):
+        for year in (2000, 2001, 2024):
+            rows = [
+                r for m in (1, 4, 7, 10, 12) for r in _day(f"{year}-{m:02d}-05", STATION=station)
+            ]
+            paths.append(_silver(settings, rows, year, name=station))
+    t = _tables(settings, paths)
+    keys = {
+        "monthly": ["station_id", "year", "month"],
+        "yearly": ["station_id", "year"],
+        "decadal": ["station_id", "decade", "period"],
+    }
+    for name, key in keys.items():
+        assert t[name].select(key).rows() == t[name].select(key).sort(key).rows(), name
 
 
 def test_statistics_counts_are_int64(settings: Settings) -> None:
