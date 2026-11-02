@@ -7,7 +7,7 @@ and 3-hourly records and monthly, yearly and decadal statistics, and briefly why
 superseded rules and the decisions; [worklog.md](worklog.md) is the dated log.
 
 > Describes the method **as implemented** (method version **1.10.1**). Planned steps are marked
-> *planned*. Last updated: 2026-10-31.
+> *planned*. Last updated: 2026-11-02.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`,
 local) and the WMO *Manual on Codes* (WMO-No. 306) as published in the WMO Codes Registry
@@ -625,6 +625,11 @@ Two questions, two kinds of count (accepted 2026-10-31):
   `n_dusty_days / n_valid_days`, so a day with too little observation is never counted dust-free
   ("if it cannot be verified, it is 'not observed'").
 
+The counts are the primary record. Three rates are stored beside them, each a ratio of counts in
+the same row: `dusty_freq`, its lower bound `dusty_freq_obs`, and `validity_ratio`, which shows
+whether `dusty_freq` can be read at all (section 11.4). No row is flagged or filtered: users choose
+their own filters from the counts and rates (user decision 2026-11-02).
+
 ### 11.1 Monthly (`monthly`)
 
 One row per station per calendar month of `lmst_date`.
@@ -642,7 +647,9 @@ One row per station per calendar month of `lmst_date`.
 | `n_days_vicinity`, `n_days_remarks`, `n_days_past_weather`, `n_days_daily_summary` | days with each evidence flag, any coverage | kept apart, as in `daily` |
 | `n_slots`, `n_slots_pw`, `n_slots_pw_synop`, `n_slots_pw_metar`, `n_slots_nil_inferred`, `n_slots_nil_metar`, `n_slots_rh_screened`, `n_dust_slots_<class>`, `n_slots_dusty` | sums of the daily slot counts | observing density and report mix |
 | `n_slots_pw_valid`, `n_slots_dusty_valid` | observed and dusty slots on valid days | slots per valid day; slot frequency of dust |
-| `dusty_freq` | `n_dusty_days / n_valid_days`; null without valid days | the one stored rate |
+| `dusty_freq` | `n_dusty_days / n_valid_days`; null without valid days | frequency on valid days (11.4) |
+| `dusty_freq_obs` | `n_dusty_days_obs / n_obs_days`; null without observed days | lower bound of the frequency (11.4) |
+| `validity_ratio` | `[(n_valid_days − n_dusty_days) / (n_obs_days − n_dusty_days_obs)] / [n_dusty_days / n_dusty_days_obs]`; null when a share is undefined | whether `dusty_freq` is biased (11.4) |
 | `n_days_vis`, `ext_mean` | days with `vis_hmean > 0`; mean of `1000 / vis_hmean` (km⁻¹) over them | extinction (≈ 1/visibility) averages linearly |
 | `n_days_vis_dusty`, `ext_mean_dusty` | the same over `dusty_day` days (any coverage; the whole day's visibility) | how strongly dust reduced visibility |
 | `vis_min`, `n_slots_vis_zero` | minimum visibility; slots with visibility 0 (no extinction value) | extremes |
@@ -655,8 +662,8 @@ is detected from these counts, not corrected.
 ### 11.2 Yearly (`yearly`)
 
 One row per station per calendar year of `lmst_date`: every `n_` count of `monthly` summed (no
-visibility), `n_calendar_days` = 365 or 366, `dusty_freq` recomputed from the summed counts, and
-coverage across the months:
+visibility), `n_calendar_days` = 365 or 366, the three rates (11.4) recomputed from the summed
+counts (not means of the monthly rates), and coverage across the months:
 
 | Column | Counts months with | Why |
 |---|---|---|
@@ -682,7 +689,8 @@ means):
 
 Columns: every `n_` count of `monthly` summed over the period's months (no visibility);
 `n_calendar_days` = the full calendar length of those months over the 10 years, also for the
-partial decade 2021-2030 (e.g. DJF 1991-2000 = 903 days); `dusty_freq` from the summed counts; and:
+partial decade 2021-2030 (e.g. DJF 1991-2000 = 903 days); the three rates (11.4) from the summed
+counts; and:
 
 | Column | Definition | Why |
 |---|---|---|
@@ -694,6 +702,49 @@ partial decade 2021-2030 (e.g. DJF 1991-2000 = 903 days); `dusty_freq` from the 
 days / 10; with gaps, and in the partial decade 2021-2030, missing days are not counted as
 dust-free. So the `annual` mean need not equal the sum of the month-wise means when coverage
 differs between months; the counts are exact and add up (months and seasons sum to `annual`).
+Being built on `dusty_freq`, the mean inherits its bias where validity depends on the weather: it
+reaches 365.3 at Tidjikja 2011-2020 (`validity_ratio` 0; section 11.4).
+
+### 11.4 The three rates
+
+All three use the primary dusty-day definition and the day counts of the same row (in `yearly`
+and `decadal`, the summed counts). With D = `n_dusty_days_obs` (observed days with dust seen) and
+C = `n_obs_days − n_dusty_days_obs` (observed days without dust seen; a dusty slot is always an
+observed slot, so D and C split the observed days):
+
+| Rate | Formula | Reads as | Null when |
+|---|---|---|---|
+| `dusty_freq` | `n_dusty_days / n_valid_days` | share of valid days that are dusty | no valid day |
+| `dusty_freq_obs` | D / `n_obs_days` | share of observed days with dust seen | no observed day |
+| `validity_ratio` | (valid share of C) / (valid share of D) = [(`n_valid_days − n_dusty_days`) / C] / [`n_dusty_days` / D] | how likely a clear observed day is to be valid, relative to a dusty one | D = 0, C = 0, or `n_dusty_days` = 0 |
+
+**`dusty_freq_obs` is a lower bound.** An observed day needs only one observed slot (a valid day
+needs 4), and dust at the other hours goes unseen, so the true share of dusty days among the
+observed days is at least `dusty_freq_obs`. It is lower at stations that observe at fewer hours, so
+it bounds one station and period; it does not compare stations.
+
+**`validity_ratio` shows whether `dusty_freq` is biased.** `dusty_freq` is unbiased when the valid
+days are a fair sample of the observed days, that is when a clear day is as likely to be valid as a
+dusty one (ratio ≈ 1). The three rates are tied exactly (checked in gold): with
+f = `dusty_freq_obs` and r = `validity_ratio`,
+
+  `dusty_freq = f / (f + r × (1 − f))`
+
+so r = 1 gives `dusty_freq` = f, r < 1 pushes `dusty_freq` up (r = 0.5 and f = 0.3 give 0.46), and
+r = 0 gives 1 whatever f is.
+
+*Example (found 2026-11-02).* Tidjikja (61450) sends iX 2 ("nothing significant") only at 09 and
+18 UTC and iX 3 ("not observed") at 06, 12 and 15 UTC when it has no weather to code (silver
+2014). A clear day has at most 2 observed slots and is never valid; a dusty day has dust coded at
+every hour. In 2011-2020: 962 dusty and 919 clear observed days, 221 and 0 of them valid, so r = 0,
+`dusty_freq` = 1.0 and `dusty_freq_obs` = 0.51. Tombouctou (61226) and Tessalit (61223) look
+the same in 1991-2000 and 2011-2020 (r 0.02-0.15). Across the pilot, the median r is 0.99 over
+the station-decades (`annual`) and 1.0 over the station-months.
+
+**No flag** (user decision 2026-11-02): the threshold below which `dusty_freq` should not be used
+is not known, so the ratio is stored and the choice is left to the user. The ratio is noisy when
+few dusty days were seen; `n_dusty_days_obs` shows how many. The rule "not observed unless
+verified" is unchanged: these rates describe its effect, they do not alter it.
 
 ## 12. Station selection (pilot)
 

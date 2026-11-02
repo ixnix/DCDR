@@ -8,10 +8,11 @@ sub-periods, calendar lengths, and the decadal periods.
 
 from pathlib import Path
 
+import duckdb
 import polars as pl
 import pytest
 
-from dcdr.aggregate import build_gold
+from dcdr.aggregate import _count_order_checks, build_gold
 from dcdr.config import Settings, load_settings, silver_config_hash
 from dcdr.process.build import build_station_year, write_silver
 from tests.fixtures.isd import bronze_frame, isd_row
@@ -88,6 +89,92 @@ def test_monthly_follows_the_local_month(settings: Settings) -> None:
     rows = [isd_row("2024-02-01T06:00:00", LONGITUDE="-115.16343", MW1="02,1")]
     m = _tables(settings, [_silver(settings, rows, 2024)])["monthly"]
     assert m.select("year", "month").rows() == [(2024, 1)]
+
+
+def _dusty_day(day: str) -> list[dict]:
+    """A valid day with dust (suspended) in all 8 slots."""
+    return _day(day, {h: "06,1" for h in range(0, 24, 3)})
+
+
+def test_monthly_lower_bound_and_validity_ratio(settings: Settings) -> None:
+    rows = (
+        _day("2024-01-01", {3: "06,1"})  # valid, dusty
+        + _day("2024-01-02")  # valid, clear
+        + _day("2024-01-03", {0: "07,1"}, hours=range(0, 6, 3))  # observed, dusty, not valid
+    )
+    m = _tables(settings, [_silver(settings, rows, 2024)])["monthly"].row(0, named=True)
+    assert m["dusty_freq_obs"] == pytest.approx(2 / 3)
+    # valid share of clear observed days 1/1, of dusty observed days 1/2
+    assert m["validity_ratio"] == pytest.approx(2.0)
+
+
+def test_validity_ratio_when_only_dusty_days_are_valid(settings: Settings) -> None:
+    # Tidjikja's pattern: a clear day has too few observed slots to be valid, a dusty day has dust
+    # coded in every slot, so every valid day is dusty
+    rows = [r for d in (1, 2, 3) for r in _day(f"2024-01-0{d}", hours=range(0, 6, 3))]
+    rows += _dusty_day("2024-01-04") + _dusty_day("2024-01-05")
+    m = _tables(settings, [_silver(settings, rows, 2024)])["monthly"].row(0, named=True)
+    assert (m["n_obs_days"], m["n_dusty_days_obs"], m["n_valid_days"]) == (5, 2, 2)
+    assert (m["dusty_freq"], m["dusty_freq_obs"], m["validity_ratio"]) == (1.0, 0.4, 0.0)
+
+
+def test_validity_ratio_null_when_a_share_is_undefined(settings: Settings) -> None:
+    rows = (
+        _day("2024-01-01")  # January: no dust seen
+        + _day("2024-02-01")  # February: dust seen only on a day that is not valid
+        + _day("2024-02-02", {0: "07,1"}, hours=range(0, 6, 3))
+        + _dusty_day("2024-03-01")  # March: no clear observed day
+    )
+    m = _tables(settings, [_silver(settings, rows, 2024)])["monthly"].sort("month")
+    assert m["dusty_freq_obs"].to_list() == [0.0, 0.5, 1.0]
+    assert m["validity_ratio"].to_list() == [None, None, None]
+
+
+def test_yearly_and_decadal_ratios_from_summed_counts(settings: Settings) -> None:
+    # January's ratio is 2.0 and March's 0.0; from the summed counts (8 observed days, 4 with dust
+    # seen, 4 valid of which 3 dusty) the ratio is (1/4) / (3/4) = 1/3, not their mean
+    rows = (
+        _day("2024-01-01", {3: "06,1"})
+        + _day("2024-01-02")
+        + _day("2024-01-03", {0: "07,1"}, hours=range(0, 6, 3))
+        + [r for d in (1, 2, 3) for r in _day(f"2024-03-0{d}", hours=range(0, 6, 3))]
+        + _dusty_day("2024-03-04")
+        + _dusty_day("2024-03-05")
+    )
+    t = _tables(settings, [_silver(settings, rows, 2024)])
+    y = t["yearly"].row(0, named=True)
+    a = _period(t["decadal"], 2021, "annual")
+    for row in (y, a):
+        assert row["dusty_freq_obs"] == pytest.approx(0.5)
+        assert row["validity_ratio"] == pytest.approx(1 / 3)
+
+
+def test_freq_checks_catch_inconsistent_columns(settings: Settings) -> None:
+    rows = _day("2024-01-01", {3: "06,1"}) + _day("2024-01-02") + _day("2024-02-01")
+    monthly = _tables(settings, [_silver(settings, rows, 2024)])["monthly"]
+    checks = _count_order_checks("monthly")
+    con = duckdb.connect()
+
+    def failing(sql_update: str | None = None) -> set[str]:
+        con.sql("CREATE OR REPLACE TABLE monthly AS SELECT * FROM monthly_df")
+        if sql_update:
+            con.sql(sql_update)
+        return {name for name, sql in checks.items() if con.sql(sql).fetchall()[0][0]}
+
+    con.register("monthly_df", monthly.to_arrow())
+    assert failing() == set()
+    assert failing("UPDATE monthly SET validity_ratio = 0.5 WHERE month = 1") == {
+        "validity_ratio_matches_freqs"
+    }
+    assert failing("UPDATE monthly SET validity_ratio = 1.0 WHERE month = 2") == {
+        "validity_ratio_null_iff_undefined"
+    }
+    assert failing("UPDATE monthly SET dusty_freq_obs = 1.5 WHERE month = 1") >= {
+        "freq_obs_in_unit_range"
+    }
+    assert failing("UPDATE monthly SET dusty_freq_obs = NULL WHERE month = 2") >= {
+        "freq_obs_null_iff_no_observed_day"
+    }
 
 
 def test_february_leap_year_calendar_days(settings: Settings) -> None:

@@ -6,7 +6,7 @@ how they came about.
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-10-31 (method version 1.10.1).
+> Last updated: 2026-11-02 (method version 1.10.1).
 
 ---
 
@@ -283,7 +283,10 @@ editing `yearly.sql`, as long as it follows the `n_` contract. `decadal` (key `s
 decade, period`) maps each month to its three periods (`annual`, its season, itself) with a small
 `periods` table built in SQL, joins it to `monthly`, and sums the same way per station, decade and
 period; a `calendar` CTE gives each period's days over the decade's 10 years, and
-`dusty_days_mean` = `dusty_freq * n_calendar_days / 10`. All three tables are written sorted by
+`dusty_days_mean` = `dusty_freq * n_calendar_days / 10`. The three rates (`dusty_freq`,
+`dusty_freq_obs`, `validity_ratio`) are written out from explicit counts in `monthly.sql` and from
+explicit sums in `yearly.sql` and `decadal.sql` (a column made by `COLUMNS(...)` cannot be referred
+to by name in the same SELECT). All three tables are written sorted by
 their key (as `daily` and `three_hourly`), so the same input gives the same file. The coverage threshold
 `products.min_valid_days_month` reaches the SQL as the variable `min_valid_days_month`.
 
@@ -291,7 +294,10 @@ Checks run before activation (each must return 0 rows): one row per station and 
 valid days and dusty days recomputed from `daily` match; for each dusty-day definition
 (`aggregate.STAT_VARIANTS`) dusty valid days ≤ valid days ≤ observed days ≤ days ≤ calendar days
 and dusty valid days ≤ dusty days at any coverage; `dusty_freq` is null exactly when there is no
-valid day. The last two come from `aggregate._count_order_checks(table)`, shared by the statistics
+valid day, `dusty_freq_obs` exactly when there is no observed day (and lies in 0-1),
+`validity_ratio` exactly when one of its two shares is undefined; and `dusty_freq` =
+f / (f + r(1 − f)) with f = `dusty_freq_obs` and r = `validity_ratio` (Part 2, 11.4), within
+1e-9, which ties the three rates together. These come from `aggregate._count_order_checks(table)`, shared by the statistics
 tables. `yearly` adds: one row per station and year; days, observed, valid and dusty days and
 observed slots equal the sums over `monthly`; covered ≤ valid ≤ observed months ≤ 12. `decadal`
 adds: one row per station, decade and period; decades start in a year ending in 1; periods are

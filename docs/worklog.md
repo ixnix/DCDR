@@ -7,9 +7,8 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] **Rebuild gold for the statistics** (user; silver unchanged):
-      `uv run dcdr aggregate --years 1931-2025 --stations config/stations/pilot_100.csv`, then a
-      first look at `monthly`, `yearly` and `decadal` (coverage, dusty-station candidates).
+- [ ] **Rebuild gold for `dusty_freq_obs` and `validity_ratio`** (user; silver unchanged):
+      `uv run dcdr aggregate --years 1931-2025 --stations config/stations/pilot_100.csv`.
 - [ ] Re-run notebook 07 (Australia) and look at the first `three_hourly` table (e.g. one outbreak
       at Phoenix and one at Niamey).
 - [ ] Station catalog with aridity index and the dust-source flag (criteria from the statistics,
@@ -32,6 +31,39 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
 
 ---
+
+## 2026-11-02
+
+- **Gold rebuilt with the statistics** (user ran it; gold 20261102T152055Z-66b2fc, silver 1.10.1,
+  all checks pass): daily 1,916,267 rows, monthly 65,611, yearly 5,675, decadal 12,288, 100
+  stations, as in the review probe. `n_slots_dusty`: 860,914 dusty slots on 280,198 dusty days
+  (3.1 per day; every dusty day has one). Annual decadal coverage: 82-90 stations with >= 8 valid
+  years in 1991, 2001 and 2011; 1931-1961 sparse; 2021-2030 partial.
+- **Finding: valid days chosen by the weather.** The decadal ranking for 2011 is led by Tidjikja
+  (61450, 221 valid of 1,881 observed days, `dusty_freq` 1.0, annual mean 365.3), Tombouctou
+  (61226, 0.993) and Tessalit (61223, 0.97); the same three exceed 0.84 in every decade since
+  1991. Cause, at Tidjikja 2014 (silver): iX 2 is sent only at 09 and 18 UTC; at 06, 12 and 15 UTC a
+  report without weather carries iX 3 (not observed). A clear day has at most 2 valid slots (< 4,
+  `min_slots_per_day`), a dusty day has codes at every hour, so only dusty days are valid. The
+  frequency on valid days is then biased up; seen on any observed day, Tidjikja is dusty on about
+  half of them (a lower bound). Not a code error: the rule "not observed unless verified" works as
+  designed, but the valid-day frequency cannot be read where validity depends on the weather. A
+  crude screen (valid-day frequency > 2x the observed-day bound, 1971-2011) flags 5 other
+  station-decades (e.g. 94322 in 1981, 0.64 vs 0.31), so it does not catch Tidjikja: the screen
+  needs design.
+- **Lower bound and validity ratio** (this commit; tests first, 5 new tests). *User decisions:* no
+  rule change; counts stay the primary record (as in the author's duISD research: counts of
+  observed dusty days, filters for non-representative periods, applied by the user); add
+  `dusty_freq_obs` = `n_dusty_days_obs / n_obs_days` (lower bound) and `validity_ratio` (valid
+  share of clear observed days / valid share of dusty observed days) to `monthly`, `yearly`,
+  `decadal`; **no flag**, because the right threshold is not known (a flag at 0.5 was proposed and
+  dropped). Every rate defined with its formula in rules.md 11.4. New gold checks: null exactly
+  where undefined, `dusty_freq_obs` in 0-1, and the identity `dusty_freq = f / (f + r(1 − f))`;
+  a mutation test shows each new check fires. Run in memory on the real `daily`: all checks pass;
+  median r 0.99 (station-decades), Tidjikja 0.0, Tombouctou 0.04, Tessalit 0.15 (2011-2020).
+  *Rulings:* rates from summed counts (not means of monthly rates); primary definition only; no
+  minimum number of dusty days for the ratio (documented as noisy with few). `METHOD_VERSION`
+  unchanged.
 
 ## 2026-10-31
 

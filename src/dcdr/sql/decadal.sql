@@ -61,7 +61,12 @@ agg AS (
         CAST(sum(COLUMNS(c -> starts_with(c, 'n_') AND c NOT IN (
             'n_calendar_days', 'n_days_vis', 'n_days_vis_dusty', 'n_slots_vis_zero'
         ))) AS BIGINT),
+        -- the rates from the summed counts, as in yearly.sql
         sum(n_dusty_days) / nullif(sum(n_valid_days), 0) AS dusty_freq,
+        sum(n_dusty_days_obs) / nullif(sum(n_obs_days), 0) AS dusty_freq_obs,
+        ((sum(n_valid_days) - sum(n_dusty_days))
+            / nullif(sum(n_obs_days) - sum(n_dusty_days_obs), 0))
+            / nullif(sum(n_dusty_days) / nullif(sum(n_dusty_days_obs), 0), 0) AS validity_ratio,
         -- years of the decade with such a month in the period
         count(DISTINCT year) FILTER (WHERE n_obs_days > 0) AS n_years_obs,
         count(DISTINCT year) FILTER (WHERE n_valid_days > 0) AS n_years_valid,

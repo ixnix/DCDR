@@ -62,7 +62,9 @@ STAT_VARIANTS = ("", "_synop", "_metar", "_vis5", "_explicit")
 def _count_order_checks(table: str) -> dict[str, str]:
     """Checks shared by the statistics tables: for each definition, dusty valid days <= valid days
     <= observed days <= days <= calendar days, and dusty valid days <= dusty days on any day; and
-    the rate is null exactly when there is no valid day."""
+    for the three rates: null exactly where undefined, the lower bound within 0-1, and
+    dusty_freq = f / (f + validity_ratio * (1 - f)) with f = dusty_freq_obs (docs/rules.md 11.1),
+    which ties the three rates to each other."""
     checks = {}
     for v in STAT_VARIANTS:
         checks[f"count_order{v or '_primary'}"] = (
@@ -72,6 +74,20 @@ def _count_order_checks(table: str) -> dict[str, str]:
         )
     checks["freq_null_iff_no_valid_day"] = (
         f"SELECT count(*) FROM {table} WHERE (dusty_freq IS NULL) <> (n_valid_days = 0)"
+    )
+    checks["freq_obs_null_iff_no_observed_day"] = (
+        f"SELECT count(*) FROM {table} WHERE (dusty_freq_obs IS NULL) <> (n_obs_days = 0)"
+    )
+    checks["freq_obs_in_unit_range"] = (
+        f"SELECT count(*) FROM {table} WHERE dusty_freq_obs < 0 OR dusty_freq_obs > 1"
+    )
+    checks["validity_ratio_null_iff_undefined"] = (
+        f"SELECT count(*) FROM {table} WHERE (validity_ratio IS NULL) <> "
+        "(n_dusty_days_obs = 0 OR n_obs_days = n_dusty_days_obs OR n_dusty_days = 0)"
+    )
+    checks["validity_ratio_matches_freqs"] = (
+        f"SELECT count(*) FROM {table} WHERE validity_ratio IS NOT NULL AND abs(dusty_freq - "
+        "dusty_freq_obs / (dusty_freq_obs + validity_ratio * (1 - dusty_freq_obs))) > 1e-9"
     )
     return checks
 

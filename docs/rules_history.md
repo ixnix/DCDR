@@ -5,7 +5,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 *ruling*, a choice made during implementation and open to review). The dated log of all work is
 [worklog.md](worklog.md); notebooks are kept locally (not in the public repository).
 
-> Last updated: 2026-10-31 (current method version 1.10.1). Commit hashes refer to this repository.
+> Last updated: 2026-11-02 (current method version 1.10.1). Commit hashes refer to this repository.
 
 ## Versions at a glance
 
@@ -26,7 +26,8 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | 1.10.0 | 2026-10-29 | slot grid follows off-grid SYNOP schedules (per station-month); `AUST` a SYNOP source | user | a5fb8ed |
 | (no change) | 2026-10-30 | new gold table `three_hourly` (all reports per 3-hour UTC bin) | user | 21510c3, d5228e8 |
 | 1.10.1 | 2026-10-30 | fix: slot grid chosen per local (LMST) month; year files read the neighbouring December/January | user (option A) | 715cb41 |
-| (no change) | 2026-10-31 | new gold tables `monthly`, `yearly`, `decadal` (statistics); daily `n_slots_dusty` | user + rulings | 0002138, c02f436, 7cdc26c, (this commit) |
+| (no change) | 2026-10-31 | new gold tables `monthly`, `yearly`, `decadal` (statistics); daily `n_slots_dusty` | user + rulings | 0002138, c02f436, 7cdc26c, 794a619, 18abf2d |
+| (no change) | 2026-11-02 | statistics: lower bound `dusty_freq_obs` and `validity_ratio` beside `dusty_freq`; no flag | user | (this commit) |
 
 ---
 
@@ -370,6 +371,23 @@ decades; DJF pooled within the decade; decades fixed to start in a year ending i
 for the primary definition only; `products.min_valid_days_month` = 10 for `n_months_covered`;
 `dusty_days_mean` frequency-scaled (`dusty_freq × n_calendar_days / 10`), so gaps are not counted
 as dust-free.
+
+## Statistics: lower bound and validity ratio (2026-11-02, no method version change)
+
+*Why:* the first look at the rebuilt gold (20261102T152055Z-66b2fc) found `dusty_freq` near 1 at
+Tidjikja, Tombouctou and Tessalit because only dusty days can become valid there (iX 3 at fixed
+hours on clear days; rules.md 11.4). `dusty_freq` alone cannot show this. *User decisions*
+(2026-11-02): no rule change; keep the counts as the primary record (as in the author's duISD
+research, which used counts of observed dusty days with filters for non-representative periods);
+add `dusty_freq_obs` = `n_dusty_days_obs / n_obs_days` (lower bound) and `validity_ratio` (valid
+share of clear observed days over that of dusty observed days) to `monthly`, `yearly` and
+`decadal`; no flag, because the right threshold is not known: users choose their filters.
+*Considered and dropped:* a flag at `validity_ratio < 0.5` with at least 10 dusty days seen.
+*Evidence:* `dusty_freq = f / (f + r(1 − f))` holds exactly (f = `dusty_freq_obs`, r =
+`validity_ratio`) and is a gold check; on the pilot gold (in memory) all checks pass, the median
+r is 0.99 over station-decades and 1.0 over station-months, and the three Sahel stations have
+r 0.0-0.15 in 2011-2020. *Rulings:* rates from the summed counts in `yearly` and `decadal` (as
+`dusty_freq`); primary definition only; no minimum number of dusty days for the ratio.
 
 ---
 

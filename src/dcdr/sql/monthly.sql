@@ -84,9 +84,20 @@ SELECT
     -- the same over valid days: slots per valid day and the slot frequency of dust
     CAST(coalesce(sum(n_slots_pw) FILTER (WHERE valid_day), 0) AS BIGINT) AS n_slots_pw_valid,
     CAST(coalesce(sum(n_slots_dusty) FILTER (WHERE valid_day), 0) AS BIGINT) AS n_slots_dusty_valid,
-    -- the one stored rate; null without valid days
+    -- rates (primary definition only; docs/rules.md 11.1):
+    -- dusty_freq = n_dusty_days / n_valid_days, null without valid days
     (count(*) FILTER (WHERE dusty_day AND valid_day))
         / nullif(count(*) FILTER (WHERE valid_day), 0) AS dusty_freq,
+    -- dusty_freq_obs = n_dusty_days_obs / n_obs_days, a lower bound; null without observed days
+    (count(*) FILTER (WHERE dusty_day))
+        / nullif(count(*) FILTER (WHERE n_slots_pw >= 1), 0) AS dusty_freq_obs,
+    -- validity_ratio = (valid share of clear observed days) / (valid share of dusty observed days);
+    -- a dusty day is always observed, so clear observed days = n_obs_days - n_dusty_days_obs.
+    -- Null without dust seen, without a clear observed day, or without a valid dusty day.
+    ((count(*) FILTER (WHERE valid_day AND NOT dusty_day))
+        / nullif(count(*) FILTER (WHERE n_slots_pw >= 1 AND NOT dusty_day), 0))
+        / nullif((count(*) FILTER (WHERE dusty_day AND valid_day))
+            / nullif(count(*) FILTER (WHERE dusty_day), 0), 0) AS validity_ratio,
     -- visibility (this table only): extinction ~ 1/visibility, km^-1, from each day's harmonic
     -- mean visibility; days without one (none reported, or only zero visibility) are left out
     count(*) FILTER (WHERE vis_hmean > 0) AS n_days_vis,

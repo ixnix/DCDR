@@ -18,8 +18,11 @@ SELECT
     CAST(sum(COLUMNS(c -> starts_with(c, 'n_') AND c NOT IN (
         'n_calendar_days', 'n_days_vis', 'n_days_vis_dusty', 'n_slots_vis_zero'
     ))) AS BIGINT),
-    -- the one stored rate, from the summed counts; null without valid days
+    -- the rates from the summed counts, as in monthly.sql (not means of the monthly rates)
     sum(n_dusty_days) / nullif(sum(n_valid_days), 0) AS dusty_freq,
+    sum(n_dusty_days_obs) / nullif(sum(n_obs_days), 0) AS dusty_freq_obs,
+    ((sum(n_valid_days) - sum(n_dusty_days)) / nullif(sum(n_obs_days) - sum(n_dusty_days_obs), 0))
+        / nullif(sum(n_dusty_days) / nullif(sum(n_dusty_days_obs), 0), 0) AS validity_ratio,
     -- coverage across the months: observed, valid, and with enough valid days
     count(*) FILTER (WHERE n_obs_days > 0) AS n_months_obs,
     count(*) FILTER (WHERE n_valid_days > 0) AS n_months_valid,
