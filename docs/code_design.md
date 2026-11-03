@@ -195,7 +195,10 @@ Everything goes under the data root:
 ├── gold/
 │   ├── CURRENT                          text file: run ID of the active version
 │   └── versions/<run_id>/
-│       ├── silver_version.json          which silver (method version, config hash) built it
+│       ├── silver_version.json          which silver (method version, config hash) and which
+│       │                                station inputs (isd-history and override md5s) built it
+│       ├── stations/part-000.parquet    station positions: status, trusted position, evidence
+│       ├── stations_review.csv          stations needing a hand decision, most dusty first
 │       ├── daily/part-000.parquet
 │       └── three_hourly/part-000.parquet
 └── _state/
@@ -320,10 +323,23 @@ the `yearly` sums over the decade, and the 12 months and the 4 seasons each add 
 dust years ≤ valid years ≤ observed years ≤ 10 and dust years ≤ dust years at any coverage;
 `dusty_days_mean` is null exactly when `dusty_freq` is.
 
+### 7.5a Gold `stations`
+One row per station in silver, built **first** in every gold run from the view `silver_all` (all
+silver files), the saved isd-history and the override file (`stations.py`, registered as DuckDB
+views `isd_history` and `overrides`). Columns (Part 2, section 4.3): `station_id, status,
+computed_status, in_gold, trusted_lat, trusted_lon, file_lat, file_lon, isd_name, isd_lat,
+isd_lon, max_km, first_year, last_year, n_years, n_dusty_reports, override_action,
+override_reason, isd_history_md5, overrides_md5`. Right after it, `build_gold` creates the view
+`silver` = `silver_all` restricted to the stations with `in_gold`, which every later product reads,
+and writes `stations_review.csv`. Checks: one row per station; known statuses; every station in
+gold has a trusted longitude; no `conflict` in gold.
+
 ### 7.6 Provenance
 - Bronze metadata: `dcdr_layer, source_md5, source_key, run_id`.
 - Silver metadata: `dcdr_layer, method_version, config_hash, run_id, source_md5,
   prev_source_md5, nil_guard, metar_guard` (`1` pass, `0` fail, empty = no decision).
+- Gold lineage (`silver_version.json`): `silver_method_version, silver_config_hash,
+  isd_history_md5, overrides_md5` (empty when there is no override file).
 - Run log: `run_id, command, started_at, finished_at, status, git_commit, git_dirty,
   dcdr_version, config_hash, summary` (JSON with counts and failures).
 

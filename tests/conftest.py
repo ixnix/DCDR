@@ -21,8 +21,15 @@ def _no_env_data_root(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    """Default settings with the data root inside this test's temporary folder, and an empty
-    isd-history there: every test station is then "unverified" and kept in gold."""
-    s = load_settings(overrides={"paths": {"data_root": str(tmp_path / "data")}})
+    """Default settings with the data root inside this test's temporary folder, an empty
+    isd-history there (every test station is then "unverified" and kept in gold) and no
+    position overrides."""
+    s = load_settings(
+        overrides={
+            "paths": {"data_root": str(tmp_path / "data")},
+            # never the repository's real override file
+            "stations": {"position_overrides": str(tmp_path / "no_overrides.csv")},
+        }
+    )
     write_isd_history(s)
     return s

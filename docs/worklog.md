@@ -50,7 +50,15 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   `config/stations/position_overrides.csv` (validated: reason required, one row per station,
   `use` with a valid position, or `exclude`). Config `stations`: `isd_history`,
   `position_overrides`, `agree_km` 10, `conflict_km` 50. Test settings write an empty
-  isd-history, so test stations are "unverified" and kept.
+  isd-history, so test stations are "unverified" and kept. (c82178f)
+- **Gold `stations` table and review list** (station positions, step 2): built first in every
+  gold run from all silver (`silver_all`); status per station by the four-way rule with the
+  southern-hemisphere gate for 949999 (user decision 2026-11-03) and the overrides; the other
+  products read `silver` narrowed to `in_gold` stations. `stations_review.csv` lists conflict,
+  unverified and moved stations without an override, and unused overrides, most dusty first.
+  isd-history and override md5s in the gold lineage. *Rulings:* the rules are section 4.3 of
+  rules.md (no renumbering); the station-position inputs are loaded before the DuckDB connection
+  opens; a station with no in-file latitude is `unverified`.
 - **Method 2.0.0 started: source groups in silver** (spec
   `docs/superpowers/specs/2026-11-02-all-reports-bins-design.md`, approved 2026-11-03; plan
   `docs/superpowers/plans/2026-11-03-all-reports-bins.md`). User decisions 2026-11-02: 3-hour UTC

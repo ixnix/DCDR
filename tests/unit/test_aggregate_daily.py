@@ -18,7 +18,7 @@ import pytest
 from dcdr.aggregate import MixedSilverVersionsError, build_gold, current_gold_dir, prune_versions
 from dcdr.config import Settings, load_settings, silver_config_hash
 from dcdr.process.build import build_station_year, write_silver
-from tests.fixtures.isd import bronze_frame, isd_row
+from tests.fixtures.isd import bronze_frame, isd_row, write_isd_history
 
 LON0 = {"LONGITUDE": "0.0"}  # LMST == UTC keeps expectations readable
 
@@ -121,6 +121,7 @@ def test_current_pointer_and_pruning(tmp_path: Path) -> None:
             "products": {"gold_keep_versions": 2},
         }
     )
+    write_isd_history(s)
     path = _silver(s, _slots("2024-01-01"))
     run_ids = [f"20260101T00000{i}Z-aaaaaa" for i in range(4)]
     for rid in run_ids:

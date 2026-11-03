@@ -115,6 +115,43 @@ Special cases:
   (rules_history.md, 1.10.1). *Cost:*
   a station that moved 50 km east-west keeps an offset about 2 min off for part of its record.
 
+### 4.3 Station positions (gold `stations`, `sql/stations.sql`)
+
+*Why* (whole-bronze census, 2026-11-02): the station position in NOAA's data files and the one in
+NOAA's `isd-history.csv` disagree for some stations, and either can be wrong. 268 Australian
+stations with USAF 949999 carry a US station's name and position in their data files (a shared
+WBAN; 94999900108 "SCAMMON BAY AIRPORT" is ADELAIDE (WEST TERRACE) in isd-history and in its
+data), so their local days would be ~20 h off; isd-history itself is wrong for e.g. Concepción
+(BO), Sable Island and Bundaleer Forest Reserve (949999-00100, listed in Arkansas). So each gold
+build decides, per station, which position to trust (user decisions 2026-11-02 and 2026-11-03).
+
+**Distance:** for each station-year, the great-circle distance between its most common in-file
+position (silver `lat`, `lon`; missing values ignored) and the station's isd-history position.
+A station is judged on its **largest** distance. isd-history has **no position** when `LAT` or
+`LON` is empty, or both are 0.000: the 0/0 rows (e.g. mobile "WXPOD" units) are errors and are
+never used for verifying.
+
+| Status | When | Trusted position | In gold |
+|---|---|---|---|
+| `agree` | < 10 km in every year (`stations.agree_km`) | in-file: the most common `lon_used` and `lat` | yes |
+| `moved` | largest distance 10 to < 50 km | in-file (probably a real move; flagged) | yes |
+| `conflict` | ≥ 50 km (`stations.conflict_km`); also any 949999 station whose isd-history position is not in the southern hemisphere | none | **no**, until resolved |
+| `resolved_isd_history` | ≥ 50 km at a 949999 station with an isd-history latitude < 0 | isd-history | yes |
+| `unverified` | no isd-history position, not listed, or no in-file latitude | in-file | yes, marked |
+| `override` | a row in `config/stations/position_overrides.csv` | `use`: the override's; `exclude`: none | `use`: yes; `exclude`: no |
+
+The 949999 rule is automatic because it was verified (the Adelaide check and the hemisphere test:
+January warmer than July), but only behind the **southern-hemisphere gate**, since isd-history is
+not always right. An override (`station_id, lat, lon, action, reason, decided`; a reason is
+required) wins over every status; `computed_status` keeps the rule's verdict. Stations not in gold
+are left out of every other gold table.
+
+**Review list:** each gold version writes `stations_review.csv`: the `conflict`, `unverified`
+and `moved` stations without an override, and override rows for stations with no data
+(`override_unused`), most dusty first (dusty reports counted in silver, since conflict stations
+are not in gold). The md5 of isd-history and of the override file are recorded in the table and
+in the gold lineage.
+
 ## 5. Was the weather observed?
 
 This decides which reports can say anything about dust, and therefore which days are "valid".

@@ -40,6 +40,7 @@ import duckdb
 from dcdr.config import Settings, silver_config_hash
 from dcdr.process import METHOD_VERSION
 from dcdr.state import atomic_write_bytes, read_parquet_metadata, safe_listdir
+from dcdr.stations import file_md5, load_isd_history, load_overrides
 
 # SQL files ship inside the package (src/dcdr/sql/), found the same way as default.yaml.
 SQL_DIR = files("dcdr") / "sql"
@@ -113,6 +114,31 @@ def _decadal_parts_check(periods: list[str]) -> str:
 # The registry of gold products. Adding a product = adding an entry here plus a .sql file.
 # Products run in this order, and each can read the products before it (as a view of its name).
 PRODUCTS = [
+    Product(
+        # Station positions (docs/rules.md, "Station positions"): built first, from every silver
+        # report; build_gold then narrows the `silver` view to the stations in gold.
+        "stations",
+        "stations.sql",
+        {
+            "unique_station": (
+                "SELECT count(*) FROM (SELECT station_id FROM stations "
+                "GROUP BY ALL HAVING count(*) > 1)"
+            ),
+            "status_known": (
+                "SELECT count(*) FROM stations WHERE status NOT IN ('agree', 'moved', "
+                "'conflict', 'resolved_isd_history', 'unverified', 'override') "
+                "OR computed_status NOT IN ('agree', 'moved', 'conflict', "
+                "'resolved_isd_history', 'unverified')"
+            ),
+            # A station in gold has a longitude for its local time; a conflict is never in gold.
+            "in_gold_has_trusted_lon": (
+                "SELECT count(*) FROM stations WHERE in_gold AND trusted_lon IS NULL"
+            ),
+            "conflict_not_in_gold": (
+                "SELECT count(*) FROM stations WHERE status = 'conflict' AND in_gold"
+            ),
+        },
+    ),
     Product(
         # Named without a leading digit: the name is also the DuckDB view the checks query.
         "three_hourly",
@@ -349,6 +375,25 @@ def _sql_path(path: Path) -> str:
     return text
 
 
+def _write_review(con: duckdb.DuckDBPyConnection, path: Path) -> None:
+    """The stations that need a human decision (conflict, unverified, moved; not overridden),
+    plus override rows for stations with no silver, most dusty first (docs/rules.md)."""
+    con.execute(f"""
+        COPY (
+            SELECT station_id, status, file_lat, file_lon, isd_name, isd_lat, isd_lon, max_km,
+                   first_year, last_year, n_years, n_dusty_reports
+            FROM stations
+            WHERE status IN ('conflict', 'unverified', 'moved')
+            UNION ALL
+            SELECT station_id, 'override_unused', NULL, NULL, NULL, NULL, NULL, NULL,
+                   NULL, NULL, NULL, NULL
+            FROM overrides
+            WHERE station_id NOT IN (SELECT station_id FROM stations)
+            ORDER BY n_dusty_reports DESC NULLS LAST, station_id
+        ) TO '{_sql_path(path)}' (HEADER, DELIMITER ',')
+    """)
+
+
 def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Path:
     """Build every gold product into gold/versions/<run_id>/, check it, then activate it.
 
@@ -369,9 +414,23 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
         )
     gold_root = settings.data_root / "gold"
     out_dir = gold_root / "versions" / run_id
+    # Station-position inputs (stations.py), validated before anything is built.
+    isd_path, overrides_path = settings.isd_history_path, settings.position_overrides_path
+    isd_history, overrides = load_isd_history(isd_path), load_overrides(overrides_path)
     con = duckdb.connect()  # in-memory database; reads the Parquet files directly from disk
     # One view over all silver files. union_by_name: files may differ in optional columns.
-    con.read_parquet([_sql_path(p) for p in silver_paths], union_by_name=True).create_view("silver")
+    # `silver_all` feeds the station table; the other products read `silver`, the same reports
+    # without the stations left out of gold (created right after `stations`).
+    con.read_parquet([_sql_path(p) for p in silver_paths], union_by_name=True).create_view(
+        "silver_all"
+    )
+    con.register("isd_history", isd_history)
+    con.register("overrides", overrides)
+    inputs_md5 = {"isd_history_md5": file_md5(isd_path), "overrides_md5": file_md5(overrides_path)}
+    con.execute(f"SET VARIABLE agree_km = {float(settings.stations.agree_km)}")
+    con.execute(f"SET VARIABLE conflict_km = {float(settings.stations.conflict_km)}")
+    for key, md5 in inputs_md5.items():
+        con.execute(f"SET VARIABLE {key} = '{md5}'")  # hex digits only: safe to inline
     # Make the valid-day threshold available to the SQL as getvariable('min_bins').
     con.execute(f"SET VARIABLE min_bins = {int(settings.products.min_bins_per_day)}")
     # ... and the visibility limit of dusty_day_vis5 as getvariable('vis5_max_m').
@@ -382,7 +441,11 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     )
     try:
         # Record which silver this gold version was built from (lineage).
-        lineage = {"silver_method_version": expected[0], "silver_config_hash": expected[1]}
+        lineage = {
+            "silver_method_version": expected[0],
+            "silver_config_hash": expected[1],
+            **inputs_md5,  # the station-position inputs (isd-history, overrides)
+        }
         atomic_write_bytes(out_dir / "silver_version.json", json.dumps(lineage, indent=2).encode())
         for product in PRODUCTS:
             target = out_dir / product.name / "part-000.parquet"
@@ -392,6 +455,12 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
             con.execute(f"COPY ({sql}) TO '{_sql_path(target)}' (FORMAT parquet, COMPRESSION zstd)")
             # Re-read the written file as a view so the checks test exactly what was saved.
             con.read_parquet(_sql_path(target)).create_view(product.name)
+            if product.name == "stations":
+                con.execute(
+                    "CREATE VIEW silver AS SELECT * FROM silver_all "
+                    "WHERE station_id IN (SELECT station_id FROM stations WHERE in_gold)"
+                )
+                _write_review(con, out_dir / "stations_review.csv")
             failures = {}
             for name, query in product.checks.items():
                 row = con.execute(query).fetchone()
