@@ -104,11 +104,14 @@ saving. The difference from apparent solar time (±16 min) does not matter at 3-
 
 Special cases:
 - A summary-of-day (SOD) report is stamped 23:59 local *standard* time, which can fall after
-  LMST midnight; it is dated to the day it summarises: `date(time_lmst − 12 h)`.
+  LMST midnight; it is dated to the day it summarises: `date(time_lmst − 12 h)`. Gold dates it
+  with the station's **trusted** longitude (section 4.3), not the report's own.
 - A 3-hour bin (gold `three_hourly`, section 10) uses **one offset per station** (method 2.0.0):
-  its most common longitude over the silver reports of the gold run (ties: the smallest). A gold
-  run over the whole record (as for the published products) uses the whole record; a run over
-  fewer years can give an offset a few minutes different for a station that moved. The bin belongs to
+  its **trusted longitude** (section 4.3). For `agree`, `moved` and `unverified` stations that is
+  the most common in-file longitude over the silver reports of the gold run (ties: the smallest);
+  a resolved 949999 station uses isd-history, an override its own. A gold run over the whole
+  record (as for the published products) uses the whole record; a run over fewer years can give
+  an offset a few minutes different for a station that moved. The bin belongs to
   the local date on which it starts. *Why:* with each bin's own state report, a 0.1° difference
   between SYNOP and METAR coordinates moved a bin across local midnight near some longitudes (9
   bins on one day, 7 on the next), the failure the former slot sampling had in Australia

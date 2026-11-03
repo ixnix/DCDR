@@ -206,3 +206,56 @@ def test_lineage_records_input_md5s(settings: Settings) -> None:
     assert lineage["isd_history_md5"] == file_md5(hist)
     assert lineage["overrides_md5"] == ""
     assert _stations(out)[KUWAIT]["isd_history_md5"] == file_md5(hist)
+
+
+# --- gold uses the trusted positions ----------------------------------------------------------
+ADELAIDE = "94999900108"  # in-file "SCAMMON BAY AIRPORT, AK US" (61.78, -165.57)
+
+
+def _table(out: Path, name: str) -> pl.DataFrame:
+    return pl.read_parquet(out / name / "part-000.parquet")
+
+
+def test_conflict_station_left_out_of_gold(settings: Settings) -> None:
+    other = "40583099999"
+    _history(settings, (KUWAIT, "+29.227", "+047.969"), (other, "+29.227", "+049.000"))
+    out = _build(
+        settings,
+        [
+            _station(settings, KUWAIT, "29.227", "47.969"),
+            _station(settings, other, "29.227", "47.969"),
+        ],
+    )
+    assert other in _stations(out)
+    for name in ("three_hourly", "daily", "monthly"):
+        assert set(_table(out, name)["station_id"]) == {KUWAIT}
+
+
+def test_resolved_949999_uses_isd_history_offset(settings: Settings) -> None:
+    _history(settings, (ADELAIDE, "-34.930", "+138.580"))
+    out = _build(settings, [_station(settings, ADELAIDE, "61.78", "-165.57")])
+    first = _table(out, "three_hourly").sort("bin_time").row(0, named=True)
+    assert first["lmst_hour"] == pytest.approx(138.58 / 15, abs=1e-6)
+    assert str(first["lmst_date"]) == "2024-01-01"
+
+
+def test_summary_dated_with_trusted_offset(settings: Settings) -> None:
+    """At Adelaide (+9:14 LMST) an SOD stamped 13:59 UTC summarises 6 January; with the in-file
+    US longitude (-11:02) it would be dated 5 January."""
+    _history(settings, (ADELAIDE, "-34.930", "+138.580"))
+    pos = {"STATION": ADELAIDE, "LATITUDE": "61.78", "LONGITUDE": "-165.57"}
+    rows = [isd_row(f"2024-01-06T{h:02d}:00:00", **pos, MW1="02,1") for h in range(0, 24, 3)]
+    rows.append(isd_row("2024-01-06T13:59:00", **pos, REPORT_TYPE="SOD", AT1="AU,07,DU  ,5"))
+    df = build_station_year(bronze_frame(rows), None, 2024, settings)
+    path = settings.data_root / "silver" / "year=2024" / f"{ADELAIDE}.parquet"
+    write_silver(
+        df,
+        path,
+        run_id="r",
+        config_hash=silver_config_hash(settings),
+        source_md5="m",
+        prev_source_md5="",
+    )
+    daily = _table(_build(settings, [path]), "daily")
+    flagged = daily.filter(pl.col("daily_summary_dust"))["lmst_date"].cast(pl.String).to_list()
+    assert flagged == ["2024-01-06"]

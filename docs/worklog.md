@@ -58,7 +58,12 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   unverified and moved stations without an override, and unused overrides, most dusty first.
   isd-history and override md5s in the gold lineage. *Rulings:* the rules are section 4.3 of
   rules.md (no renumbering); the station-position inputs are loaded before the DuckDB connection
-  opens; a station with no in-file latitude is `unverified`.
+  opens; a station with no in-file latitude is `unverified`. (756b678)
+- **Gold uses the trusted positions** (station positions, step 3): `three_hourly` takes each
+  station's LMST offset from `stations.trusted_lon`; `daily` dates the daily summaries with it
+  (no longer silver's `summary_lmst_date`, from the in-file longitude). New gold checks: only
+  stations in gold in `three_hourly` and `daily`. Unchanged for agree/moved/unverified stations
+  (same longitude as before); a resolved 949999 station now has Australian local days.
 - **Method 2.0.0 started: source groups in silver** (spec
   `docs/superpowers/specs/2026-11-02-all-reports-bins-design.md`, approved 2026-11-03; plan
   `docs/superpowers/plans/2026-11-03-all-reports-bins.md`). User decisions 2026-11-02: 3-hour UTC

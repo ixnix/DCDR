@@ -29,6 +29,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | (no change) | 2026-10-31 | new gold tables `monthly`, `yearly`, `decadal` (statistics); daily `n_slots_dusty` | user + rulings | 0002138, c02f436, 7cdc26c, 794a619, 18abf2d |
 | (no change) | 2026-11-02 | statistics: lower bound `dusty_freq_obs` and `validity_ratio` beside `dusty_freq`; no flag | user | 632c899 |
 | 2.0.0 | 2026-11-03 | all-reports 3-hour bins replace slot sampling; source groups SYNOP / METAR / other, each judged alone | user + rulings | 9313d86, 6ef64dc, 0239af7, a910c1d, b04ace6, b747481 |
+| (no change) | 2026-11-03 | station positions: four-way rule, 949999 southern-hemisphere gate, overrides; gold uses the trusted longitude | user + rulings | c82178f, 756b678, (this commit) |
 
 ---
 
@@ -429,6 +430,28 @@ the config section `sampling`), with the off-grid schedule shift of 1.10.0 and t
 December/January reads of 1.10.1: bins need neither. Each report now lives in the file of its own
 UTC year, so the next year's bronze is no longer read. New: `source_group` (`sources.py`, config
 `sources`).
+
+## Station positions (2026-11-03, no method version change)
+
+*What:* every gold build decides, per station, which position to trust (rules.md 4.3): in-file
+and isd-history positions are compared per station-year; < 10 km agree, 10-50 km moved (kept,
+flagged), >= 50 km conflict (left out of gold until resolved), no isd-history position
+unverified (kept, marked); a 949999 conflict takes the isd-history position if it is in the
+southern hemisphere; hand overrides with a reason win. Gold's LMST offset and daily-summary
+dating use the trusted longitude.
+
+*Why (evidence, whole-bronze census 2026-11-02):* 268 of the 370 Australian 949999 stations carry
+a US station's name and position in their data files (shared WBAN), which put their local days
+~20 h off; 94999900108 is ADELAIDE (WEST TERRACE) in isd-history and in its data (January warmer
+than July). isd-history is wrong too for some stations (Concepción BO, Sable Island, and
+949999-00100 Bundaleer Forest Reserve, listed in Arkansas), hence the southern-hemisphere gate
+and no automatic trust elsewhere. isd-history 0/0 rows are placeholders, never used.
+
+*Superseded:* the in-file longitude alone (method 2.0.0 gold, 2026-11-03 morning; per report
+before). *Decisions:* user, 2026-11-02 (four-way rule) and 2026-11-03 (overrides with reasons,
+conflicts out of gold, unverified kept, the gate, 0/0 are errors). *Rulings:* overrides win over
+every status; the review list is ranked by dusty reports in silver; elevation waits for the
+catalog.
 
 ## Resolved questions
 

@@ -14,27 +14,24 @@
 -- Regular reports: the SYNOP group, and the METAR group without its special reports (SPECI FM-16,
 -- SAOSP), which are sent because conditions changed.
 --
--- Local time (method 2.0.0): ONE LMST offset per station, from its most common longitude over all
--- silver rows (ties: the smallest), so every local day holds exactly the 8 bins that start on it.
+-- Local time (method 2.0.0): ONE LMST offset per station, from its TRUSTED longitude (gold table
+-- `stations`, docs/rules.md 4.3: the most common in-file longitude, or isd-history / an override
+-- where those are trusted), so every local day holds exactly the 8 bins that start on it.
 -- With the state report's own longitude, a 0.1-degree difference between report types moved a
 -- bin across local midnight near some longitudes (9 bins on one day, 7 on the next).
 --
 -- How the query is built (CTEs):
---   station the station's LMST offset
+--   station the station's LMST offset, from `stations`
 --   rep     the reports in scope, with their bin, whether they are regular, and dust
 --   ranked  the reports numbered within each bin: 1 = the state report
 --   state   the state report of each bin, with DUP6
 --   agg     per bin, from all reports: extremes, dust, counts
 --   final SELECT  state joined to agg, plus local time of the bin start
 WITH station AS (
-    -- the station's most common longitude (silver lon_used is never null); 4 min per degree
-    SELECT station_id, to_milliseconds(CAST(round(lon_used * 240000) AS BIGINT)) AS lmst_offset
-    FROM (
-        SELECT station_id, lon_used, count(*) AS n
-        FROM silver
-        GROUP BY station_id, lon_used
-    )
-    QUALIFY row_number() OVER (PARTITION BY station_id ORDER BY n DESC, lon_used) = 1
+    -- 4 min per degree of the trusted longitude (never null for a station in gold)
+    SELECT station_id, to_milliseconds(CAST(round(trusted_lon * 240000) AS BIGINT)) AS lmst_offset
+    FROM stations
+    WHERE in_gold
 ),
 rep AS (
     SELECT

@@ -181,6 +181,11 @@ PRODUCTS = [
             "vis5_implies_dusty": (
                 "SELECT count(*) FROM three_hourly WHERE dust_vis5 AND NOT dusty"
             ),
+            # Only stations in gold (docs/rules.md 4.3).
+            "stations_in_gold": (
+                "SELECT count(*) FROM three_hourly WHERE station_id NOT IN "
+                "(SELECT station_id FROM stations WHERE in_gold)"
+            ),
             # A first-dust time exactly when the bin is dusty.
             "first_dust_iff_dusty": (
                 "SELECT count(*) FROM three_hourly "
@@ -240,6 +245,11 @@ PRODUCTS = [
             "unique_station_day": (
                 "SELECT count(*) FROM (SELECT station_id, lmst_date FROM daily "
                 "GROUP BY ALL HAVING count(*) > 1)"
+            ),
+            # Only stations in gold (docs/rules.md 4.3).
+            "stations_in_gold": (
+                "SELECT count(*) FROM daily WHERE station_id NOT IN "
+                "(SELECT station_id FROM stations WHERE in_gold)"
             ),
             # Day-to-day changes are only computed between two valid days.
             "d_t_only_valid": "SELECT count(*) FROM daily WHERE d_t_mean IS NOT NULL AND NOT valid_day",

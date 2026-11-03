@@ -1,7 +1,8 @@
 -- Daily station product on the local mean solar time (LMST) day.
 -- Definitions: docs/rules.md section 9 (rule tables: section 5.3).
 -- Inputs: view `three_hourly` (the bins, built just before in the same gold run); view `silver`,
--- read only for daily-summary (SOD) dust; variable `min_bins` (valid-day threshold).
+-- read only for daily-summary (SOD) dust, dated with the trusted longitude in view `stations`;
+-- variable `min_bins` (valid-day threshold).
 --
 -- Output: one row per station per LMST day (gold table `daily`).
 -- Run by aggregate.build_gold, which creates the views and sets the variables (config
@@ -77,14 +78,21 @@ WITH bin_daily AS (
     GROUP BY station_id, lmst_date
 ),
 summary_daily AS (
-    -- daily-summary (SOD) rows are not in the bins but carry AT/AX dust codes; they are dated to
-    -- the day they summarise (summary_lmst_date), not their timestamp
+    -- daily-summary (SOD) rows are not in the bins but carry AT/AX dust codes. They are stamped
+    -- 23:59 local STANDARD time, which can fall after LMST midnight, so they are dated to the day
+    -- they summarise, date(LMST - 12 h) (as parse.py does), with the station's TRUSTED longitude
+    -- (docs/rules.md 4.3), not the report's own (wrong at some 949999 stations)
     SELECT
-        station_id,
-        coalesce(summary_lmst_date, lmst_date) AS lmst_date,
-        bool_or(flag_daily_dust) AS daily_summary_dust
-    FROM silver
-    WHERE is_excluded_type
+        r.station_id,
+        CAST(
+            r.time_utc + to_milliseconds(CAST(round(st.trusted_lon * 240000) AS BIGINT))
+                - CASE WHEN r.report_type = 'SOD' THEN INTERVAL 12 HOUR ELSE INTERVAL 0 HOUR END
+            AS DATE
+        ) AS lmst_date,
+        bool_or(r.flag_daily_dust) AS daily_summary_dust
+    FROM silver AS r
+    JOIN stations AS st ON r.station_id = st.station_id
+    WHERE r.is_excluded_type
     GROUP BY ALL
 ),
 joined AS (
