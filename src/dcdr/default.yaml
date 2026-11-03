@@ -96,3 +96,11 @@ products:
 
 stations:
   station_list: config/stations/pilot_100.csv  # default for --stations (relative to working dir)
+  # Station positions (gold `stations`; user decisions 2026-11-02/03). NOAA's isd-history.csv is
+  # read from a saved copy in the data root (never downloaded by the pipeline). A station whose
+  # in-file position is < agree_km from isd-history in every year "agrees"; >= conflict_km is a
+  # "conflict" (left out of gold until resolved); in between "moved" (kept, flagged).
+  isd_history: catalog/isd-history.csv  # relative to the data root
+  position_overrides: config/stations/position_overrides.csv  # hand decisions, a reason each
+  agree_km: 10
+  conflict_km: 50

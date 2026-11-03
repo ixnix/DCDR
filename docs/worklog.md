@@ -42,6 +42,15 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## 2026-11-03
 
+- **Station positions, step 1: the inputs** (spec
+  `docs/superpowers/specs/2026-11-03-station-positions-design.md`, approved 2026-11-03; plan
+  `docs/superpowers/plans/2026-11-03-station-positions.md`). New `src/dcdr/stations.py` loads the
+  saved isd-history (empty or 0/0 positions = no position, user decision 2026-11-03; a duplicate
+  station ID or a missing file stops the build) and the override file
+  `config/stations/position_overrides.csv` (validated: reason required, one row per station,
+  `use` with a valid position, or `exclude`). Config `stations`: `isd_history`,
+  `position_overrides`, `agree_km` 10, `conflict_km` 50. Test settings write an empty
+  isd-history, so test stations are "unverified" and kept.
 - **Method 2.0.0 started: source groups in silver** (spec
   `docs/superpowers/specs/2026-11-02-all-reports-bins-design.md`, approved 2026-11-03; plan
   `docs/superpowers/plans/2026-11-03-all-reports-bins.md`). User decisions 2026-11-02: 3-hour UTC

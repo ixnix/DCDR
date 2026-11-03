@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 
 import polars as pl
+
+from dcdr.config import Settings
 
 BASE_COLUMNS = [
     "STATION",
@@ -62,3 +65,30 @@ def make_isd_csv(rows: list[dict[str, str]]) -> bytes:
 
 def bronze_frame(rows: list[dict[str, str]]) -> pl.DataFrame:
     return pl.read_csv(io.BytesIO(make_isd_csv(rows)), infer_schema_length=0)
+
+
+ISD_HISTORY_COLUMNS = [
+    "USAF",
+    "WBAN",
+    "STATION NAME",
+    "CTRY",
+    "STATE",
+    "ICAO",
+    "LAT",
+    "LON",
+    "ELEV(M)",
+    "BEGIN",
+    "END",
+]
+
+
+def write_isd_history(settings: Settings, rows: list[dict[str, str]] | None = None) -> Path:
+    """Write a small isd-history.csv where the settings expect it. NOAA quotes every field,
+    empty ones too (`""`); missing keys are written empty."""
+    path = settings.isd_history_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [",".join(f'"{c}"' for c in ISD_HISTORY_COLUMNS)]
+    for r in rows or []:
+        lines.append(",".join(f'"{r.get(c, "")}"' for c in ISD_HISTORY_COLUMNS))
+    path.write_text("\n".join(lines) + "\n")
+    return path

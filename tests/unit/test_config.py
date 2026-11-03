@@ -51,6 +51,12 @@ def test_config_rejects_sampling_section() -> None:
         load_settings(overrides={"sampling": {"window_min": 30}})
 
 
+def test_station_position_defaults(tmp_path: Path) -> None:
+    s = load_settings(overrides={"paths": {"data_root": str(tmp_path)}})
+    assert (s.stations.agree_km, s.stations.conflict_km) == (10, 50)
+    assert s.isd_history_path == tmp_path / "catalog" / "isd-history.csv"
+
+
 def test_env_var_overrides_data_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("DCDR_DATA", str(tmp_path))
     assert load_settings().data_root == tmp_path

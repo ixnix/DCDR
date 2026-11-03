@@ -66,6 +66,7 @@ DCDR/
 │   │   ├── derived.py          are a station-year's SYNOPs copies of its METARs?
 │   │   └── build.py            runs the above for one station-year, writes silver
 │   ├── aggregate.py            silver -> gold (versioned, checked, CURRENT pointer)
+│   ├── stations.py             station-position inputs: isd-history and the override file
 │   ├── sql/daily.sql           the gold `daily` table, in SQL (run by DuckDB)
 │   ├── sql/three_hourly.sql    the gold `three_hourly` table, in SQL
 │   └── schemas.py              the silver data contract
@@ -144,7 +145,7 @@ All method choices live in `src/dcdr/default.yaml`, validated by Pydantic models
 | `classify` | weather fields used, haze window, snow/sand temperatures, SYNOP iX rule, inferred nil (V3) and its guard, METAR rules (`metar_rules`, `metar_report_types`, `metar_nil_min_vis_m`), METAR inference and its guard (`metar_infer_nil`, `metar_nil_guard_*`), derived SYNOPs (`derived_*`) | yes |
 | `sources` | excluded report types (`exclude_types`: SOD, SOM), source groups (`groups`: SYNOP and METAR report types; every other type is "other") | yes |
 | `products` | valid-day threshold (`min_bins_per_day`), visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept | no (gold only) |
-| `stations` | default station list | no |
+| `stations` | default station list; station positions: the saved isd-history (`isd_history`, relative to the data root), the override file (`position_overrides`), the distance bands `agree_km` (10) and `conflict_km` (50) | no (gold only) |
 
 Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
 
@@ -172,9 +173,16 @@ copy, not in the public repo: NOAA NCEI publishes it with the ISD data).
 | `pilot_20.csv` | 20 dusty stations (2-3 per region) for end-to-end tests | notebook 01 |
 | `contrast.csv` | the 12 hand-picked contrast stations, with reasons | by hand |
 | `regions.yaml` | dust regions: lat/lon box + optional country filter | by hand |
+| `position_overrides.csv` | hand decisions on station positions: `station_id, lat, lon, action` (`use` the given position or `exclude` the station), `reason` (required), `decided` (date); validated by `stations.load_overrides` (a missing reason, a duplicate station, an out-of-range position or an unknown action stops the gold build) | by hand |
 
 Station-list columns: `station_id, name, country, lat, lon, region, aridity_index`. Only
 `station_id` is required by the pipeline.
+
+### 6.3 isd-history (saved copy)
+NOAA's `isd-history.csv` (one row per station: USAF, WBAN, name, country, position, period) is
+read from `<data root>/catalog/isd-history.csv` (config `stations.isd_history`); the pipeline
+never downloads it. `stations.load_isd_history` keys it by `station_id` = USAF + WBAN, treats an
+empty position or 0/0 as "no position", and stops on a station listed twice or a missing file.
 
 ## 7. Outputs
 

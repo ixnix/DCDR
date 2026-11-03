@@ -137,6 +137,11 @@ class ProductsCfg(_Section):
 
 class StationsCfg(_Section):
     station_list: str  # default station list CSV (relative to the working directory)
+    # Station positions (gold `stations`, docs/rules.md "Station positions"):
+    isd_history: str  # NOAA's isd-history.csv, saved copy (relative to the data root)
+    position_overrides: str  # hand-edited overrides CSV (relative to the working directory)
+    agree_km: float  # in-file and isd-history positions "agree" below this distance
+    conflict_km: float  # ... and are in "conflict" at or above it ("moved" in between)
 
 
 class Settings(_Section):
@@ -160,6 +165,16 @@ class Settings(_Section):
     def station_list_path(self) -> Path:
         """The default station-list CSV as an absolute path."""
         return _from_working_dir(self.stations.station_list)
+
+    @property
+    def isd_history_path(self) -> Path:
+        """The saved isd-history.csv, inside the data root (data are never in the repository)."""
+        return self.data_root / self.stations.isd_history
+
+    @property
+    def position_overrides_path(self) -> Path:
+        """The station-position override file, as an absolute path (versioned in git)."""
+        return _from_working_dir(self.stations.position_overrides)
 
 
 def _from_working_dir(text: str) -> Path:

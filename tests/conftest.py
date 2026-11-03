@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from dcdr.config import Settings, load_settings
+from tests.fixtures.isd import write_isd_history
 
 
 @pytest.fixture(autouse=True)
@@ -20,5 +21,8 @@ def _no_env_data_root(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    """Default settings with the data root inside this test's temporary folder."""
-    return load_settings(overrides={"paths": {"data_root": str(tmp_path / "data")}})
+    """Default settings with the data root inside this test's temporary folder, and an empty
+    isd-history there: every test station is then "unverified" and kept in gold."""
+    s = load_settings(overrides={"paths": {"data_root": str(tmp_path / "data")}})
+    write_isd_history(s)
+    return s
