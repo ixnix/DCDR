@@ -3,7 +3,9 @@
 A one-off check for the method 2.0.0 pilot rebuild (not part of the pipeline): all-report bins
 should find at least the dusty days the old slot sampling found, so every station whose count
 drops is listed, to be explained before the result is accepted. Counts are summed over all years
-of each version's `yearly` table (the column names are the same in both methods).
+of each version's `yearly` table (the column names are the same in both methods). Dusty days on
+valid days (`diff`) also move when days become valid or invalid; dusty days on any observed day
+(`diff_obs`) show whether dust detection itself changed.
 
     uv run python scripts/compare_gold_versions.py OLD_RUN_ID NEW_RUN_ID
 
@@ -17,11 +19,11 @@ from pathlib import Path
 
 import polars as pl
 
-COUNTS = ["n_dusty_days", "n_valid_days"]
+COUNTS = ["n_dusty_days", "n_valid_days", "n_dusty_days_obs"]
 
 
 def _totals(gold_dir: Path) -> pl.DataFrame:
-    """Per station: the dusty and valid days summed over all years of `yearly`."""
+    """Per station: dusty, valid and dusty-at-any-coverage days summed over the years of `yearly`."""
     yearly = pl.read_parquet(
         gold_dir / "yearly" / "part-000.parquet", columns=["station_id", *COUNTS]
     )
@@ -29,8 +31,9 @@ def _totals(gold_dir: Path) -> pl.DataFrame:
 
 
 def compare(old_dir: Path, new_dir: Path) -> pl.DataFrame:
-    """One row per station in either version: old and new counts, `diff` = new - old dusty days,
-    and `decreased` (new < old). A station missing from one version counts 0 there."""
+    """One row per station in either version: old and new counts; `diff` = new - old dusty valid
+    days and `diff_obs` = the same for dusty days at any coverage, each with its `decreased*` flag
+    (new < old). A station missing from one version counts 0 there."""
     old, new = _totals(old_dir), _totals(new_dir)
     joined = old.join(new, on="station_id", how="full", coalesce=True, suffix="_new")
     joined = joined.rename({c: f"{c}_old" for c in COUNTS}).with_columns(
@@ -39,8 +42,9 @@ def compare(old_dir: Path, new_dir: Path) -> pl.DataFrame:
     return (
         joined.with_columns(
             diff=pl.col("n_dusty_days_new") - pl.col("n_dusty_days_old"),
+            diff_obs=pl.col("n_dusty_days_obs_new") - pl.col("n_dusty_days_obs_old"),
         )
-        .with_columns(decreased=pl.col("diff") < 0)
+        .with_columns(decreased=pl.col("diff") < 0, decreased_obs=pl.col("diff_obs") < 0)
         .sort("station_id")
     )
 
@@ -57,8 +61,11 @@ def main(argv: list[str]) -> int:
     with pl.Config(tbl_rows=-1):
         print(table)
         dropped = table.filter(pl.col("decreased"))
-        print(f"\n{dropped.height} of {table.height} stations have fewer dusty days:")
+        print(f"\n{dropped.height} of {table.height} stations have fewer dusty valid days:")
         print(dropped)
+        seen = table.filter(pl.col("decreased_obs"))
+        print(f"\n{seen.height} of {table.height} stations have fewer dusty days at any coverage:")
+        print(seen)
     return 0
 
 

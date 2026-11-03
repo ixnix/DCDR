@@ -28,7 +28,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | 1.10.1 | 2026-10-30 | fix: slot grid chosen per local (LMST) month; year files read the neighbouring December/January | user (option A) | 715cb41 |
 | (no change) | 2026-10-31 | new gold tables `monthly`, `yearly`, `decadal` (statistics); daily `n_slots_dusty` | user + rulings | 0002138, c02f436, 7cdc26c, 794a619, 18abf2d |
 | (no change) | 2026-11-02 | statistics: lower bound `dusty_freq_obs` and `validity_ratio` beside `dusty_freq`; no flag | user | 632c899 |
-| 2.0.0 | 2026-11-03 | all-reports 3-hour bins replace slot sampling; source groups SYNOP / METAR / other, each judged alone | user + rulings | 9313d86, 6ef64dc, 0239af7, a910c1d, (this commit) |
+| 2.0.0 | 2026-11-03 | all-reports 3-hour bins replace slot sampling; source groups SYNOP / METAR / other, each judged alone | user + rulings | 9313d86, 6ef64dc, 0239af7, a910c1d, b04ace6, b747481 |
 
 ---
 

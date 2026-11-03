@@ -86,6 +86,14 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - **`scripts/compare_gold_versions.py`** (read-only): per station, dusty and valid days summed over
   `yearly` in two gold versions, the difference, and the stations whose count dropped; for the
   2.0.0 pilot check (`uv run python scripts/compare_gold_versions.py OLD_RUN_ID NEW_RUN_ID`).
+  (b747481)
+- **Final review of the 2.0.0 branch** (fresh reviewer, whole branch): no critical or important
+  findings; every gold check holds by construction. *Fixed:* the comparison script also compares
+  dusty days at any coverage (`diff_obs`), so a drop caused by validity changes is told apart from
+  a drop in dust detection. *Rulings:* rules.md 4.2 now says the station LMST offset is taken over
+  the gold run's years (the whole record for the published products), not changed in code;
+  deferred minors: `is_special` independent of the configured groups (only an odd config trips the
+  gold check), the Review Focus 5 test at 15 E (bin start 22:00, not 23:xx).
 - **Whole-bronze census** (2026-11-02, read-only scratch scripts, not in the repository): 711,411
   station-year files, 30,375 stations, 1901-2025, 3.90 billion reports. Largest types: FM-15
   1,445 M; FM-12 1,147 M; SAO 469 M; CRN05 329 M (no weather); FM-16 116 M; AUTO 83 M; SY-MT
