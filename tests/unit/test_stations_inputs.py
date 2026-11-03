@@ -93,6 +93,20 @@ def test_override_validation(tmp_path: Path, rows: list[str]) -> None:
         load_overrides(_overrides(tmp_path, *rows))
 
 
+@pytest.mark.parametrize(
+    ("row", "problem"),
+    [
+        (",,,exclude,blank id,2026-11-03", "no station_id"),
+        ("4058209999,,,exclude,leading zero lost,2026-11-03", "11 digits"),
+    ],
+)
+def test_override_station_id_must_be_11_digits(tmp_path: Path, row: str, problem: str) -> None:
+    """Review finding: a row without a usable station ID must not vanish silently (e.g. an ID
+    whose leading zero a spreadsheet dropped)."""
+    with pytest.raises(OverrideError, match=problem):
+        load_overrides(_overrides(tmp_path, row))
+
+
 def test_valid_overrides_load(tmp_path: Path) -> None:
     path = _overrides(
         tmp_path,

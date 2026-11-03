@@ -11,7 +11,7 @@
 -- The rule per station (its LARGEST distance over its station-years, in-file vs isd-history):
 --   no isd-history position (or not listed)        -> unverified (kept in gold, marked)
 --   USAF 949999, isd-history not in the south      -> conflict (southern-hemisphere gate)
---   no in-file latitude/longitude to compare       -> unverified
+--   no in-file latitude/longitude to compare       -> unverified (USAF 949999: conflict)
 --   >= conflict_km: USAF 949999 -> resolved_isd_history (isd-history position), else conflict
 --   >= agree_km -> moved (in-file, flagged); else agree (in-file)
 -- An override row wins over the rule: `use` its position, or `exclude` the station.
@@ -98,6 +98,8 @@ judged AS (
         CASE
             WHEN h.isd_lat IS NULL THEN 'unverified'
             WHEN starts_with(b.station_id, '949999') AND h.isd_lat >= 0 THEN 'conflict'
+            -- a 949999 station's in-file position may be a US one; unchecked -> conflict
+            WHEN d.max_km IS NULL AND starts_with(b.station_id, '949999') THEN 'conflict'
             WHEN d.max_km IS NULL THEN 'unverified'
             WHEN d.max_km >= getvariable('conflict_km') AND starts_with(b.station_id, '949999')
                 THEN 'resolved_isd_history'

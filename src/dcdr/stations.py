@@ -88,7 +88,11 @@ def load_overrides(path: Path) -> pl.DataFrame:
         lon=pl.col("lon").cast(pl.Float64, strict=False),
     )
     use = pl.col("action") == "use"
+    sid = pl.col("station_id").fill_null("")
     problems = {
+        "no station_id": sid == "",
+        # USAF + WBAN; also catches an ID whose leading zero a spreadsheet dropped
+        "station_id not 11 digits": (sid != "") & ~sid.str.contains(r"^\d{11}$"),
         "no reason": pl.col("reason").fill_null("") == "",
         "listed more than once": pl.col("station_id").is_duplicated(),
         "unknown action (use or exclude)": ~pl.col("action")
@@ -98,7 +102,8 @@ def load_overrides(path: Path) -> pl.DataFrame:
         "use needs lon in -180..180": use & ~pl.col("lon").is_between(-180, 180).fill_null(False),
     }
     for what, bad in problems.items():
-        ids = o.filter(bad)["station_id"].to_list()
-        if ids:
-            raise OverrideError(f"{path}: {what}: {ids}")
+        rows = o.with_row_index("row", offset=2).filter(bad)  # file line numbers (header = 1)
+        if rows.height:
+            where = [f"line {r}: {s}" for r, s in zip(rows["row"], rows["station_id"], strict=True)]
+            raise OverrideError(f"{path}: {what}: {where}")
     return o.select(OVERRIDE_COLUMNS).cast(schema)  # type: ignore[arg-type]

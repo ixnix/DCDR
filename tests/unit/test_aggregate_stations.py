@@ -274,3 +274,11 @@ def test_station_status_counts(settings: Settings) -> None:
         ],
     )
     assert station_status_counts(out) == {"agree": 1, "conflict": 1}
+
+
+def test_949999_without_in_file_latitude_is_a_conflict(settings: Settings) -> None:
+    """Review finding: with no in-file latitude the distance cannot be checked, and the in-file
+    longitude of a 949999 station may be a US one; not verifiable -> conflict, not unverified."""
+    _history(settings, (ADELAIDE, "-34.930", "+138.580"))
+    st = _stations(_build(settings, [_station(settings, ADELAIDE, "99.999", "-165.57")]))[ADELAIDE]
+    assert (st["status"], st["in_gold"]) == ("conflict", False)

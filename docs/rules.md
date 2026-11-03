@@ -138,9 +138,9 @@ never used for verifying.
 |---|---|---|---|
 | `agree` | < 10 km in every year (`stations.agree_km`) | in-file: the most common `lon_used` and `lat` | yes |
 | `moved` | largest distance 10 to < 50 km | in-file (probably a real move; flagged) | yes |
-| `conflict` | ≥ 50 km (`stations.conflict_km`); also any 949999 station whose isd-history position is not in the southern hemisphere | none | **no**, until resolved |
+| `conflict` | ≥ 50 km (`stations.conflict_km`); also any 949999 station whose isd-history position is not in the southern hemisphere, or that has no in-file latitude to check (its in-file longitude may be a US one) | none | **no**, until resolved |
 | `resolved_isd_history` | ≥ 50 km at a 949999 station with an isd-history latitude < 0 | isd-history | yes |
-| `unverified` | no isd-history position, not listed, or no in-file latitude | in-file | yes, marked |
+| `unverified` | no isd-history position, not listed, or no in-file latitude (not 949999) | in-file | yes, marked |
 | `override` | a row in `config/stations/position_overrides.csv` | `use`: the override's; `exclude`: none | `use`: yes; `exclude`: no |
 
 The 949999 rule is automatic because it was verified (the Adelaide check and the hemisphere test:

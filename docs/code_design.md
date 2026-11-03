@@ -173,7 +173,7 @@ copy, not in the public repo: NOAA NCEI publishes it with the ISD data).
 | `pilot_20.csv` | 20 dusty stations (2-3 per region) for end-to-end tests | notebook 01 |
 | `contrast.csv` | the 12 hand-picked contrast stations, with reasons | by hand |
 | `regions.yaml` | dust regions: lat/lon box + optional country filter | by hand |
-| `position_overrides.csv` | hand decisions on station positions: `station_id, lat, lon, action` (`use` the given position or `exclude` the station), `reason` (required), `decided` (date); validated by `stations.load_overrides` (a missing reason, a duplicate station, an out-of-range position or an unknown action stops the gold build) | by hand |
+| `position_overrides.csv` | hand decisions on station positions: `station_id, lat, lon, action` (`use` the given position or `exclude` the station), `reason` (required), `decided` (date); validated by `stations.load_overrides` (a missing or non-11-digit `station_id`, a missing reason, a duplicate station, an out-of-range position or an unknown action stops the gold build, naming the file line) | by hand |
 
 Station-list columns: `station_id, name, country, lat, lon, region, aridity_index`. Only
 `station_id` is required by the pipeline.
@@ -332,7 +332,9 @@ isd_lon, max_km, first_year, last_year, n_years, n_dusty_reports, override_actio
 override_reason, isd_history_md5, overrides_md5`. Right after it, `build_gold` creates the view
 `silver` = `silver_all` restricted to the stations with `in_gold`, which every later product reads,
 and writes `stations_review.csv`. Checks: one row per station; known statuses; every station in
-gold has a trusted longitude; no `conflict` in gold.
+gold has a trusted longitude (`trusted_lat` can be null for an `unverified` station without an
+in-file latitude: gold uses only the longitude); no `conflict` in gold. `three_hourly` and `daily`
+also check that they hold only stations in gold (`stations_in_gold`).
 
 ### 7.6 Provenance
 - Bronze metadata: `dcdr_layer, source_md5, source_key, run_id`.
