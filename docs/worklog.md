@@ -7,7 +7,6 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] Rebuild `metar_test_100` under method 2.0.0 (user; pilot_100 done 2026-11-03).
 - [ ] Review `stations_review.csv` (conflicts and unverified, most dusty first) and write
       `config/stations/position_overrides.csv` before the whole-ISD gold.
 - [ ] Re-run notebook 07 (Australia) and look at the first `three_hourly` table (e.g. one outbreak
@@ -36,6 +35,23 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## 2026-11-03
 
+- **metar_test_100 rebuilt under method 2.0.0** (user: `process`, 6,885 silver files, after an
+  `aggregate` that rightly refused its 1.7.0 silver; then `aggregate`; gold
+  20261103T164922Z-e57cb1, all checks pass). All 100 stations `agree`; the review list holds only
+  the Nioro du Sahel override as `override_unused` (a pilot_100 station). Dusty-station threshold:
+  97 kept, 3 left out, all with little dust in ~80 years of hourly reports: Gulkana AK (7 dusty
+  days in 6 years), Northway AK (5 in 5), Honolulu (1 in 1). The kept stations have 15 to 8,547
+  dusty days (median 234); only 6 lie between 10 and 30, so the cut falls in a clear gap.
+- **pilot_100 gold with the threshold and the first override** (user: `aggregate`; gold
+  20261103T165713Z-6b353c, all checks pass): 99 `agree`, 1 `override` (Nioro du Sahel, now at the
+  isd-history position 15.239/-9.577), `not_dusty` 2 (Zhang Ping, Haikou: 0 dusty days); Shannon
+  stays (42 dusty days in 20 years). `stations_review.csv` is empty. Dusty valid days 240,351 and
+  dusty days at any coverage 286,103, both unchanged from the 2.0.0 pilot gold (the two stations
+  left out had no dust; Nioro's offset moved ~1 min and no dusty day); valid days 1,580,441 ->
+  1,561,510 (the two stations' valid days). Niamey 2020: 243 dusty days, 27 May dusty.
+  *Note:* with `products.gold_keep_versions: 3` the 1.10.1 gold (05f054) and the first 2.0.0
+  pilot gold (bdd7e7) were pruned; the comparisons are recorded above. A gold version covers one
+  station list: the active gold now holds pilot_100; metar_test_100 is in e57cb1.
 - **Dusty-station threshold** (user decision): a station goes into gold only with **at least 10
   dusty days in at least 2 different years**; no-dust control stations (pilot: Shannon, Zhang
   Ping, Haikou) are not kept in the full build. Suggested from the whole-bronze census (rough
