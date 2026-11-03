@@ -1,7 +1,7 @@
 -- 3-hourly station product on fixed UTC bins: 00 = 00:00-02:59, 03 = 03:00-05:59, ..., 21.
 -- Definitions: docs/rules.md section 10. Built from silver, independently of the daily table.
--- Inputs: view `silver`; variables `synop_types` and `metar_types` (the slot source lists,
--- config sampling.sources), which define a "regular" report.
+-- Inputs: view `silver` (its `source_group`: synop / metar / other, method 2.0.0); variable
+-- `vis5_max_m` (dust at or below this visibility counts for dust_vis5).
 --
 -- Output: one row per station per bin with at least one report (gold table `three_hourly`).
 -- Run by aggregate.build_gold, like daily.sql.
@@ -11,24 +11,42 @@
 -- visibility) come from ONE report, the first regular SYNOP or METAR in the bin (user decision
 -- 2026-10-30), so a row never mixes values from different reports. Extremes, dust and counts use
 -- all reports; they grow with how often a station reports, which the counts show.
+-- Regular reports: the SYNOP group, and the METAR group without its special reports (SPECI FM-16,
+-- SAOSP), which are sent because conditions changed.
+--
+-- Local time (method 2.0.0): ONE LMST offset per station, from its most common longitude over all
+-- silver rows (ties: the smallest), so every local day holds exactly the 8 bins that start on it.
+-- With the state report's own longitude, a 0.1-degree difference between report types moved a
+-- bin across local midnight near some longitudes (9 bins on one day, 7 on the next).
 --
 -- How the query is built (CTEs):
+--   station the station's LMST offset
 --   rep     the reports in scope, with their bin, whether they are regular, and dust
 --   ranked  the reports numbered within each bin: 1 = the state report
 --   state   the state report of each bin, with DUP6
 --   agg     per bin, from all reports: extremes, dust, counts
 --   final SELECT  state joined to agg, plus local time of the bin start
-WITH rep AS (
+WITH station AS (
+    -- the station's most common longitude (silver lon_used is never null); 4 min per degree
+    SELECT station_id, to_milliseconds(CAST(round(lon_used * 240000) AS BIGINT)) AS lmst_offset
+    FROM (
+        SELECT station_id, lon_used, count(*) AS n
+        FROM silver
+        GROUP BY station_id, lon_used
+    )
+    QUALIFY row_number() OVER (PARTITION BY station_id ORDER BY n DESC, lon_used) = 1
+),
+rep AS (
     SELECT
         *,
         -- time_bucket floors to 3-hour steps counted from a midnight, so bins start at 00, 03, ...
         time_bucket(INTERVAL 3 HOUR, time_utc) AS bin_time,
-        list_contains(getvariable('synop_types'), report_type) AS is_synop,
-        list_contains(getvariable('metar_types'), report_type) AS is_metar,
-        is_synop OR is_metar AS is_regular,
         -- special reports, sent because conditions changed: SPECI (FM-16) and its pre-1996 US
         -- predecessor SAOSP, "Airways special report" (ISD format document p. 6)
-        NOT is_regular AND report_type IN ('FM-16', 'SAOSP') AS is_special,
+        report_type IN ('FM-16', 'SAOSP') AS is_special,
+        source_group = 'synop' AS is_synop,
+        source_group = 'metar' AND NOT is_special AS is_metar,
+        is_synop OR is_metar AS is_regular,
         -- Is this report dusty? (same list as classify.DUSTY_CLASSES and daily.sql)
         list_contains(
             ['suspended', 'blowing', 'whirls', 'storm', 'storm_severe', 'storm_thunder', 'dust_haze'],
@@ -56,9 +74,6 @@ state AS (
         bin_time,
         time_utc AS state_time_utc,
         report_type AS state_report_type,
-        -- the state report's LMST offset (silver: time_lmst = time_utc + longitude x 4 min); taken
-        -- from one report so a station that moved within the bin still gets one, fixed, answer
-        time_lmst - time_utc AS lmst_offset,
         CASE WHEN use_wsd THEN wsd END AS wsd,
         CASE WHEN use_wind_dir THEN wind_dir END AS wind_dir,
         CASE WHEN use_t THEN t END AS t,
@@ -80,6 +95,7 @@ agg AS (
         bin_time,
         -- extremes over all reports in the bin
         max(gust) FILTER (WHERE use_gust) AS gust_max,
+        max(wsd) FILTER (WHERE use_wsd) AS wsd_max,
         min(vis_capped) FILTER (WHERE use_vis) AS vis_min,
         -- dust: observed if any report observed the weather (a code, an explicit or inferred
         -- "nothing significant"); the dust columns are set in the final SELECT
@@ -92,6 +108,21 @@ agg AS (
         bool_or(dust_class_final IN ('storm', 'storm_severe', 'storm_thunder')) AS any_storm,
         bool_or(dust_class_final = 'dust_haze') AS any_dust_haze,
         bool_or(dust_class_final = 'screened') AS any_screened,
+        -- per source group: did it observe the weather, did it see dust
+        bool_or(has_pw AND source_group = 'synop') AS obs_synop,
+        bool_or(has_pw AND source_group = 'metar') AS obs_metar,
+        bool_or(has_pw AND source_group = 'other') AS obs_other,
+        bool_or(is_dusty AND source_group = 'synop') AS any_dust_synop,
+        bool_or(is_dusty AND source_group = 'metar') AS any_dust_metar,
+        bool_or(is_dusty AND source_group = 'other') AS any_dust_other,
+        -- dust at <= 5 km, judged with each dusty report's own visibility; a dusty report of
+        -- unknown visibility might have been at <= 5 km
+        bool_or(is_dusty AND coalesce(use_vis, false) AND vis_raw <= getvariable('vis5_max_m'))
+            AS any_dust_vis5,
+        bool_or(is_dusty AND NOT coalesce(use_vis, false)) AS any_dust_vis_unknown,
+        -- "nothing significant" inferred (rule V3, METAR fragments) or implied (METAR, no group)
+        bool_or(pw_status = 'nil_inferred') AS nil_inferred,
+        bool_or(pw_status = 'nil_metar') AS nil_metar,
         min(time_utc) FILTER (WHERE is_dusty) AS first_dust_time_utc,
         -- separate evidence, not part of `dusty` (as in the daily table)
         bool_or(flag_vicinity) AS vicinity_dust,
@@ -110,9 +141,9 @@ agg AS (
 SELECT
     s.station_id,
     s.bin_time,
-    CAST(s.bin_time + s.lmst_offset AS DATE) AS lmst_date,
-    hour(s.bin_time + s.lmst_offset) + minute(s.bin_time + s.lmst_offset) / 60
-        + microsecond(s.bin_time + s.lmst_offset) / 3.6e9 AS lmst_hour,
+    CAST(s.bin_time + st.lmst_offset AS DATE) AS lmst_date,
+    hour(s.bin_time + st.lmst_offset) + minute(s.bin_time + st.lmst_offset) / 60
+        + microsecond(s.bin_time + st.lmst_offset) / 3.6e9 AS lmst_hour,
     s.state_time_utc,
     s.state_report_type,
     s.wsd,
@@ -124,6 +155,7 @@ SELECT
     s.vis,
     s.dup6,
     a.gust_max,
+    a.wsd_max,
     a.vis_min,
     a.observed,
     a.observed_explicit,
@@ -135,6 +167,18 @@ SELECT
     CASE WHEN a.observed THEN a.any_storm END AS c_storm,
     CASE WHEN a.observed THEN a.any_dust_haze END AS c_dust_haze,
     CASE WHEN a.observed THEN a.any_screened END AS c_screened,
+    -- per source: true = dust, false = observed without dust, null = that source did not observe
+    CASE WHEN a.obs_synop THEN a.any_dust_synop END AS dust_synop,
+    CASE WHEN a.obs_metar THEN a.any_dust_metar END AS dust_metar,
+    CASE WHEN a.obs_other THEN a.any_dust_other END AS dust_other,
+    CASE
+        WHEN NOT a.observed THEN NULL
+        WHEN a.any_dust_vis5 THEN true
+        WHEN a.any_dust_vis_unknown THEN NULL
+        ELSE false
+    END AS dust_vis5,
+    a.nil_inferred,
+    a.nil_metar,
     a.first_dust_time_utc,
     a.vicinity_dust,
     a.past_weather_dust,
@@ -147,4 +191,5 @@ SELECT
     a.n_other
 FROM state AS s
 JOIN agg AS a ON s.station_id = a.station_id AND s.bin_time = a.bin_time
+JOIN station AS st ON s.station_id = st.station_id
 ORDER BY s.station_id, s.bin_time

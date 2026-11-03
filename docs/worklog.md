@@ -43,7 +43,15 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   New `process/sources.py` adds `source_group` and `is_excluded_type`; config section `sources`
   (`exclude_types` moved there from `sampling`); silver contract: a group exactly on the
   non-summary reports. Sampling still runs until the bins replace it. `METHOD_VERSION` 2.0.0.
-  *Ruling:* a missing or unknown report type is "other" (never excluded).
+  *Ruling:* a missing or unknown report type is "other" (never excluded). (9313d86)
+- **`three_hourly` on source groups** (method 2.0.0): new `dust_synop`, `dust_metar`, `dust_other`
+  (true / false / null = not observed by that group), `dust_vis5` (null when a dusty report's
+  visibility is unknown), `wsd_max`, `nil_inferred`, `nil_metar`; regular reports from
+  `source_group` (SPECI/SAOSP not regular); **one LMST offset per station** (its most common
+  longitude; spec, after the builder check found that the state report's own longitude can put 9
+  bins on a local day). Three new gold checks. The `synop_types` / `metar_types` variables are
+  gone. *Ruling:* the old test "LMST uses the state report's longitude" is replaced by
+  `test_one_lmst_offset_per_station`.
 
 ## 2026-11-02
 

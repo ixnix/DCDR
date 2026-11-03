@@ -193,6 +193,19 @@ PRODUCTS = [
             "dust_null_iff_unobserved": (
                 "SELECT count(*) FROM three_hourly WHERE (dusty IS NULL) <> (NOT observed)"
             ),
+            # A source's verdict needs that source's observation; the bin is dusty exactly when a
+            # source saw dust; dust at <= 5 km is dust.
+            "source_dust_needs_observation": (
+                "SELECT count(*) FROM three_hourly WHERE NOT observed AND (dust_synop IS NOT NULL "
+                "OR dust_metar IS NOT NULL OR dust_other IS NOT NULL OR dust_vis5 IS NOT NULL)"
+            ),
+            "dusty_is_any_source": (
+                "SELECT count(*) FROM three_hourly WHERE observed AND dusty <> (coalesce("
+                "dust_synop, false) OR coalesce(dust_metar, false) OR coalesce(dust_other, false))"
+            ),
+            "vis5_implies_dusty": (
+                "SELECT count(*) FROM three_hourly WHERE dust_vis5 AND NOT dusty"
+            ),
             # A first-dust time exactly when the bin is dusty.
             "first_dust_iff_dusty": (
                 "SELECT count(*) FROM three_hourly "
@@ -330,14 +343,6 @@ def _sql_path(path: Path) -> str:
     return text
 
 
-def _sql_list(items: list[str]) -> str:
-    """A list of strings as an SQL list literal, e.g. ['FM-12', 'FM-15']. As in `_sql_path`, a
-    quote (') would break the SQL, so such items are refused rather than escaped."""
-    if any("'" in item for item in items):
-        raise ValueError(f"unsupported character in list: {items}")
-    return "[" + ", ".join(f"'{item}'" for item in items) + "]"
-
-
 def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Path:
     """Build every gold product into gold/versions/<run_id>/, check it, then activate it.
 
@@ -369,10 +374,6 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     con.execute(
         f"SET VARIABLE min_valid_days_month = {int(settings.products.min_valid_days_month)}"
     )
-    # ... and the report types of each slot source, which three_hourly.sql calls "regular".
-    for source in ("synop", "metar"):
-        types = _sql_list(settings.sampling.sources[source])
-        con.execute(f"SET VARIABLE {source}_types = {types}::VARCHAR[]")
     try:
         # Record which silver this gold version was built from (lineage).
         lineage = {"silver_method_version": expected[0], "silver_config_hash": expected[1]}

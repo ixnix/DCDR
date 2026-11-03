@@ -107,6 +107,12 @@ Special cases:
   LMST midnight; it is dated to the day it summarises: `date(time_lmst − 12 h)`.
 - A synoptic slot is counted on the local day of the **slot**, not of the report that fills it
   (a report up to 30 min early can sit across midnight).
+- A 3-hour bin (gold `three_hourly`, section 10) uses **one offset per station** (method 2.0.0):
+  its most common longitude over all its silver reports (ties: the smallest). The bin belongs to
+  the local date on which it starts. *Why:* with each bin's own state report, a 0.1° difference
+  between SYNOP and METAR coordinates moved a bin across local midnight near some longitudes (9
+  bins on one day, 7 on the next), the failure slot sampling had in Australia (section 8). *Cost:*
+  a station that moved 50 km east-west keeps an offset about 2 min off for part of its record.
 
 ## 5. Was the weather observed?
 
@@ -592,16 +598,19 @@ decision 2026-10-30: "aggregate all reports"). No slots, no ±30 min window, no 
 
 | Column(s) | Definition | Why |
 |---|---|---|
-| `state_time_utc`, `state_report_type` | the **state report**: the first regular report (a slot source type: SYNOP or METAR, section 8) in the bin; at the same minute a SYNOP before a METAR; with no regular report, the first report of any type (e.g. a SPECI) | one report per row (user decision 2026-10-30) |
+| `state_time_utc`, `state_report_type` | the **state report**: the first regular report (the SYNOP group, or the METAR group without SPECI and SAOSP; section 8) in the bin; at the same minute a SYNOP before a METAR; with no regular report, the first report of any type (e.g. a SPECI) | one report per row (user decision 2026-10-30) |
 | `wsd`, `wind_dir`, `t`, `td`, `rh`, `slp`, `vis`, `dup6` | from the state report only, each only if it passed QC (section 7); a missing value is **not** filled from another report | values in a row belong to the same time |
-| `gust_max`, `vis_min` | maximum gust and minimum visibility over all reports in the bin | extremes during an outbreak |
+| `gust_max`, `wsd_max`, `vis_min` | maximum gust, maximum wind speed and minimum visibility over all reports in the bin | extremes during an outbreak |
 | `observed`, `observed_explicit` | any report observed the weather (section 5); any explicit observation (code, iX 2/5, CAVOK) | basis of the dust verdict |
 | `dusty` | any report dusty (`dust_class_final`, after the haze rule and the RH screen); **null when not observed** | "if it cannot be verified, it is 'not observed'" |
 | `c_suspended`, `c_blowing`, `c_whirls`, `c_storm`, `c_dust_haze`, `c_screened` | any report in that class; null when not observed | intensity and type of dust |
+| `dust_synop`, `dust_metar`, `dust_other` | per source group (section 8): true if a report of that group is dusty; false if the group observed the weather and none was dusty; **null if no report of the group observed** (method 2.0.0) | which kind of report saw the dust; observing density by source |
+| `dust_vis5` | true if a dusty report's own visibility is ≤ 5 km (`vis5_max_m`); else **null** if a dusty report's visibility is unknown (it might have been ≤ 5 km) or the bin is not observed; else false (method 2.0.0) | dust that reduced visibility to ≤ 5 km, caught alike by SYNOP and METAR (section 9) |
+| `nil_inferred`, `nil_metar` | any report with "nothing significant" inferred (rule V3, METAR fragments) or implied (METAR without a weather group) | how much of the observation rests on inference |
 | `first_dust_time_utc` | time of the first dusty report in the bin | onset timing |
 | `vicinity_dust`, `past_weather_dust`, `remarks_dust` | as in the daily table (section 9); not part of `dusty` | other evidence, kept apart |
-| `n_reports`, `n_reports_pw`, `n_synop`, `n_metar`, `n_speci`, `n_other` | reports in the bin: all, observed, and per type group (synop and metar = the slot source types; speci = special reports, FM-16 SPECI and its pre-1996 US predecessor SAOSP, "Airways special report", ISD format document p. 6) | sampling rate |
-| `lmst_date`, `lmst_hour` | local mean solar time of the bin start (section 4.2), with the state report's longitude | join with the daily table; local timing |
+| `n_reports`, `n_reports_pw`, `n_synop`, `n_metar`, `n_speci`, `n_other` | reports in the bin: all, observed, and per group (synop; metar without the special reports; speci = FM-16 SPECI and its pre-1996 US predecessor SAOSP, "Airways special report", ISD format document p. 6; other) | sampling rate |
+| `lmst_date`, `lmst_hour` | local mean solar time of the bin start (section 4.2), with **one offset per station** (method 2.0.0) | join with the daily table; local timing |
 
 **Caution: sampling rate.** `dusty`, `gust_max` and `vis_min` use every report, so they grow with how
 often a station reports (an hourly airport with SPECIs sees more of each bin than a 3-hourly SYNOP

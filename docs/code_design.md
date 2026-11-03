@@ -252,21 +252,24 @@ code-6 diagnostic.
 One row per station per 3-hour UTC bin (00 = 00:00-02:59, ..., 21), for every bin with a report.
 Built from silver in the same gold run as `daily`, but independently of it (no slots). Columns
 (definitions in Part 2, section 10): `station_id, bin_time, lmst_date, lmst_hour, state_time_utc,
-state_report_type, wsd, wind_dir, t, td, rh, slp, vis, dup6, gust_max, vis_min, observed,
+state_report_type, wsd, wind_dir, t, td, rh, slp, vis, dup6, gust_max, wsd_max, vis_min, observed,
 observed_explicit, dusty, c_{suspended, blowing, whirls, storm, dust_haze, screened},
-first_dust_time_utc, vicinity_dust, past_weather_dust, remarks_dust, n_reports, n_reports_pw,
+dust_synop, dust_metar, dust_other, dust_vis5, nil_inferred, nil_metar, first_dust_time_utc, vicinity_dust, past_weather_dust, remarks_dust, n_reports, n_reports_pw,
 n_synop, n_metar, n_speci, n_other`.
 
 The state values come from one report per bin (the first regular SYNOP or METAR), chosen with a
 window function: `row_number() OVER (PARTITION BY station_id, bin_time ORDER BY ...)` numbers the
-reports of each bin, and row 1 is kept. "Regular" means a slot source type: `build_gold` passes the
-config lists `sampling.sources.synop` and `.metar` to the SQL as DuckDB variables `synop_types` and
-`metar_types` (`SET VARIABLE`, like `min_slots`), so the SQL and sampling can't drift apart.
+reports of each bin, and row 1 is kept. "Regular" means the silver `source_group` synop, or metar
+without the special reports (FM-16, SAOSP). The station's LMST offset (one per station, from its
+most common `lon_used`) is a CTE that picks, per station, the longitude with the most rows
+(`QUALIFY row_number() ... = 1`, ties to the smallest).
 
 Checks run before activation (each must return 0 rows): one row per station and bin; bins start
 at 00, 03, ..., 21 on the full hour; the state report lies inside its bin; observed reports ≤
 reports, and the type counts add up to `n_reports`; `dusty` is null exactly when nothing was
-observed; `first_dust_time_utc` is set exactly when the bin is dusty.
+observed; no source verdict (`dust_synop`, `_metar`, `_other`, `dust_vis5`) without an
+observation; an observed bin is dusty exactly when a source saw dust; `dust_vis5` implies `dusty`;
+`first_dust_time_utc` is set exactly when the bin is dusty.
 
 Adding a gold product is one entry in `aggregate.PRODUCTS` (name, SQL file, checks) plus the SQL
 file; `build_gold` runs every entry against the same silver view.

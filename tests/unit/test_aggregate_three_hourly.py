@@ -219,8 +219,8 @@ def test_lmst_of_bin_start(settings: Settings) -> None:
 
 
 def test_type_groups_follow_config_and_saosp_is_a_special(settings: Settings) -> None:
-    # AUST is a SYNOP source and SAO a METAR source (config sampling.sources); SAOSP is the
-    # pre-1996 US airways special (ISD format document p. 6), counted with the SPECIs.
+    # AUST is SYNOP and SAO METAR (config sources.groups); SAOSP, the pre-1996 US airways special
+    # (ISD format document p. 6), is in the METAR group but counted with the SPECIs.
     r = _one(
         settings,
         [
@@ -233,12 +233,74 @@ def test_type_groups_follow_config_and_saosp_is_a_special(settings: Settings) ->
     assert got == (1, 1, 1, 0)
 
 
-def test_lmst_uses_the_state_reports_longitude(settings: Settings) -> None:
-    # A station that moved within the bin: local time follows the state report (deterministic).
-    rows = [
-        isd_row("2024-01-01T06:10:00", LONGITUDE="0.0", REPORT_TYPE="FM-16"),
-        isd_row("2024-01-01T07:00:00", LONGITUDE="-115.16343"),  # the state report
-    ]
-    r = _one(settings, rows)
-    assert r["lmst_date"] == date(2023, 12, 31)
-    assert r["lmst_hour"] == pytest.approx(22.3226, abs=0.001)
+def test_one_lmst_offset_per_station(settings: Settings) -> None:
+    """Review Focus 1: one LMST offset per station (its most common longitude), so a 0.1-degree
+    difference between report types cannot move a bin across local midnight (9 bins a day)."""
+    rows = [isd_row(f"2024-01-01T{h:02d}:10:00", **LON0) for h in range(0, 24, 3)]
+    # the 00 bin's state report (earliest regular), 0.1 degree west: LMST 23:59:36 on its own
+    rows.append(isd_row("2024-01-01T00:00:00", LONGITUDE="-0.1", REPORT_TYPE="FM-15"))
+    b = _bins(settings, [_silver(settings, rows)])
+    first = b.row(0, named=True)
+    assert first["state_report_type"] == "FM-15"
+    assert (first["lmst_date"], first["lmst_hour"]) == (date(2024, 1, 1), pytest.approx(0.0))
+    assert b["lmst_date"].unique().to_list() == [date(2024, 1, 1)]
+
+
+# --- source groups, vis5, wind maximum, nil flags (method 2.0.0) ------------------------------
+
+
+def test_bin_source_columns_three_way(settings: Settings) -> None:
+    r = _one(settings, [_row("00:00", MW1="02,1"), _row("01:00", REPORT_TYPE="FM-15", MW1="07,1")])
+    got = (r["dust_synop"], r["dust_metar"], r["dust_other"], r["dusty"])
+    assert got == (False, True, None, True)
+
+
+def test_speci_only_dusty_bin_counts_under_metar(settings: Settings) -> None:
+    r = _one(settings, [_row("01:20", REPORT_TYPE="FM-16", MW1="07,1")])
+    assert (r["dust_metar"], r["dust_synop"], r["n_speci"]) == (True, None, 1)
+    assert r["state_report_type"] == "FM-16"
+
+
+def test_other_group_dust(settings: Settings) -> None:
+    r = _one(settings, [_row("00:00", REPORT_TYPE="AERO", MW1="07,1")])
+    got = (r["dust_other"], r["dust_synop"], r["dust_metar"], r["dusty"])
+    assert got == (True, None, None, True)
+
+
+AT_3KM, AT_8KM, UNKNOWN = "003000,1,N,1", "008000,1,N,1", "999999,9,N,9"
+
+
+@pytest.mark.parametrize(
+    ("reports", "expected"),
+    [
+        ([("07,1", AT_3KM)], True),
+        ([("07,1", AT_8KM)], False),
+        ([("07,1", UNKNOWN)], None),
+        ([("07,1", AT_8KM), ("07,1", UNKNOWN)], None),  # the unknown one might have been <= 5 km
+        ([("07,1", AT_3KM), ("07,1", UNKNOWN)], True),
+        ([("02,1", "002000,1,N,1")], False),  # low visibility without dust
+    ],
+)
+def test_dust_vis5_cases(
+    settings: Settings, reports: list[tuple[str, str]], expected: bool | None
+) -> None:
+    rows = [_row(f"00:{10 * i:02d}", MW1=mw, VIS=vis) for i, (mw, vis) in enumerate(reports)]
+    assert _one(settings, rows)["dust_vis5"] is expected
+
+
+def test_aust_at_23_utc_falls_in_21_bin(settings: Settings) -> None:
+    r = _one(settings, [_row("23:00", REPORT_TYPE="AUST", MW1="02,1")])
+    assert (r["bin_time"], r["n_synop"]) == (datetime(2024, 1, 1, 21), 1)
+
+
+def test_wsd_max_and_nil_flags(settings: Settings) -> None:
+    r = _one(
+        settings,
+        [
+            _row("00:00", WND="090,1,N,0050,1", REM="SYN004BUFR"),  # V3: nothing, inferred
+            _row("00:51", REPORT_TYPE="FM-15", WND="090,1,N,0090,1"),
+        ],
+        nil_guard=True,
+    )
+    assert (r["wsd"], r["wsd_max"]) == (5.0, 9.0)
+    assert (r["nil_inferred"], r["nil_metar"]) == (True, False)
