@@ -82,7 +82,10 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   and the config section `sampling` are gone; each report lives in the file of its own UTC year,
   so the next year's bronze is no longer read (silver metadata without `next_year_present`,
   `next_source_md5`). A profile that still sets `sampling` is rejected. The open item "±90 min
-  fallback window" is obsolete (no slots).
+  fallback window" is obsolete (no slots). (b04ace6)
+- **`scripts/compare_gold_versions.py`** (read-only): per station, dusty and valid days summed over
+  `yearly` in two gold versions, the difference, and the stations whose count dropped; for the
+  2.0.0 pilot check (`uv run python scripts/compare_gold_versions.py OLD_RUN_ID NEW_RUN_ID`).
 - **Whole-bronze census** (2026-11-02, read-only scratch scripts, not in the repository): 711,411
   station-year files, 30,375 stations, 1901-2025, 3.90 billion reports. Largest types: FM-15
   1,445 M; FM-12 1,147 M; SAO 469 M; CRN05 329 M (no weather); FM-16 116 M; AUTO 83 M; SY-MT

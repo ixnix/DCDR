@@ -73,7 +73,8 @@ DCDR/
 ├── notebooks/                  (local only, not in the public repo) analyses (01: pilot station selection; 02: validating inferred "nothing significant";
 │                               03: METAR present weather; 04: slot sources over the full record)
 ├── scripts/                    one-off scripts (thin_slice_report.py; fetch_references.py;
-│                               list_isd_stations.py: station list of the whole ISD archive)
+│                               list_isd_stations.py: station list of the whole ISD archive;
+│                               compare_gold_versions.py: dusty days per station, two gold versions)
 ├── references/                official code manuals, local copies (git-ignored; index: docs/references.md)
 ├── tests/                      pytest: unit/, integration/, fixtures/
 ├── docs/                       code_design.md, rules.md, rules_history.md, worklog.md, references
