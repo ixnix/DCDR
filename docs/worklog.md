@@ -7,16 +7,7 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] **Rebuild silver and gold on the pilot for method 2.0.0** (user): pilot_100 and
-      metar_test_100; then compare dusty-day counts with the 1.10.1 gold (Niamey 2020: the 7 days
-      found only in unselected METARs, 27 May among them, must be dusty; every station whose
-      count drops is listed and explained).
-- [ ] **Pilot gold with station positions** (user; silver unchanged): `uv run dcdr aggregate
-      --years 1931-2025 --stations config/stations/pilot_100.csv`; expected 99 `agree` and 1
-      `moved` (61230 Nioro du Sahel), and `three_hourly`/`daily` unchanged against the 2.0.0 gold
-      built just before (daily summaries are now dated with the station's one trusted longitude,
-      not each report's own: a summary near local midnight at a station that moved can shift a
-      day).
+- [ ] Rebuild `metar_test_100` under method 2.0.0 (user; pilot_100 done 2026-11-03).
 - [ ] Review `stations_review.csv` (conflicts and unverified, most dusty first) and write
       `config/stations/position_overrides.csv` before the whole-ISD gold.
 - [ ] "Dusty stations" threshold for keeping stations after silver (whole ISD; user decision in
@@ -47,6 +38,33 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## 2026-11-03
 
+- **Pilot rebuilt with method 2.0.0 and station positions** (user ran `process` and
+  `aggregate`, pilot_100, 1931-2025; gold 20261103T154804Z-bdd7e7, silver 2.0.0, isd-history md5
+  b086d8ee..., no override file; all gold checks pass). Stations: 99 `agree`, 1 `moved` (61230
+  Nioro du Sahel, 24.4 km); none left out. Against the 1.10.1 gold (20261102T163756Z-05f054):
+  dusty valid days 233,010 -> 240,351 (+3.2 %), valid days 1,552,147 -> 1,580,441 (+1.8 %),
+  dusty days at any coverage 280,198 -> 286,103 (+2.1 %); **no station has fewer dusty days** on
+  either measure (`scripts/compare_gold_versions.py`). Not done: the check against a 2.0.0 gold
+  built before the station positions (no such version; one build had both changes; it would only
+  concern Nioro du Sahel, whose offset is unchanged by design).
+- **Finding: Niamey 2020 acceptance check passes.** Exactly 7 days are newly dusty (4 May,
+  19 May, 27 May, 28 June, 7 July, 16 September, 3 October; 236 -> 243 dusty days), all already
+  valid. Their 10 dusty reports are routine METARs on the full hour, 60 min from the nearest
+  synoptic hour, so they were never slot candidates (±30 min). 27 May: the duststorm crossed
+  between the SYNOPs: 14:00 METAR `07034G48KT 0050 R09/M0150V0900 SQ DS TS`; the 12:00 SYNOP
+  reported nothing significant (iX 2) and the 15:00 SYNOP ww 95 (thunderstorm with rain, which
+  takes the single ww code). The `TEMPO`/`BECMG ... SQ BLDU` forecasts at 11:00-13:00 are rightly
+  not counted (trend groups are ignored, rules.md 5.2).
+- **Finding: why US airports gain most** (El Paso 1,206 -> 1,786 dusty valid days, +48 %;
+  Phoenix 206 -> 590, +186 %). Scratch script (read-only, not in the repository) classifying each
+  newly dusty day by why the old slots missed its dust: El Paso 583 days with new dust (378 only in
+  routine METARs > 30 min from a synoptic hour, mostly at :51; 203 only in SPECIs) and 3 days
+  newly valid; Phoenix 384 (276 only in SPECIs, monsoon haboobs; 107 in non-candidate METARs).
+  Cause: of the three hourly METARs per 3 hours (e.g. 00:51, 01:51, 02:51) only one was ever a
+  candidate; SPECIs never; US SYNOPs since ~2005 are derived copies (rule 5.2.9), so no
+  independent look. 3 days (El Paso 2, Phoenix 1) are not explained by the slot rule and were
+  not traced (probably local-day boundaries). This is the documented reporting-rate effect
+  (rules.md 8, 9): compare stations with the per-source columns and the report counts.
 - **Station positions, step 1: the inputs** (spec
   `docs/superpowers/specs/2026-11-03-station-positions-design.md`, approved 2026-11-03; plan
   `docs/superpowers/plans/2026-11-03-station-positions.md`). New `src/dcdr/stations.py` loads the
