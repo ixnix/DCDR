@@ -81,7 +81,11 @@ def _with_overrides(settings: Settings, tmp_path: Path, *rows: str) -> Settings:
     s = load_settings(
         overrides={
             "paths": {"data_root": str(settings.data_root)},
-            "stations": {"position_overrides": str(path)},
+            "stations": {
+                "position_overrides": str(path),
+                "min_dusty_days": 0,  # these stations have no dust
+                "min_dusty_years": 0,
+            },
         }
     )
     return s
@@ -273,7 +277,7 @@ def test_station_status_counts(settings: Settings) -> None:
             _station(settings, other, "29.227", "47.969"),
         ],
     )
-    assert station_status_counts(out) == {"agree": 1, "conflict": 1}
+    assert station_status_counts(out) == {"agree": 1, "conflict": 1, "not_dusty": 0}
 
 
 def test_949999_without_in_file_latitude_is_a_conflict(settings: Settings) -> None:
@@ -282,3 +286,94 @@ def test_949999_without_in_file_latitude_is_a_conflict(settings: Settings) -> No
     _history(settings, (ADELAIDE, "-34.930", "+138.580"))
     st = _stations(_build(settings, [_station(settings, ADELAIDE, "99.999", "-165.57")]))[ADELAIDE]
     assert (st["status"], st["in_gold"]) == ("conflict", False)
+
+
+# --- dusty-station threshold (user decision 2026-11-03: >= 10 dusty days in >= 2 years) -------
+
+
+def _threshold(settings: Settings) -> Settings:
+    """The test settings with the default threshold (10 dusty days, 2 years) switched back on."""
+    return load_settings(
+        overrides={
+            "paths": {"data_root": str(settings.data_root)},
+            "stations": {
+                "position_overrides": settings.stations.position_overrides,
+                "min_dusty_days": 10,
+                "min_dusty_years": 2,
+            },
+        }
+    )
+
+
+def _dust_days(
+    settings: Settings, station: str, days: list[str], extra: list[dict] | None = None
+) -> list[Path]:
+    """Silver for `station` (longitude 0) with one dusty SYNOP (MW 07) at 12 UTC on each day and a
+    clear one at 00 UTC; one file per year."""
+    rows = [
+        isd_row(f"{d}T{h}:00:00", STATION=station, LONGITUDE="0.0", MW1=mw)
+        for d in days
+        for h, mw in (("00", "02,1"), ("12", "07,1"))
+    ] + (extra or [])
+    paths = []
+    for year in sorted({int(r["DATE"][:4]) for r in rows}):
+        part = [r for r in rows if r["DATE"].startswith(str(year))]
+        df = build_station_year(bronze_frame(part), None, year, settings)
+        path = settings.data_root / "silver" / f"year={year}" / f"{station}.parquet"
+        write_silver(
+            df,
+            path,
+            run_id="r",
+            config_hash=silver_config_hash(settings),
+            source_md5="m",
+            prev_source_md5="",
+        )
+        paths.append(path)
+    return paths
+
+
+TEN_DAYS_TWO_YEARS = [f"2023-03-{d:02d}" for d in range(1, 6)] + [
+    f"2024-03-{d:02d}" for d in range(1, 6)
+]
+
+
+def test_dusty_station_needs_10_days_in_2_years(settings: Settings) -> None:
+    s = _threshold(settings)
+    kept, few, one_year = "40582099999", "40583099999", "40584099999"
+    paths = (
+        _dust_days(s, kept, TEN_DAYS_TWO_YEARS)
+        + _dust_days(s, few, TEN_DAYS_TWO_YEARS[1:])  # 9 days
+        + _dust_days(s, one_year, [f"2024-03-{d:02d}" for d in range(1, 11)])  # 10 days, 1 year
+    )
+    out = _build(s, paths)
+    st = _stations(out)
+    got = {
+        k: (st[k]["n_dusty_days"], st[k]["n_dusty_years"], st[k]["is_dusty_station"]) for k in st
+    }
+    assert got == {kept: (10, 2, True), few: (9, 2, False), one_year: (10, 1, False)}
+    assert [k for k in st if st[k]["in_gold"]] == [kept]
+    for name in ("three_hourly", "daily", "monthly", "yearly", "decadal"):
+        assert set(_table(out, name)["station_id"]) == {kept}
+
+
+def test_two_dusty_reports_on_one_local_day_count_once(settings: Settings) -> None:
+    s = _threshold(settings)
+    extra = [isd_row("2024-03-01T15:00:00", STATION=KUWAIT, LONGITUDE="0.0", MW1="07,1")]
+    st = _stations(_build(s, _dust_days(s, KUWAIT, TEN_DAYS_TWO_YEARS, extra)))[KUWAIT]
+    assert (st["n_dusty_days"], st["n_dusty_years"]) == (10, 2)
+
+
+def test_review_list_only_shows_dusty_stations(settings: Settings) -> None:
+    s = _threshold(settings)
+    dusty, clear = "40582099999", "40583099999"
+    _history(s, (dusty, "+29.227", "+049.000"), (clear, "+29.227", "+049.000"))  # both conflicts
+    paths = _dust_days(s, dusty, TEN_DAYS_TWO_YEARS) + _dust_days(s, clear, ["2024-03-01"])
+    out = _build(s, paths)
+    assert [r["station_id"] for r in _review(out)] == [dusty]
+    assert station_counts_not_dusty(out) == 1
+
+
+def station_counts_not_dusty(out: Path) -> int:
+    from dcdr.aggregate import station_status_counts
+
+    return station_status_counts(out)["not_dusty"]

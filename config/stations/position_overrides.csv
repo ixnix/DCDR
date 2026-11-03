@@ -1,0 +1,2 @@
+station_id,lat,lon,action,reason,decided
+61230099999,15.239,-9.577,use,author review of stations_review.csv: use the isd-history position (in-file 15.2333/-9.35; 24 km; status moved),2026-11-03

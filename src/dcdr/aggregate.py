@@ -137,6 +137,10 @@ PRODUCTS = [
             "conflict_not_in_gold": (
                 "SELECT count(*) FROM stations WHERE status = 'conflict' AND in_gold"
             ),
+            # In gold exactly when the position is usable and the station is dusty.
+            "in_gold_definition": (
+                "SELECT count(*) FROM stations WHERE in_gold <> (position_ok AND is_dusty_station)"
+            ),
         },
     ),
     Product(
@@ -386,23 +390,28 @@ def _sql_path(path: Path) -> str:
 
 
 def station_status_counts(gold_dir: Path) -> dict[str, int]:
-    """Stations per position status in a gold version (statuses without a station omitted)."""
-    path = gold_dir / "stations" / "part-000.parquet"
+    """Stations per position status in a gold version (statuses without a station omitted), and
+    `not_dusty`: the stations left out of gold by the dusty-station threshold."""
+    path = _sql_path(gold_dir / "stations" / "part-000.parquet")
     rows = duckdb.sql(
-        f"SELECT status, count(*) FROM '{_sql_path(path)}' GROUP BY status ORDER BY status"
+        f"SELECT status, count(*) FROM '{path}' GROUP BY status ORDER BY status"
     ).fetchall()
-    return {status: int(n) for status, n in rows}
+    counts = {status: int(n) for status, n in rows}
+    row = duckdb.sql(f"SELECT count(*) FROM '{path}' WHERE NOT is_dusty_station").fetchone()
+    counts["not_dusty"] = int(row[0]) if row else 0
+    return counts
 
 
 def _write_review(con: duckdb.DuckDBPyConnection, path: Path) -> None:
-    """The stations that need a human decision (conflict, unverified, moved; not overridden),
-    plus override rows for stations with no silver, most dusty first (docs/rules.md)."""
+    """The dusty stations that need a human decision (conflict, unverified, moved; not
+    overridden), plus override rows for stations with no silver, most dusty first (docs/rules.md
+    4.3: positions are checked by hand only for stations that turn out dusty)."""
     con.execute(f"""
         COPY (
             SELECT station_id, status, file_lat, file_lon, isd_name, isd_lat, isd_lon, max_km,
                    first_year, last_year, n_years, n_dusty_reports
             FROM stations
-            WHERE status IN ('conflict', 'unverified', 'moved')
+            WHERE status IN ('conflict', 'unverified', 'moved') AND is_dusty_station
             UNION ALL
             SELECT station_id, 'override_unused', NULL, NULL, NULL, NULL, NULL, NULL,
                    NULL, NULL, NULL, NULL
@@ -448,6 +457,8 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     inputs_md5 = {"isd_history_md5": file_md5(isd_path), "overrides_md5": file_md5(overrides_path)}
     con.execute(f"SET VARIABLE agree_km = {float(settings.stations.agree_km)}")
     con.execute(f"SET VARIABLE conflict_km = {float(settings.stations.conflict_km)}")
+    con.execute(f"SET VARIABLE min_dusty_days = {int(settings.stations.min_dusty_days)}")
+    con.execute(f"SET VARIABLE min_dusty_years = {int(settings.stations.min_dusty_years)}")
     for key, md5 in inputs_md5.items():
         con.execute(f"SET VARIABLE {key} = '{md5}'")  # hex digits only: safe to inline
     # Make the valid-day threshold available to the SQL as getvariable('min_bins').

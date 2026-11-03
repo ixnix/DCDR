@@ -29,7 +29,8 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | (no change) | 2026-10-31 | new gold tables `monthly`, `yearly`, `decadal` (statistics); daily `n_slots_dusty` | user + rulings | 0002138, c02f436, 7cdc26c, 794a619, 18abf2d |
 | (no change) | 2026-11-02 | statistics: lower bound `dusty_freq_obs` and `validity_ratio` beside `dusty_freq`; no flag | user | 632c899 |
 | 2.0.0 | 2026-11-03 | all-reports 3-hour bins replace slot sampling; source groups SYNOP / METAR / other, each judged alone | user + rulings | 9313d86, 6ef64dc, 0239af7, a910c1d, b04ace6, b747481 |
-| (no change) | 2026-11-03 | station positions: four-way rule, 949999 southern-hemisphere gate, overrides; gold uses the trusted longitude | user + rulings | c82178f, 756b678, a1af02d, 7dde73e, (this commit) |
+| (no change) | 2026-11-03 | station positions: four-way rule, 949999 southern-hemisphere gate, overrides; gold uses the trusted longitude | user + rulings | c82178f, 756b678, a1af02d, 7dde73e, d6a1a89 |
+| (no change) | 2026-11-03 | dusty-station threshold: >= 10 dusty days in >= 2 years to enter gold | user + rulings | (this commit) |
 
 ---
 
@@ -452,6 +453,16 @@ before). *Decisions:* user, 2026-11-02 (four-way rule) and 2026-11-03 (overrides
 conflicts out of gold, unverified kept, the gate, 0/0 are errors). *Rulings:* overrides win over
 every status; the review list is ranked by dusty reports in silver; elevation waits for the
 catalog.
+
+## Dusty-station threshold (2026-11-03, no method version change)
+
+*What:* only stations with at least 10 dusty days in at least 2 different years go into gold
+(rules.md 4.3); silver keeps every station. *Why:* the user decision of 2026-11-02 ("after
+silver, stations without dust reports will be dropped") needed a threshold; the whole-bronze
+census showed that stations with fewer than 10 dust reports hold 0.24 % of all dust reports.
+*Decision:* user, 2026-11-03 (threshold; pilot control stations not kept in the full build).
+*Rulings:* dusty days counted as in `daily` (bins, local day, any coverage); the review list
+shows only dusty stations; thresholds in config (0/0 keeps all).
 
 ## Resolved questions
 

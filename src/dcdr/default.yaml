@@ -104,3 +104,8 @@ stations:
   position_overrides: config/stations/position_overrides.csv  # hand decisions, a reason each
   agree_km: 10
   conflict_km: 50
+  # Dusty stations (user decision 2026-11-03): only a station with >= 10 dusty days (any coverage,
+  # after the haze rule and the humidity screen; evidence does not count) in >= 2 different years
+  # goes into gold. Silver keeps every station. 0 and 0 keep all stations (e.g. pilot controls).
+  min_dusty_days: 10
+  min_dusty_years: 2

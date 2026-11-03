@@ -97,7 +97,7 @@ environment). Every pipeline command records a run (section 7.6).
 |---|---|---|
 | `dcdr ingest` | List NOAA's S3 files for the years; download new or changed station-years into bronze; saves the download record and logs progress every 500 files, so a stopped run resumes where it left off; re-downloads recorded files missing from disk | `--years`, `--stations` |
 | `dcdr process` | Build silver for station-years that are missing or out of date | `--years`, `--stations`, `--force` |
-| `dcdr aggregate` | Build a new gold version from silver, check it, activate it; prints the gold folder and the stations per position status (e.g. `{'agree': 99, 'moved': 1}`); the stations needing a decision are in its `stations_review.csv` | `--years`, `--stations` |
+| `dcdr aggregate` | Build a new gold version from silver, check it, activate it; prints the gold folder, the stations per position status and those left out as not dusty (e.g. `{'agree': 96, 'override': 1, 'not_dusty': 3}`); the stations needing a decision are in its `stations_review.csv` | `--years`, `--stations` |
 | `dcdr run` | `ingest`, then `process`, then `aggregate` | as above |
 | `dcdr status` | Download status counts and the five latest runs (read-only) | |
 | `dcdr --version` | Package version | |
@@ -145,7 +145,7 @@ All method choices live in `src/dcdr/default.yaml`, validated by Pydantic models
 | `classify` | weather fields used, haze window, snow/sand temperatures, SYNOP iX rule, inferred nil (V3) and its guard, METAR rules (`metar_rules`, `metar_report_types`, `metar_nil_min_vis_m`), METAR inference and its guard (`metar_infer_nil`, `metar_nil_guard_*`), derived SYNOPs (`derived_*`) | yes |
 | `sources` | excluded report types (`exclude_types`: SOD, SOM), source groups (`groups`: SYNOP and METAR report types; every other type is "other") | yes |
 | `products` | valid-day threshold (`min_bins_per_day`), visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept | no (gold only) |
-| `stations` | default station list; station positions: the saved isd-history (`isd_history`, relative to the data root), the override file (`position_overrides`), the distance bands `agree_km` (10) and `conflict_km` (50) | no (gold only) |
+| `stations` | default station list; station positions: the saved isd-history (`isd_history`, relative to the data root), the override file (`position_overrides`), the distance bands `agree_km` (10) and `conflict_km` (50); the dusty-station threshold `min_dusty_days` (10) and `min_dusty_years` (2) | no (gold only) |
 
 Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
 
@@ -327,12 +327,13 @@ dust years ≤ valid years ≤ observed years ≤ 10 and dust years ≤ dust yea
 One row per station in silver, built **first** in every gold run from the view `silver_all` (all
 silver files), the saved isd-history and the override file (`stations.py`, registered as DuckDB
 views `isd_history` and `overrides`). Columns (Part 2, section 4.3): `station_id, status,
-computed_status, in_gold, trusted_lat, trusted_lon, file_lat, file_lon, isd_name, isd_lat,
+computed_status, in_gold, position_ok, is_dusty_station, n_dusty_days, n_dusty_years,
+trusted_lat, trusted_lon, file_lat, file_lon, isd_name, isd_lat,
 isd_lon, max_km, first_year, last_year, n_years, n_dusty_reports, override_action,
 override_reason, isd_history_md5, overrides_md5`. Right after it, `build_gold` creates the view
 `silver` = `silver_all` restricted to the stations with `in_gold`, which every later product reads,
 and writes `stations_review.csv`. Checks: one row per station; known statuses; every station in
-gold has a trusted longitude (`trusted_lat` can be null for an `unverified` station without an
+gold has a trusted longitude; `in_gold` = `position_ok AND is_dusty_station` (`trusted_lat` can be null for an `unverified` station without an
 in-file latitude: gold uses only the longitude); no `conflict` in gold. `three_hourly` and `daily`
 also check that they hold only stations in gold (`stations_in_gold`).
 

@@ -3,7 +3,8 @@
 -- Inputs: view `silver_all` (every silver report, before stations are left out); views
 -- `isd_history` (station_id, isd_name, isd_lat, isd_lon; null = no position) and `overrides`
 -- (station_id, lat, lon, action, reason, decided), registered by aggregate.build_gold from
--- stations.py; variables `agree_km`, `conflict_km`, `isd_history_md5`, `overrides_md5`.
+-- stations.py; variables `agree_km`, `conflict_km`, `min_dusty_days`, `min_dusty_years`,
+-- `isd_history_md5`, `overrides_md5`.
 --
 -- Output: one row per station in silver. Built FIRST: build_gold then narrows the `silver` view
 -- to the stations with `in_gold`, which every later product reads.
@@ -16,6 +17,10 @@
 --   >= agree_km -> moved (in-file, flagged); else agree (in-file)
 -- An override row wins over the rule: `use` its position, or `exclude` the station.
 --
+-- Dusty stations (user decision 2026-11-03): in gold only with >= min_dusty_days dusty days in
+-- >= min_dusty_years different years. A dusty day is counted as `daily` does: a local day with
+-- a dusty report in one of its 3-hour bins (bin start + the station's offset).
+--
 -- How the query is built (CTEs):
 --   rep      the reports: year, in-file position, dusty or not
 --   sy       each station-year's most common in-file position (both coordinates known)
@@ -23,10 +28,13 @@
 --   file_lon / file_lat  the station's most common lon_used / lat (the offset gold used so far)
 --   base     years and dusty reports per station
 --   judged   the rule's verdict (computed_status)
---   final SELECT  the override applied: status, in_gold, trusted position
+--   decided  the override applied: status, position in gold or not, trusted position
+--   dusty    dusty days and years per station
+--   final SELECT  in_gold = position usable AND a dusty station
 WITH rep AS (
     SELECT
         station_id,
+        time_utc,
         CAST(year(time_utc) AS INTEGER) AS year,
         lat,
         lon,
@@ -112,42 +120,85 @@ judged AS (
     LEFT JOIN file_lat AS fa ON b.station_id = fa.station_id
     LEFT JOIN isd_history AS h ON b.station_id = h.station_id
     LEFT JOIN dist AS d ON b.station_id = d.station_id
+),
+decided AS (
+    SELECT
+        j.station_id,
+        CASE WHEN o.station_id IS NOT NULL THEN 'override' ELSE j.computed_status END AS status,
+        j.computed_status,
+        CASE
+            WHEN o.action = 'exclude' THEN false
+            WHEN o.action = 'use' THEN true
+            ELSE j.computed_status <> 'conflict'
+        END AS position_ok,
+        CASE
+            WHEN o.action = 'use' THEN o.lat
+            WHEN o.action = 'exclude' OR j.computed_status = 'conflict' THEN NULL
+            WHEN j.computed_status = 'resolved_isd_history' THEN j.isd_lat
+            ELSE j.file_lat
+        END AS trusted_lat,
+        CASE
+            WHEN o.action = 'use' THEN o.lon
+            WHEN o.action = 'exclude' OR j.computed_status = 'conflict' THEN NULL
+            WHEN j.computed_status = 'resolved_isd_history' THEN j.isd_lon
+            ELSE j.file_lon
+        END AS trusted_lon,
+        j.file_lat,
+        j.file_lon,
+        j.isd_name,
+        j.isd_lat,
+        j.isd_lon,
+        j.max_km,
+        j.first_year,
+        j.last_year,
+        j.n_years,
+        j.n_dusty_reports,
+        o.action AS override_action,
+        o.reason AS override_reason
+    FROM judged AS j
+    LEFT JOIN overrides AS o ON j.station_id = o.station_id
+),
+dusty AS (
+    -- local day of each dusty report's bin; a station without a trusted longitude (a conflict)
+    -- is counted with its in-file one, for the review list
+    SELECT
+        station_id,
+        count(DISTINCT day) AS n_dusty_days,
+        count(DISTINCT year(day)) AS n_dusty_years
+    FROM (
+        SELECT
+            r.station_id,
+            CAST(
+                time_bucket(INTERVAL 3 HOUR, r.time_utc)
+                    + to_milliseconds(
+                        CAST(round(coalesce(d.trusted_lon, d.file_lon) * 240000) AS BIGINT)
+                    )
+                AS DATE
+            ) AS day
+        FROM rep AS r
+        JOIN decided AS d ON r.station_id = d.station_id
+        WHERE r.is_dusty
+    )
+    GROUP BY station_id
 )
 SELECT
-    j.station_id,
-    CASE WHEN o.station_id IS NOT NULL THEN 'override' ELSE j.computed_status END AS status,
-    j.computed_status,
-    CASE
-        WHEN o.action = 'exclude' THEN false
-        WHEN o.action = 'use' THEN true
-        ELSE j.computed_status <> 'conflict'
-    END AS in_gold,
-    CASE
-        WHEN o.action = 'use' THEN o.lat
-        WHEN o.action = 'exclude' OR j.computed_status = 'conflict' THEN NULL
-        WHEN j.computed_status = 'resolved_isd_history' THEN j.isd_lat
-        ELSE j.file_lat
-    END AS trusted_lat,
-    CASE
-        WHEN o.action = 'use' THEN o.lon
-        WHEN o.action = 'exclude' OR j.computed_status = 'conflict' THEN NULL
-        WHEN j.computed_status = 'resolved_isd_history' THEN j.isd_lon
-        ELSE j.file_lon
-    END AS trusted_lon,
-    j.file_lat,
-    j.file_lon,
-    j.isd_name,
-    j.isd_lat,
-    j.isd_lon,
-    j.max_km,
-    j.first_year,
-    j.last_year,
-    j.n_years,
-    j.n_dusty_reports,
-    o.action AS override_action,
-    o.reason AS override_reason,
+    station_id,
+    status,
+    computed_status,
+    position_ok AND is_dusty_station AS in_gold,
+    position_ok,
+    is_dusty_station,
+    * EXCLUDE (station_id, status, computed_status, position_ok, is_dusty_station),
     getvariable('isd_history_md5') AS isd_history_md5,
     getvariable('overrides_md5') AS overrides_md5
-FROM judged AS j
-LEFT JOIN overrides AS o ON j.station_id = o.station_id
-ORDER BY j.station_id  -- reproducible files
+FROM (
+    SELECT
+        d.*,
+        coalesce(y.n_dusty_days, 0) AS n_dusty_days,
+        coalesce(y.n_dusty_years, 0) AS n_dusty_years,
+        coalesce(y.n_dusty_days, 0) >= getvariable('min_dusty_days')
+            AND coalesce(y.n_dusty_years, 0) >= getvariable('min_dusty_years') AS is_dusty_station
+    FROM decided AS d
+    LEFT JOIN dusty AS y ON d.station_id = y.station_id
+)
+ORDER BY station_id  -- reproducible files

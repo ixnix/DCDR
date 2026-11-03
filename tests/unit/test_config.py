@@ -54,6 +54,7 @@ def test_config_rejects_sampling_section() -> None:
 def test_station_position_defaults(tmp_path: Path) -> None:
     s = load_settings(overrides={"paths": {"data_root": str(tmp_path)}})
     assert (s.stations.agree_km, s.stations.conflict_km) == (10, 50)
+    assert (s.stations.min_dusty_days, s.stations.min_dusty_years) == (10, 2)
     assert s.isd_history_path == tmp_path / "catalog" / "isd-history.csv"
 
 

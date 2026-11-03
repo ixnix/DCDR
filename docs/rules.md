@@ -118,7 +118,7 @@ Special cases:
   (rules_history.md, 1.10.1). *Cost:*
   a station that moved 50 km east-west keeps an offset about 2 min off for part of its record.
 
-### 4.3 Station positions (gold `stations`, `sql/stations.sql`)
+### 4.3 Station positions and selection (gold `stations`, `sql/stations.sql`)
 
 *Why* (whole-bronze census, 2026-11-02): the station position in NOAA's data files and the one in
 NOAA's `isd-history.csv` disagree for some stations, and either can be wrong. 268 Australian
@@ -149,8 +149,23 @@ not always right. An override (`station_id, lat, lon, action, reason, decided`; 
 required) wins over every status; `computed_status` keeps the rule's verdict. Stations not in gold
 are left out of every other gold table.
 
-**Review list:** each gold version writes `stations_review.csv`: the `conflict`, `unverified`
-and `moved` stations without an override, and override rows for stations with no data
+**Dusty stations** (user decision 2026-11-03). A station goes into gold only if it has **at
+least 10 dusty days in at least 2 different years** (`stations.min_dusty_days`,
+`min_dusty_years`). A dusty day is counted as in `daily`: a local day with a dusty report (after
+the haze rule and the humidity screen; evidence does not count) in one of its 3-hour bins, at any
+coverage. *Why:* a single dust code in decades is more likely a keying error or one remote event
+than a dust record; days rather than reports, so hourly airports are not favoured; low enough to
+keep stations with rare dust (downwind sites). Whole-bronze census (rough dust codes per report,
+before the haze rule): ≥ 1 dust report 17,306 stations, ≥ 10 reports in ≥ 2 years 11,261;
+stations with < 10 dust reports hold 0.24 % of all dust reports. Silver keeps every station; the
+`stations` table keeps them all with `n_dusty_days`, `n_dusty_years`, `is_dusty_station`, so
+`in_gold` = usable position **and** dusty station. No-dust control stations (e.g. the pilot's
+Shannon, Zhang Ping, Haikou) are not kept in the full build (user decision); setting both
+thresholds to 0 keeps every station (e.g. for a pilot run).
+
+**Review list:** each gold version writes `stations_review.csv`: the **dusty** `conflict`,
+`unverified` and `moved` stations without an override (positions are checked by hand only for
+stations that turn out dusty), and override rows for stations with no data
 (`override_unused`), most dusty first (dusty reports counted in silver, since conflict stations
 are not in gold). The md5 of isd-history and of the override file are recorded in the table and
 in the gold lineage.

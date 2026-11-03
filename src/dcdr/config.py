@@ -142,6 +142,9 @@ class StationsCfg(_Section):
     position_overrides: str  # hand-edited overrides CSV (relative to the working directory)
     agree_km: float  # in-file and isd-history positions "agree" below this distance
     conflict_km: float  # ... and are in "conflict" at or above it ("moved" in between)
+    # Dusty-station threshold: a station goes into gold only with at least this many dusty days
+    min_dusty_days: int
+    min_dusty_years: int  # ... in at least this many different years
 
 
 class Settings(_Section):

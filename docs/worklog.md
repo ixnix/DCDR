@@ -10,8 +10,6 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - [ ] Rebuild `metar_test_100` under method 2.0.0 (user; pilot_100 done 2026-11-03).
 - [ ] Review `stations_review.csv` (conflicts and unverified, most dusty first) and write
       `config/stations/position_overrides.csv` before the whole-ISD gold.
-- [ ] "Dusty stations" threshold for keeping stations after silver (whole ISD; user decision in
-      principle 2026-11-02: only stations with dust reports go forward).
 - [ ] Re-run notebook 07 (Australia) and look at the first `three_hourly` table (e.g. one outbreak
       at Phoenix and one at Niamey).
 - [ ] Station catalog with aridity index and the dust-source flag (criteria from the statistics,
@@ -38,6 +36,19 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## 2026-11-03
 
+- **Dusty-station threshold** (user decision): a station goes into gold only with **at least 10
+  dusty days in at least 2 different years**; no-dust control stations (pilot: Shannon, Zhang
+  Ping, Haikou) are not kept in the full build. Suggested from the whole-bronze census (rough
+  dust codes per report): >= 1 dust report 17,306 stations; >= 10 reports 11,445; >= 10 in >= 2
+  years 11,261; >= 100 reports 4,253; stations with < 10 dust reports hold 0.24 % of all dust
+  reports. Built in the gold `stations` table (`n_dusty_days`, `n_dusty_years`,
+  `is_dusty_station`; `in_gold` = usable position and dusty), config `stations.min_dusty_days` /
+  `min_dusty_years`; the review list shows only dusty stations; `dcdr aggregate` prints
+  `not_dusty`. *Rulings:* dusty days counted as in `daily` (local day of the dusty bin, any
+  coverage); test settings switch the threshold off (0/0) except in its own tests.
+- **Position review of the pilot** (user decision): Nioro du Sahel (61230099999), the only
+  station in `stations_review.csv` (moved, 24 km): use the isd-history position (15.239, -9.577).
+  First row of `config/stations/position_overrides.csv`.
 - **Pilot rebuilt with method 2.0.0 and station positions** (user ran `process` and
   `aggregate`, pilot_100, 1931-2025; gold 20261103T154804Z-bdd7e7, silver 2.0.0, isd-history md5
   b086d8ee..., no override file; all gold checks pass). Stations: 99 `agree`, 1 `moved` (61230
