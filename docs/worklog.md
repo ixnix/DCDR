@@ -63,7 +63,12 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   *Rulings:* the Kuwait "slot on its own LMST day" test and the slot-source tests are dropped
   (superseded by `test_bin_counts_on_the_lmst_date_it_starts_across_years` and the per-source
   tests); `scripts/thin_slice_report.py` fixed now (it read `dusty_day_synoptic`, a column that no
-  longer existed, and the slot selection).
+  longer existed, and the slot selection). (0239af7)
+- **Statistics: each source judged alone, incl. `other`** (user decision 2026-11-03, option B: not
+  an attribution of the all-source count). `monthly` adds `n_obs_days_other`,
+  `n_valid_days_other`, `n_dusty_days_other`, `n_dusty_days_obs_other`, `n_bins_obs_other`;
+  `yearly` and `decadal` sum them generically; `STAT_VARIANTS` gains `_other`, so the count-order
+  checks cover it. The all-source columns keep their names (`n_dusty_days`, `dusty_freq`, ...).
 
 ## 2026-11-02
 

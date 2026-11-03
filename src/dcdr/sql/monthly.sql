@@ -30,6 +30,7 @@ SELECT
     CAST(day(last_day(make_date(year, month, 1))) AS BIGINT) AS n_calendar_days,
     count(*) AS n_days,
     -- per definition: observed (>= 1 observed bin), valid, dusty on a valid day, dusty on any day
+    -- (primary = all sources; then each source group judged alone: synop, metar, other)
     count(*) FILTER (WHERE n_bins_obs >= 1) AS n_obs_days,
     count(*) FILTER (WHERE valid_day) AS n_valid_days,
     count(*) FILTER (WHERE dusty_day AND valid_day) AS n_dusty_days,
@@ -42,6 +43,10 @@ SELECT
     count(*) FILTER (WHERE valid_day_metar) AS n_valid_days_metar,
     count(*) FILTER (WHERE dusty_day_metar AND valid_day_metar) AS n_dusty_days_metar,
     count(*) FILTER (WHERE dusty_day_metar) AS n_dusty_days_obs_metar,
+    count(*) FILTER (WHERE n_bins_obs_other >= 1) AS n_obs_days_other,
+    count(*) FILTER (WHERE valid_day_other) AS n_valid_days_other,
+    count(*) FILTER (WHERE dusty_day_other AND valid_day_other) AS n_dusty_days_other,
+    count(*) FILTER (WHERE dusty_day_other) AS n_dusty_days_obs_other,
     count(*) FILTER (WHERE n_bins_obs_vis5 >= 1) AS n_obs_days_vis5,
     count(*) FILTER (WHERE valid_day_vis5) AS n_valid_days_vis5,
     count(*) FILTER (WHERE dusty_day_vis5 AND valid_day_vis5) AS n_dusty_days_vis5,
@@ -71,6 +76,7 @@ SELECT
     CAST(sum(n_bins_obs) AS BIGINT) AS n_bins_obs,
     CAST(sum(n_bins_obs_synop) AS BIGINT) AS n_bins_obs_synop,
     CAST(sum(n_bins_obs_metar) AS BIGINT) AS n_bins_obs_metar,
+    CAST(sum(n_bins_obs_other) AS BIGINT) AS n_bins_obs_other,
     CAST(sum(n_bins_nil_inferred) AS BIGINT) AS n_bins_nil_inferred,
     CAST(sum(n_bins_nil_metar) AS BIGINT) AS n_bins_nil_metar,
     CAST(sum(n_bins_rh_screened) AS BIGINT) AS n_bins_rh_screened,

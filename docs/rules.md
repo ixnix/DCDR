@@ -673,7 +673,7 @@ One row per station per calendar month of `lmst_date`.
 | `n_days_suspended`, `n_days_blowing`, `n_days_whirls`, `n_days_storm`, `n_days_dust_haze` | valid days with a bin of that class | class mix (code 06 share) |
 | `n_days_raised` | valid days with blowing, whirls or storm bins (codes 07 and up) | locally raised dust |
 | `n_days_vicinity`, `n_days_remarks`, `n_days_past_weather`, `n_days_daily_summary` | days with each evidence flag, any coverage | kept apart, as in `daily` |
-| `n_bins`, `n_bins_obs`, `n_bins_obs_synop`, `n_bins_obs_metar`, `n_bins_nil_inferred`, `n_bins_nil_metar`, `n_bins_rh_screened`, `n_dust_bins_<class>`, `n_bins_dusty` | sums of the daily bin counts | observing density and report mix |
+| `n_bins`, `n_bins_obs`, `n_bins_obs_synop`, `n_bins_obs_metar`, `n_bins_obs_other`, `n_bins_nil_inferred`, `n_bins_nil_metar`, `n_bins_rh_screened`, `n_dust_bins_<class>`, `n_bins_dusty` | sums of the daily bin counts | observing density and report mix |
 | `n_bins_obs_valid`, `n_bins_dusty_valid` | observed and dusty bins on valid days | bins per valid day; bin frequency of dust |
 | `dusty_freq` | `n_dusty_days / n_valid_days`; null without valid days | frequency on valid days (11.4) |
 | `dusty_freq_obs` | `n_dusty_days_obs / n_obs_days`; null without observed days | lower bound of the frequency (11.4) |
@@ -682,8 +682,10 @@ One row per station per calendar month of `lmst_date`.
 | `n_days_vis_dusty`, `ext_mean_dusty` | the same over `dusty_day` days (any coverage; the whole day's visibility) | how strongly dust reduced visibility |
 | `vis_min`, `n_bins_vis_zero` | minimum visibility; state reports with visibility 0 (no extinction value) | extremes |
 
-`{v}` is each dusty-day definition with its own validity (section 9): primary (no suffix),
-`_synop`, `_metar` (each source judged alone), `_vis5`, and `_explicit` (`dusty_day` with
+`{v}` is each dusty-day definition with its own validity (section 9): primary (no suffix: all
+sources together), `_synop`, `_metar`, `_other` (each source group judged alone: a day valid by
+that group's observed bins, dusty by its dust; user decision 2026-11-03, option B), `_vis5`, and
+`_explicit` (`dusty_day` with
 `valid_day_explicit`, since a dust bin always carries an explicit code). Inhomogeneity (observing density, report mix, code-06 share)
 is detected from these counts, not corrected.
 

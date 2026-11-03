@@ -289,3 +289,28 @@ def test_statistics_counts_are_int64(settings: Settings) -> None:
     for name, df in t.items():
         bad = [c for c, dt in df.schema.items() if c.startswith("n_") and dt != pl.Int64]
         assert bad == [], name
+
+
+# --- each source judged alone (method 2.0.0) ---------------------------------------------------
+
+
+def test_monthly_counts_each_source_alone(settings: Settings) -> None:
+    rows = (
+        _day("2024-01-01")  # 8 clear SYNOP bins ...
+        + [isd_row("2024-01-01T01:00:00", **LON0, REPORT_TYPE="AERO", MW1="07,1")]  # ... AERO dust
+        + _day("2024-01-02", {3: "07,1"})  # 8 SYNOP bins, one dusty
+    )
+    t = _tables(settings, [_silver(settings, rows, 2024)])
+    m = t["monthly"].row(0, named=True)
+    assert (m["n_valid_days_synop"], m["n_dusty_days_synop"], m["n_dusty_days"]) == (2, 1, 2)
+    got = (
+        m["n_obs_days_other"],
+        m["n_valid_days_other"],
+        m["n_dusty_days_other"],
+        m["n_dusty_days_obs_other"],
+        m["n_bins_obs_other"],
+    )
+    assert got == (1, 0, 0, 1, 1)
+    assert t["yearly"]["n_dusty_days_obs_other"].to_list() == [1]
+    annual = t["decadal"].filter(pl.col("period") == "annual")
+    assert annual["n_dusty_days_obs_other"].to_list() == [1]

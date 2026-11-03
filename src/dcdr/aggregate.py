@@ -54,9 +54,10 @@ class Product:
     checks: dict[str, str]  # name -> SQL returning a count that must be 0
 
 
-# The dusty-day definitions counted in the statistics tables: the column suffix of each (primary,
-# SYNOP alone, METAR alone, visibility <= 5 km, explicit observations only).
-STAT_VARIANTS = ("", "_synop", "_metar", "_vis5", "_explicit")
+# The dusty-day definitions counted in the statistics tables: the column suffix of each (primary =
+# all sources; each source group judged alone: SYNOP, METAR, other; visibility <= 5 km; explicit
+# observations only).
+STAT_VARIANTS = ("", "_synop", "_metar", "_other", "_vis5", "_explicit")
 
 
 def _count_order_checks(table: str) -> dict[str, str]:
