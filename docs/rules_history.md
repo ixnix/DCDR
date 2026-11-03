@@ -5,7 +5,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 *ruling*, a choice made during implementation and open to review). The dated log of all work is
 [worklog.md](worklog.md); notebooks are kept locally (not in the public repository).
 
-> Last updated: 2026-11-02 (current method version 1.10.1). Commit hashes refer to this repository.
+> Last updated: 2026-11-03 (current method version 2.0.0). Commit hashes refer to this repository.
 
 ## Versions at a glance
 
@@ -27,7 +27,8 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | (no change) | 2026-10-30 | new gold table `three_hourly` (all reports per 3-hour UTC bin) | user | 21510c3, d5228e8 |
 | 1.10.1 | 2026-10-30 | fix: slot grid chosen per local (LMST) month; year files read the neighbouring December/January | user (option A) | 715cb41 |
 | (no change) | 2026-10-31 | new gold tables `monthly`, `yearly`, `decadal` (statistics); daily `n_slots_dusty` | user + rulings | 0002138, c02f436, 7cdc26c, 794a619, 18abf2d |
-| (no change) | 2026-11-02 | statistics: lower bound `dusty_freq_obs` and `validity_ratio` beside `dusty_freq`; no flag | user | (this commit) |
+| (no change) | 2026-11-02 | statistics: lower bound `dusty_freq_obs` and `validity_ratio` beside `dusty_freq`; no flag | user | 632c899 |
+| 2.0.0 | 2026-11-03 | all-reports 3-hour bins replace slot sampling; source groups SYNOP / METAR / other, each judged alone | user + rulings | 9313d86, 6ef64dc, (this commit) |
 
 ---
 
@@ -390,6 +391,36 @@ r 0.0-0.15 in 2011-2020. *Rulings:* rates from the summed counts in `yearly` and
 `dusty_freq`); primary definition only; no minimum number of dusty days for the ratio.
 
 ---
+
+## 2.0.0 (2026-11-03): all reports in 3-hour bins
+
+*What:* the dusty day is judged from **all** reports in 3-hour UTC bins (00, 03, ..., 21), not
+from one sampled report per source per synoptic slot. A bin is observed if any report observed the
+weather, dusty if any report is dusty at the station (after the haze rule and the humidity
+screen); SPECIs count, summaries do not. Day = the 8 bins starting on the LMST date (one LMST
+offset per station); dusty day >= 1 dusty bin; valid day >= 4 observed bins. Every report has a
+source group (SYNOP: FM-12, SY-MT, SY-SA, SY-AE, SY-AU, AUST; METAR: FM-15, FM-16, SAO, SAOSP,
+AUTO; other: every other type), and each group is also judged alone (`dusty_day_<g>`,
+`valid_day_<g>`; statistics `n_*_days_<g>`). Daily weather: means from the bins' state reports,
+extremes (wind, gust, visibility) from all reports. vis5 kept, per bin with each dusty report's
+own visibility. Evidence (vicinity, remarks, past weather, daily summaries) is never counted.
+
+*Why (evidence, 2026-11-02):* at Niamey (61052) in 2020, slot sampling missed 7 dusty days whose
+dust was reported only in hourly METARs it did not select, among them the 27 May 2020 haboob.
+Equal observation frequency cannot be enforced between stations (4 to 48 reports a day) and must
+not stop station comparisons; the counts per source record the difference instead.
+
+*Superseded:* the slot-sampled dusty day of methods 1.5.0-1.10.1 (one SYNOP and one METAR per
+slot, primary report for the weather values, SPECI only in `dusty_day_any`), the visibility
+fallback to the slot METAR (1.8.0), and the columns `dusty_day_any`, `dusty_day_any_source`,
+`n_vis_from_metar`, `n_slots_*`. Dropped, not kept as a legacy column (user decision).
+
+*Decisions:* user, 2026-11-02 (bins, all reports, source groups, AUST back in SYNOP, vis5 kept,
+each source judged alone, old dusty day dropped, means from state reports). *Rulings* (spec,
+approved 2026-11-03): one LMST offset per station (the most common longitude), because the state
+report's own longitude put 9 bins on a local day near some longitudes; `dust_vis5` null when a
+dusty report's visibility is unknown; `dust_first_lmst_hour` = start of the first dusty bin;
+`t_min`/`t_max` from the state reports; SPECI and SAOSP never the state report.
 
 ## Resolved questions
 

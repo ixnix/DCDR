@@ -113,58 +113,6 @@ def _decadal_parts_check(periods: list[str]) -> str:
 # Products run in this order, and each can read the products before it (as a view of its name).
 PRODUCTS = [
     Product(
-        "daily",
-        "daily.sql",
-        {
-            # A day has 8 synoptic slots (00, 03, ..., 21 UTC), so more than 8 means double counting.
-            "n_slots_le_8": "SELECT count(*) FROM daily WHERE n_slots > 8",
-            # Observed slots are a subset of all slots; explicit, per-source, inferred, implied
-            # and vis5-judgeable slots are subsets of observed slots.
-            "pw_le_slots": "SELECT count(*) FROM daily WHERE n_slots_pw > n_slots",
-            "subsets_le_pw": (
-                "SELECT count(*) FROM daily WHERE n_slots_pw_explicit > n_slots_pw "
-                "OR n_slots_pw_synop > n_slots_pw OR n_slots_pw_metar > n_slots_pw "
-                "OR n_slots_nil_inferred > n_slots_pw OR n_slots_nil_metar > n_slots_pw "
-                "OR n_slots_pw_vis5 > n_slots_pw"
-            ),
-            "sources_le_slots": (
-                "SELECT count(*) FROM daily WHERE n_slots_synop > n_slots OR n_slots_metar > n_slots "
-                "OR n_slots_pw_synop > n_slots_synop OR n_slots_pw_metar > n_slots_metar"
-            ),
-            # Every narrower dusty-day flag implies the combined one, and every validity follows
-            # its definition.
-            "narrow_implies_dusty": (
-                "SELECT count(*) FROM daily WHERE NOT dusty_day "
-                "AND (dusty_day_synop OR dusty_day_metar OR dusty_day_vis5)"
-            ),
-            "dusty_is_synop_or_metar": (
-                "SELECT count(*) FROM daily WHERE dusty_day <> (dusty_day_synop OR dusty_day_metar)"
-            ),
-            "validity_consistent": (
-                "SELECT count(*) FROM daily WHERE "
-                "valid_day <> (n_slots_pw >= getvariable('min_slots')) "
-                "OR valid_day_explicit <> (n_slots_pw_explicit >= getvariable('min_slots')) "
-                "OR valid_day_synop <> (n_slots_pw_synop >= getvariable('min_slots')) "
-                "OR valid_day_metar <> (n_slots_pw_metar >= getvariable('min_slots')) "
-                "OR valid_day_vis5 <> (n_slots_pw_vis5 >= getvariable('min_slots'))"
-            ),
-            # A dusty day needs at least one slot.
-            "dusty_needs_slots": "SELECT count(*) FROM daily WHERE dusty_day AND n_slots = 0",
-            # Dusty slots are observed slots, and a day has some exactly when it is dusty.
-            "slots_dusty_le_pw": "SELECT count(*) FROM daily WHERE n_slots_dusty > n_slots_pw",
-            "slots_dusty_iff_dusty": (
-                "SELECT count(*) FROM daily WHERE (n_slots_dusty > 0) <> dusty_day"
-            ),
-            # Exactly one row per station and day.
-            "unique_station_day": (
-                "SELECT count(*) FROM (SELECT station_id, lmst_date FROM daily "
-                "GROUP BY ALL HAVING count(*) > 1)"
-            ),
-            # Day-to-day changes are only computed between two valid days.
-            "d_t_only_valid": "SELECT count(*) FROM daily WHERE d_t_mean IS NOT NULL AND NOT valid_day",
-        },
-    ),
-    Product(
         # Named without a leading digit: the name is also the DuckDB view the checks query.
         "three_hourly",
         "three_hourly.sql",
@@ -214,6 +162,63 @@ PRODUCTS = [
         },
     ),
     Product(
+        # Built from the `three_hourly` bins (method 2.0.0), so it runs after them.
+        "daily",
+        "daily.sql",
+        {
+            # A day has 8 bins (one LMST offset per station), so more than 8 means double counting.
+            "n_bins_le_8": "SELECT count(*) FROM daily WHERE n_bins > 8",
+            # Observed bins are a subset of all bins; explicit, per-source, inferred, implied and
+            # vis5-judgeable bins are subsets of observed bins.
+            "obs_le_bins": "SELECT count(*) FROM daily WHERE n_bins_obs > n_bins",
+            "subsets_le_obs": (
+                "SELECT count(*) FROM daily WHERE n_bins_obs_explicit > n_bins_obs "
+                "OR n_bins_obs_synop > n_bins_obs OR n_bins_obs_metar > n_bins_obs "
+                "OR n_bins_obs_other > n_bins_obs OR n_bins_nil_inferred > n_bins_obs "
+                "OR n_bins_nil_metar > n_bins_obs OR n_bins_obs_vis5 > n_bins_obs"
+            ),
+            # A source sees dust only in bins it observed.
+            "source_dust_le_source_obs": (
+                "SELECT count(*) FROM daily WHERE n_bins_dust_synop > n_bins_obs_synop "
+                "OR n_bins_dust_metar > n_bins_obs_metar OR n_bins_dust_other > n_bins_obs_other"
+            ),
+            # A day is dusty exactly when one source alone calls it dusty; every dusty bin was
+            # seen by at least one source, and each source's dusty bins are dusty bins.
+            "dusty_is_any_source": (
+                "SELECT count(*) FROM daily WHERE dusty_day "
+                "<> (dusty_day_synop OR dusty_day_metar OR dusty_day_other)"
+            ),
+            "bins_dusty_bounds": (
+                "SELECT count(*) FROM daily WHERE n_bins_dust_synop > n_bins_dusty "
+                "OR n_bins_dust_metar > n_bins_dusty OR n_bins_dust_other > n_bins_dusty "
+                "OR n_bins_dusty > n_bins_dust_synop + n_bins_dust_metar + n_bins_dust_other"
+            ),
+            "vis5_implies_dusty": "SELECT count(*) FROM daily WHERE dusty_day_vis5 AND NOT dusty_day",
+            # Dusty bins are observed bins, and a day has some exactly when it is dusty.
+            "bins_dusty_le_obs": "SELECT count(*) FROM daily WHERE n_bins_dusty > n_bins_obs",
+            "bins_dusty_iff_dusty": (
+                "SELECT count(*) FROM daily WHERE (n_bins_dusty > 0) <> dusty_day"
+            ),
+            # Every validity follows its definition.
+            "validity_consistent": (
+                "SELECT count(*) FROM daily WHERE "
+                "valid_day <> (n_bins_obs >= getvariable('min_bins')) "
+                "OR valid_day_explicit <> (n_bins_obs_explicit >= getvariable('min_bins')) "
+                "OR valid_day_synop <> (n_bins_obs_synop >= getvariable('min_bins')) "
+                "OR valid_day_metar <> (n_bins_obs_metar >= getvariable('min_bins')) "
+                "OR valid_day_other <> (n_bins_obs_other >= getvariable('min_bins')) "
+                "OR valid_day_vis5 <> (n_bins_obs_vis5 >= getvariable('min_bins'))"
+            ),
+            # Exactly one row per station and day.
+            "unique_station_day": (
+                "SELECT count(*) FROM (SELECT station_id, lmst_date FROM daily "
+                "GROUP BY ALL HAVING count(*) > 1)"
+            ),
+            # Day-to-day changes are only computed between two valid days.
+            "d_t_only_valid": "SELECT count(*) FROM daily WHERE d_t_mean IS NOT NULL AND NOT valid_day",
+        },
+    ),
+    Product(
         # Statistics from `daily` (docs/rules.md section 11).
         "monthly",
         "monthly.sql",
@@ -251,14 +256,14 @@ PRODUCTS = [
                 "SELECT count(*) FROM (SELECT station_id, year, sum(n_days) AS n_days, "
                 "sum(n_obs_days) AS n_obs_days, sum(n_valid_days) AS n_valid_days, "
                 "sum(n_dusty_days) AS n_dusty_days, sum(n_dusty_days_obs) AS n_dusty_days_obs, "
-                "sum(n_slots_pw) AS n_slots_pw FROM monthly GROUP BY ALL) m "
+                "sum(n_bins_obs) AS n_bins_obs FROM monthly GROUP BY ALL) m "
                 "FULL JOIN yearly y USING (station_id, year) "
                 "WHERE m.n_days IS DISTINCT FROM y.n_days "
                 "OR m.n_obs_days IS DISTINCT FROM y.n_obs_days "
                 "OR m.n_valid_days IS DISTINCT FROM y.n_valid_days "
                 "OR m.n_dusty_days IS DISTINCT FROM y.n_dusty_days "
                 "OR m.n_dusty_days_obs IS DISTINCT FROM y.n_dusty_days_obs "
-                "OR m.n_slots_pw IS DISTINCT FROM y.n_slots_pw"
+                "OR m.n_bins_obs IS DISTINCT FROM y.n_bins_obs"
             ),
             # Covered months are valid months, valid months are observed months, at most 12.
             "months_le_12": (
@@ -366,8 +371,8 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     con = duckdb.connect()  # in-memory database; reads the Parquet files directly from disk
     # One view over all silver files. union_by_name: files may differ in optional columns.
     con.read_parquet([_sql_path(p) for p in silver_paths], union_by_name=True).create_view("silver")
-    # Make the valid-day threshold available to the SQL as getvariable('min_slots').
-    con.execute(f"SET VARIABLE min_slots = {int(settings.products.min_slots_per_day)}")
+    # Make the valid-day threshold available to the SQL as getvariable('min_bins').
+    con.execute(f"SET VARIABLE min_bins = {int(settings.products.min_bins_per_day)}")
     # ... and the visibility limit of dusty_day_vis5 as getvariable('vis5_max_m').
     con.execute(f"SET VARIABLE vis5_max_m = {float(settings.products.vis5_max_m)}")
     # ... and the coverage threshold of a month in the yearly table.

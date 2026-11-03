@@ -146,7 +146,7 @@ class SourcesCfg(_Section):
 
 
 class ProductsCfg(_Section):
-    min_slots_per_day: int  # a day is "valid" with at least this many slots carrying weather
+    min_bins_per_day: int  # a day is "valid" with at least this many observed 3-hour bins
     vis5_max_m: float  # dusty_day_vis5: dust counts only with visibility at or below this
     gold_keep_versions: int  # how many old gold versions to keep on disk
     min_valid_days_month: int  # yearly n_months_covered: months with at least this many valid days

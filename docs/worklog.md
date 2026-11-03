@@ -51,7 +51,19 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   longitude; spec, after the builder check found that the state report's own longitude can put 9
   bins on a local day). Three new gold checks. The `synop_types` / `metar_types` variables are
   gone. *Ruling:* the old test "LMST uses the state report's longitude" is replaced by
-  `test_one_lmst_offset_per_station`.
+  `test_one_lmst_offset_per_station`. (6ef64dc)
+- **`daily` built from the bins** (method 2.0.0): `three_hourly` runs first and `daily.sql` reads
+  it. A day = the 8 bins starting on its LMST date; dusty day >= 1 dusty bin; valid day >= 4
+  observed bins (`min_bins_per_day`, was `min_slots_per_day`). Each source group judged alone
+  (`n_bins_obs_<g>`, `n_bins_dust_<g>`, `valid_day_<g>`, `dusty_day_<g>`, with the new `other`).
+  Means from the state reports, extremes from all reports, no visibility fallback;
+  `dust_first_lmst_hour` = start of the first dusty bin. Dropped: `dusty_day_any`,
+  `dusty_day_any_source`, `n_vis_from_metar`, all `n_slots_*` (renamed `n_bins_*` in the
+  statistics too; `n_dusty_days_any` dropped). Daily checks rewritten for bins.
+  *Rulings:* the Kuwait "slot on its own LMST day" test and the slot-source tests are dropped
+  (superseded by `test_bin_counts_on_the_lmst_date_it_starts_across_years` and the per-source
+  tests); `scripts/thin_slice_report.py` fixed now (it read `dusty_day_synoptic`, a column that no
+  longer existed, and the slot selection).
 
 ## 2026-11-02
 

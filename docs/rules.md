@@ -161,7 +161,7 @@ cases. In ISD, iX exists mainly from 2013 on. Evidence and the selection bias th
   across decades and the caveats: [rules_history.md](rules_history.md), methods 1.3.0 and the
   V3-across-decades entry.
 - Settings: `classify.infer_nil`, `infer_nil_report_types` ([FM-12]), `nil_guard_max_share` (0.02),
-  `nil_guard_min_reports` (50). Gold keeps inferred slots visible (`n_slots_nil_inferred`,
+  `nil_guard_min_reports` (50). Gold keeps inferred bins visible (`n_bins_nil_inferred`,
   `valid_day_explicit`).
 - **BUFR-only SYNOPs** (`SYN004BUFR`, 17 % of SYNOPs) have no iX: the BUFR original says
   "nothing significant" (508) or "not observed" (509), but ISD drops both. They follow the rows
@@ -179,7 +179,8 @@ one** (observed or not), and from the METAR only in slots without SYNOP, so a st
 does not switch report types from slot to slot (1.6.0). Each source contributes at
 most one report per slot (the closest that observed the weather), so a busy airport gets no extra
 chances; SPECI never fill a slot (they are sent because conditions changed, often when dust
-arrives) but count in `dusty_day_any`. Section 8 has the sampling; 5.3 the tables.
+arrives). *Superseded in gold by method 2.0.0:* `daily` now judges every report in 3-hour bins
+(section 9), so SPECIs count there too. Section 8 has the sampling; 5.3 the tables.
 
 Evidence for this arrangement: [rules_history.md](rules_history.md), methods 1.5.0 and 1.6.0.
 
@@ -229,8 +230,9 @@ Validation of these rules (notebooks 03 and 06): [rules_history.md](rules_histor
    `synop_derived`): dust and validity come from the METAR. US stations since ~2005 (94.7 % of
    their station-years with both types), 0.7 % elsewhere. Their wind, temperature and pressure
    are still the slot's weather values (they equal the METAR's).
-10. **Visibility for the day** (user decision 2026-10-28): from the slot's primary report, or from
-   its METAR when the primary SYNOP has none (`n_vis_from_metar` counts these slots).
+10. **Visibility for the day** (method 2.0.0, user decision 2026-11-02): the harmonic mean from
+   the bins' state reports, the minimum from all reports; no value is taken from another report
+   (the 2026-10-28 fallback to the slot METAR's visibility is gone).
 
 Parsing (*rulings*): only the observed part of the message counts; the station identifier, the
 remarks (`RMK ...`), trend forecasts (`NOSIG`, `BECMG`, `TEMPO ...`) and recent weather (`RE..`)
@@ -249,12 +251,12 @@ Settings: `classify.metar_rules`, `metar_report_types` ([FM-15, FM-16]), `metar_
 visibility limit (WMO table 4677; the automatic table 4680 splits only at 1 km), but METAR codes
 dust only at <= 5 km (US: < 7 mi). Where a slot's only observation is a METAR, light dust above
 5 km is mostly missed, so `dusty_day` is a lower bound at stations or in years with few observed
-SYNOPs (see `n_slots_pw_synop` against `n_slots_pw`). Two measures handle this (user decisions):
+SYNOPs (see `n_bins_obs_synop` against `n_bins_obs`). Two measures handle this (user decisions):
 the per-source flags (`dusty_day_synop`, `dusty_day_metar`) and `dusty_day_vis5`, which counts
 only dust with visibility <= 5 km, caught alike by SYNOP and METAR. For SYNOP the 5 km limit is
 applied with the visibility of the same report: a threshold we derive to match METAR, not a SYNOP
 rule. Use `dusty_day_vis5` to compare stations or years with different report mixes;
-`dusty_day_synop` to compare with duISD v1 or SYNOP-only stations; `dusty_day` for the fullest
+`dusty_day_synop` (SYNOP judged alone) to compare SYNOP stations; `dusty_day` for the fullest
 count at a station.
 
 **Vicinity dust.** `VC` dust groups are rare (370 of 3.18 M METARs) but concentrated: they would
@@ -364,14 +366,12 @@ Pilot data, bronze 2020: FM-12 343 587, FM-15 305 980, FM-16 9 093, SOD 1 335, S
 
 | Column | Counts |
 |---|---|
-| `n_slots_pw`, `valid_day` | slots observed by either source (reported, nil_significant, nil_inferred, nil_metar) |
-| `n_slots_pw_explicit`, `valid_day_explicit` | slots with an explicit observation (a code, iX 2/5, CAVOK) from either source |
-| `dusty_day` | a slot where either source reports dust (any visibility) |
-| `dusty_day_synop`, `n_slots_pw_synop`, `valid_day_synop` | the SYNOP report of each slot alone |
-| `dusty_day_metar`, `n_slots_pw_metar`, `valid_day_metar` | the METAR report of each slot alone |
-| `dusty_day_vis5`, `n_slots_pw_vis5`, `valid_day_vis5` | dust at <= 5 km from either source; slots dusty only through a report of unknown visibility are left out |
-| `n_slots_nil_inferred`, `n_slots_nil_metar` | slots with S6 / M5 |
-| `dusty_day_any` | any report of the day dusty (all types, selected or not, SPECI included) |
+| `n_bins_obs`, `valid_day` | bins (section 10) observed by any report (reported, nil_significant, nil_inferred, nil_metar) |
+| `n_bins_obs_explicit`, `valid_day_explicit` | bins with an explicit observation (a code, iX 2/5, CAVOK) |
+| `dusty_day` | a bin where any report is dusty (any visibility, any report type, SPECI included) |
+| `dusty_day_<g>`, `n_bins_obs_<g>`, `valid_day_<g>` | each source group (synop, metar, other) judged alone |
+| `dusty_day_vis5`, `n_bins_obs_vis5`, `valid_day_vis5` | dust at <= 5 km; bins dusty through a report of unknown visibility, with no dust at <= 5 km, are left out |
+| `n_bins_nil_inferred`, `n_bins_nil_metar` | bins with S6 / M5 |
 | `vicinity_dust_day` | any report with vicinity dust (M11, S10) |
 | `remarks_dust_day` | any METAR with dust only in its remarks (M18) |
 
@@ -547,31 +547,39 @@ comparable across SYNOP stations.
 
 ## 9. Daily aggregation (gold `daily`, `sql/daily.sql`)
 
-One row per station per local (LMST) day.
+One row per station per local (LMST) day, built from the gold `three_hourly` bins (section 10;
+method 2.0.0, user decisions 2026-11-02). The day holds the **8 bins that start on its LMST date**
+(one LMST offset per station, section 4.2). A bin is observed if any of its reports observed the
+weather, and dusty if any of its reports is dusty at the station (after the haze rule and the
+humidity screen); SPECIs count, summaries do not. Each source group (section 8) is also judged
+alone.
 
 | Column(s) | Definition | Why |
 |---|---|---|
-| `n_slots`, `n_slots_pw` | slots with a SYNOP or METAR on the day; of those, slots observed by either | basis of validity |
-| `valid_day` | `n_slots_pw ≥ 4` (of 8) | a day can only be judged dusty or not if enough was observed |
-| `dusty_day` | a slot where either source reports dust, at any visibility (**primary definition**) | all dust the observers reported (5.2) |
-| `n_slots_dusty` | slots where either source reports dust (> 0 exactly on `dusty_day` days) | dust duration within the day; slot frequency in the statistics (section 11) |
-| `n_slots_pw_explicit`, `valid_day_explicit` | slots with an explicit observation (code, iX 2/5, CAVOK); `≥ 4` | validity without inferred or implied "nothing", for sensitivity checks |
-| `n_slots_nil_inferred`, `n_slots_nil_metar` | slots with "nothing significant" inferred (V3) or implied by a METAR without group | keeps them visible |
-| `n_slots_synop`, `n_slots_pw_synop`, `valid_day_synop`, `dusty_day_synop` | the same from each slot's SYNOP alone | comparable with duISD v1 and SYNOP-only stations |
-| `n_slots_metar`, `n_slots_pw_metar`, `valid_day_metar`, `dusty_day_metar` | the same from each slot's METAR alone | METAR's contribution; misses light dust (5.2) |
-| `n_slots_pw_vis5`, `valid_day_vis5`, `dusty_day_vis5` | dust with visibility ≤ 5 km, either source | caught alike by SYNOP and METAR: compare stations and years with different report mixes |
+| `n_bins`, `n_bins_obs` | bins with a report on the day (max 8); of those, observed bins | basis of validity |
+| `valid_day` | `n_bins_obs ≥ 4` (of 8; `min_bins_per_day`) | a day can only be judged dusty or not if enough was observed |
+| `dusty_day` | at least one dusty bin, any report, any visibility (**primary definition**) | all dust the observers reported (5.2) |
+| `n_bins_dusty` | dusty bins (> 0 exactly on `dusty_day` days) | dust duration within the day; bin frequency in the statistics (section 11) |
+| `n_bins_obs_explicit`, `valid_day_explicit` | bins with an explicit observation (code, iX 2/5, CAVOK); `≥ 4` | validity without inferred or implied "nothing", for sensitivity checks |
+| `n_bins_nil_inferred`, `n_bins_nil_metar` | bins with a report whose "nothing significant" is inferred (V3, METAR fragments) or implied by a METAR without group | keeps them visible |
+| `n_bins_obs_<g>`, `n_bins_dust_<g>`, `valid_day_<g>`, `dusty_day_<g>` for `<g>` = `synop`, `metar`, `other` | each source group **judged alone**: bins it observed, bins it saw dust in; `valid_day_<g>` = `n_bins_obs_<g> ≥ 4`, `dusty_day_<g>` = `n_bins_dust_<g> > 0` | which kind of report saw the dust; SYNOP alone is comparable between SYNOP stations |
+| `n_bins_obs_vis5`, `valid_day_vis5`, `dusty_day_vis5` | bins that can be judged for dust at ≤ 5 km (`dust_vis5` not null, section 10); `≥ 4`; at least one bin with such dust | caught alike by SYNOP and METAR: compare stations and years with different report mixes |
 | `vicinity_dust_day` | any report with dust in the vicinity (METAR `VC`, SYNOP MV codes) | dust near, not at, the station; kept apart |
 | `remarks_dust_day` | any METAR with dust named only in its remarks (5.2) | distant dust (US `BLDU DSNT`, `ALQDS`); kept apart |
-| `dusty_day_any` | any report of the day dusty (all report types, SPECI included) | more sensitive; depends on reporting rate |
-| `past_weather_dust`, `daily_summary_dust` | past-weather or daily-summary dust evidence | evidence from other fields |
-| `dusty_day_any_source` | `dusty_day_any` or either evidence flag | most sensitive |
-| `n_dust_slots_<class>`, `n_slots_rh_screened` | slots per class (a slot counts in each class one of its two reports has) | keeps code 06 etc. visible |
-| `dust_first_lmst_hour` | first dusty slot of the day | diurnal timing |
-| `wsd_mean`, `wsd_max`, `gust_max` | wind from each slot's primary report (gust from all reports) | driver |
-| `vis_min`, `vis_hmean`, `n_vis_zero`, `n_vis_from_metar` | minimum and harmonic-mean visibility (primary report; the slot's METAR when the SYNOP has none, counted in `n_vis_from_metar`) | harmonic mean averages extinction (≈ 1/visibility) |
-| `t_*`, `td_mean`, `rh_mean`, `slp_mean` | means and extremes over the slots' primary reports | drivers |
-| `dup6_mean` | dust uplift potential U³(1 + 6/U)(1 − 36/U²) for U > 6 m/s, else 0 | wind's capacity to lift dust (Marsham et al. 2011 form; fixed 6 m/s threshold) |
+| `past_weather_dust`, `daily_summary_dust` | past-weather or daily-summary dust evidence | evidence from other fields, **never counted** as dust at the station |
+| `n_dust_bins_<class>`, `n_bins_rh_screened` | bins per class (a bin counts in each class one of its reports has) | keeps code 06 etc. visible |
+| `dust_first_lmst_hour` | LMST start hour of the day's first dusty bin (0 to < 24, in day order) | diurnal timing |
+| `wsd_mean` | mean over the bins' state reports (section 10) | driver |
+| `wsd_max`, `gust_max`, `vis_min` | maximum wind speed, maximum gust, minimum visibility over **all** reports | extremes during an outbreak |
+| `vis_hmean`, `n_vis_zero` | harmonic-mean visibility of the state reports; state reports with zero visibility. No value is taken from another report | harmonic mean averages extinction (≈ 1/visibility) |
+| `t_mean`, `t_min`, `t_max`, `td_mean`, `rh_mean`, `slp_mean` | means and extremes over the bins' state reports | drivers |
+| `dup6_mean` | dust uplift potential U³(1 + 6/U)(1 − 36/U²) for U > 6 m/s, else 0, of the state reports | wind's capacity to lift dust (Marsham et al. 2011 form; fixed 6 m/s threshold) |
 | `d_t_mean`, `d_slp_mean` | change from the previous day, only between two consecutive valid days | fronts often bring dust |
+
+**Caution: reporting rate.** All reports count, so a station that reports hourly (with SPECIs)
+looks at more of each bin than a 3-hourly SYNOP station. Equal observation frequency cannot be
+enforced; the counts (`n_reports`, `n_bins_obs_<g>`) show the difference, and each source judged
+alone gives like-for-like comparisons (e.g. SYNOP stations by `dusty_day_synop`).
 
 Analyses of dust frequency use **valid days only** (e.g. dusty days per year =
 365 × dusty valid days / valid days); each dusty-day flag goes with its own validity
@@ -658,26 +666,25 @@ One row per station per calendar month of `lmst_date`.
 | Column(s) | Definition | Why |
 |---|---|---|
 | `n_calendar_days`, `n_days` | days in the calendar month; days with a `daily` row | coverage |
-| `n_obs_days{v}` | days with at least one observed slot (`n_slots_pw{v} ≥ 1`) | coverage |
+| `n_obs_days{v}` | days with at least one observed bin (`n_bins_obs{v} ≥ 1`) | coverage |
 | `n_valid_days{v}` | valid days (`valid_day{v}`) | the denominator of frequencies |
 | `n_dusty_days{v}` | dusty valid days | the numerator of frequencies |
 | `n_dusty_days_obs{v}` | dusty days at any coverage | presence of dust |
-| `n_dusty_days_any` | valid days with `dusty_day_any` (any report, SPECI included) | more sensitive count |
-| `n_days_suspended`, `n_days_blowing`, `n_days_whirls`, `n_days_storm`, `n_days_dust_haze` | valid days with a slot of that class | class mix (code 06 share) |
-| `n_days_raised` | valid days with blowing, whirls or storm slots (codes 07 and up) | locally raised dust |
+| `n_days_suspended`, `n_days_blowing`, `n_days_whirls`, `n_days_storm`, `n_days_dust_haze` | valid days with a bin of that class | class mix (code 06 share) |
+| `n_days_raised` | valid days with blowing, whirls or storm bins (codes 07 and up) | locally raised dust |
 | `n_days_vicinity`, `n_days_remarks`, `n_days_past_weather`, `n_days_daily_summary` | days with each evidence flag, any coverage | kept apart, as in `daily` |
-| `n_slots`, `n_slots_pw`, `n_slots_pw_synop`, `n_slots_pw_metar`, `n_slots_nil_inferred`, `n_slots_nil_metar`, `n_slots_rh_screened`, `n_dust_slots_<class>`, `n_slots_dusty` | sums of the daily slot counts | observing density and report mix |
-| `n_slots_pw_valid`, `n_slots_dusty_valid` | observed and dusty slots on valid days | slots per valid day; slot frequency of dust |
+| `n_bins`, `n_bins_obs`, `n_bins_obs_synop`, `n_bins_obs_metar`, `n_bins_nil_inferred`, `n_bins_nil_metar`, `n_bins_rh_screened`, `n_dust_bins_<class>`, `n_bins_dusty` | sums of the daily bin counts | observing density and report mix |
+| `n_bins_obs_valid`, `n_bins_dusty_valid` | observed and dusty bins on valid days | bins per valid day; bin frequency of dust |
 | `dusty_freq` | `n_dusty_days / n_valid_days`; null without valid days | frequency on valid days (11.4) |
 | `dusty_freq_obs` | `n_dusty_days_obs / n_obs_days`; null without observed days | lower bound of the frequency (11.4) |
 | `validity_ratio` | `[(n_valid_days − n_dusty_days) / (n_obs_days − n_dusty_days_obs)] / [n_dusty_days / n_dusty_days_obs]`; null when a share is undefined | whether `dusty_freq` is biased (11.4) |
 | `n_days_vis`, `ext_mean` | days with `vis_hmean > 0`; mean of `1000 / vis_hmean` (km⁻¹) over them | extinction (≈ 1/visibility) averages linearly |
 | `n_days_vis_dusty`, `ext_mean_dusty` | the same over `dusty_day` days (any coverage; the whole day's visibility) | how strongly dust reduced visibility |
-| `vis_min`, `n_slots_vis_zero` | minimum visibility; slots with visibility 0 (no extinction value) | extremes |
+| `vis_min`, `n_bins_vis_zero` | minimum visibility; state reports with visibility 0 (no extinction value) | extremes |
 
 `{v}` is each dusty-day definition with its own validity (section 9): primary (no suffix),
-`_synop`, `_metar`, `_vis5`, and `_explicit` (`dusty_day` with `valid_day_explicit`, since a dust
-slot always carries an explicit code). Inhomogeneity (observing density, report mix, code-06 share)
+`_synop`, `_metar` (each source judged alone), `_vis5`, and `_explicit` (`dusty_day` with
+`valid_day_explicit`, since a dust bin always carries an explicit code). Inhomogeneity (observing density, report mix, code-06 share)
 is detected from these counts, not corrected.
 
 ### 11.2 Yearly (`yearly`)

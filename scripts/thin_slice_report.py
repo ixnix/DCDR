@@ -49,34 +49,34 @@ def main() -> int:
     ]
     con = duckdb.connect()
 
-    # 1. Per station: valid days, dusty days (two definitions) and dust slots by class.
+    # 1. Per station: valid days, dusty days (all sources; SYNOP alone) and dust bins by class.
     print("== Per-station daily summary (valid days only)")
     print(
         con.sql(f"""
         SELECT station_id, count(*) FILTER (WHERE valid_day) AS valid_days,
-               count(*) FILTER (WHERE valid_day AND dusty_day_synoptic) AS dusty_days_synoptic,
-               count(*) FILTER (WHERE valid_day AND dusty_day_any) AS dusty_days_any,
-               sum(n_dust_slots_suspended) AS suspended, sum(n_dust_slots_blowing) AS blowing,
-               sum(n_dust_slots_whirls) AS whirls, sum(n_dust_slots_storm) AS storm,
-               sum(n_dust_slots_dust_haze) AS dust_haze, sum(n_slots_rh_screened) AS rh_screened
+               count(*) FILTER (WHERE valid_day AND dusty_day) AS dusty_days,
+               count(*) FILTER (WHERE valid_day_synop AND dusty_day_synop) AS dusty_days_synop,
+               sum(n_dust_bins_suspended) AS suspended, sum(n_dust_bins_blowing) AS blowing,
+               sum(n_dust_bins_whirls) AS whirls, sum(n_dust_bins_storm) AS storm,
+               sum(n_dust_bins_dust_haze) AS dust_haze, sum(n_bins_rh_screened) AS rh_screened
         FROM '{daily}' GROUP BY station_id ORDER BY station_id""")
     )
 
-    # 2. Which weather-field family (the part of dust_rule_id before ":") decided each dusty slot.
-    print("== Which field decided dust in selected slots (MW / AU / AW), and ambiguous counts")
+    # 2. Which weather-field family (the part of dust_rule_id before ":") decided each dusty report.
+    print("== Which field decided dust in the reports (MW / AU / AW), and ambiguous counts")
     print(
         con.sql(f"""
-        SELECT station_id, split_part(dust_rule_id, ':', 1) AS field, count(*) AS slots,
+        SELECT station_id, split_part(dust_rule_id, ':', 1) AS field, count(*) AS reports,
                sum(flag_ambiguous::INT) AS ambiguous, sum(flag_vicinity::INT) AS vicinity
         FROM read_parquet({silver}, union_by_name = true)
-        WHERE is_synoptic_selected AND dust_rule_id IS NOT NULL
+        WHERE NOT is_excluded_type AND dust_rule_id IS NOT NULL
         GROUP BY ALL ORDER BY ALL""")
     )
 
     # 3. Chart: dusty days per month, one panel per station (shared axes for comparison).
     monthly = con.sql(f"""
         SELECT station_id, date_trunc('month', lmst_date) AS month,
-               count(*) FILTER (WHERE valid_day AND dusty_day_synoptic) AS dusty_days
+               count(*) FILTER (WHERE valid_day AND dusty_day) AS dusty_days
         FROM '{daily}' GROUP BY ALL ORDER BY ALL""").pl()
     stations = monthly["station_id"].unique().sort().to_list()
     fig, axes = plt.subplots(

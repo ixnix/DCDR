@@ -1,9 +1,11 @@
-"""Gold `daily` table (aggregate.py + sql/daily.sql): one row per station per local day.
+"""Gold `daily` table (aggregate.py + sql/daily.sql): one row per station per local day, built
+from the gold `three_hourly` bins (method 2.0.0).
 
 Builds small silver station-years from fake ISD rows, runs the real gold build into a temporary
-data root, and checks the daily columns: slot counts, dust counts, DUP6, harmonic-mean
-visibility, day-to-day changes, daily-summary dating, which day a slot counts on, the CURRENT
-pointer with old-version pruning, and that gold refuses mixed or stale silver.
+data root, and checks the daily columns: bin counts, validity, dust from any report in a bin, the
+per-source counts, dust at <= 5 km, weather means from the bins' state reports and extremes from all
+reports, evidence kept apart, which day a bin counts on, day-to-day changes, daily-summary dating,
+the CURRENT pointer with old-version pruning, and that gold refuses mixed or stale silver.
 """
 
 import os
@@ -27,10 +29,21 @@ def _silver(
     name: str = "S",
     cfg_hash: str | None = None,
     nil_guard: bool | None = None,
+    year: int = 2024,
+    previous: list[dict] | None = None,
+    next_year_exists: bool = False,
 ) -> Path:
     cfg_hash = cfg_hash or silver_config_hash(settings)
-    df = build_station_year(bronze_frame(rows), None, 2024, settings, nil_guard=nil_guard)
-    path = settings.data_root / "silver" / "year=2024" / f"{name}.parquet"
+    prev = bronze_frame(previous) if previous else None
+    df = build_station_year(
+        bronze_frame(rows),
+        prev,
+        year,
+        settings,
+        next_year_exists=next_year_exists,
+        nil_guard=nil_guard,
+    )
+    path = settings.data_root / "silver" / f"year={year}" / f"{name}.parquet"
     write_silver(df, path, run_id="r", config_hash=cfg_hash, source_md5="m", prev_source_md5="")
     return path
 
@@ -43,7 +56,14 @@ def _daily(
 
 
 def _slots(day: str, hours: range = range(0, 24, 3), **fields: str) -> list[dict]:
+    """One report per 3-hour bin at longitude 0 (a SYNOP unless `fields` says otherwise)."""
     return [isd_row(f"{day}T{h:02d}:00:00", **LON0, **fields) for h in hours]
+
+
+def _one_day(settings: Settings, rows: list[dict], **kw: bool | None) -> dict:
+    d = _daily(settings, [_silver(settings, rows, **kw)])  # type: ignore[arg-type]
+    assert len(d) == 1
+    return d.row(0, named=True)
 
 
 def test_daily_counts_dup6_and_visibility(settings: Settings) -> None:
@@ -57,15 +77,11 @@ def test_daily_counts_dup6_and_visibility(settings: Settings) -> None:
         )
         for h in range(0, 24, 3)
     ]
-    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
-    assert (d["lmst_date"], d["n_reports"], d["n_slots"], d["n_slots_pw"]) == (
-        date(2024, 1, 1),
-        8,
-        8,
-        8,
-    )
-    assert d["valid_day"] and d["dusty_day"] and d["dusty_day_any"]
-    assert d["n_dust_slots_suspended"] == 2
+    d = _one_day(settings, rows)
+    got = (d["lmst_date"], d["n_reports"], d["n_bins"], d["n_bins_obs"])
+    assert got == (date(2024, 1, 1), 8, 8, 8)
+    assert d["valid_day"] and d["dusty_day"]
+    assert (d["n_dust_bins_suspended"], d["n_bins_dusty"]) == (2, 2)
     assert d["wsd_mean"] == pytest.approx(10.0)
     assert d["dup6_mean"] == pytest.approx(1024.0)  # 10^3 * (1 + 0.6) * (1 - 0.36)
     assert (d["vis_min"], d["n_vis_zero"]) == (0.0, 1)
@@ -116,19 +132,6 @@ def test_current_pointer_and_pruning(tmp_path: Path) -> None:
     assert remaining == run_ids[-2:]
 
 
-def test_dusty_day_any_source_uses_past_and_daily_summaries(settings: Settings) -> None:
-    rows = (
-        _slots("2024-01-01", MW1="02,1")
-        + [isd_row("2024-01-01T06:30:00", **LON0, REPORT_TYPE="FM-15", AY1="3,1,06,1")]
-        + _slots("2024-01-02", MW1="02,1")
-        + [isd_row("2024-01-02T23:59:00", **LON0, REPORT_TYPE="SOD", AX1="07,5,24,5")]
-        + _slots("2024-01-03", MW1="02,1")
-    )
-    d = _daily(settings, [_silver(settings, rows)]).sort("lmst_date")
-    assert d["dusty_day"].to_list() == [False, False, False]
-    assert d["dusty_day_any_source"].to_list() == [True, True, False]
-
-
 LV = {"LONGITUDE": "-115.16343"}  # Las Vegas: LMST runs ~18 min ahead of local standard time
 
 
@@ -142,20 +145,6 @@ def test_daily_summary_dated_to_the_day_it_summarises(settings: Settings) -> Non
     d = _daily(settings, [_silver(settings, rows)])
     flagged = d.filter(pl.col("daily_summary_dust"))["lmst_date"].to_list()
     assert flagged == [date(2024, 1, 6)]
-
-
-def test_slot_counted_on_its_own_lmst_day(settings: Settings) -> None:
-    """Review I1: a 20:35Z report filling the 21Z slot must count on the slot's LMST day (Kuwait)."""
-    kw = {"LONGITUDE": "47.968928"}  # LMST = UTC + 3:11:52; slot 21Z -> 00:11 LMST next day
-    rows = (
-        [isd_row("2024-02-29T21:00:00", **kw, MW1="02,1")]
-        + [isd_row(f"2024-03-01T{h:02d}:00:00", **kw, MW1="02,1") for h in range(0, 21, 3)]
-        + [isd_row("2024-03-01T20:35:00", **kw, REPORT_TYPE="FM-15", MW1="02,1")]
-        + [isd_row(f"2024-03-02T{h:02d}:00:00", **kw, MW1="02,1") for h in range(0, 21, 3)]
-    )
-    d = _daily(settings, [_silver(settings, rows)]).sort("lmst_date")
-    by_day = dict(zip(d["lmst_date"].to_list(), d["n_slots"].to_list(), strict=True))
-    assert by_day[date(2024, 3, 1)] == 8 and by_day[date(2024, 3, 2)] == 8
 
 
 def test_gold_refuses_silver_built_with_other_config(settings: Settings) -> None:
@@ -198,28 +187,69 @@ def test_pruning_survives_files_vanishing_during_delete(
     assert [p.name for p in (gold / "versions").iterdir()] == ["20260102T000000Z-bbbbbb"]
 
 
-def test_daily_keeps_inferred_nil_slots_visible(settings: Settings) -> None:
-    """Rule V3: inferred "nothing significant" slots make a day valid, but are counted apart, and
+def test_daily_keeps_inferred_nil_bins_visible(settings: Settings) -> None:
+    """Rule V3: inferred "nothing significant" bins make a day valid, but are counted apart, and
     valid_day_explicit ignores them."""
     rows = [isd_row(f"2024-03-01T{h:02d}:00:00", **LON0, REM="SYN004BUFR") for h in range(0, 24, 3)]
-    d = _daily(settings, [_silver(settings, rows, nil_guard=True)]).row(0, named=True)
-    got = (d["n_slots_pw"], d["n_slots_nil_inferred"], d["valid_day"], d["valid_day_explicit"])
+    d = _one_day(settings, rows, nil_guard=True)
+    got = (d["n_bins_obs"], d["n_bins_nil_inferred"], d["valid_day"], d["valid_day_explicit"])
     assert got == (8, 8, True, False)
 
 
-# --- METAR slots, dust at <= 5 km, vicinity (user decisions 2026-10-20) ---------------------
+# --- all reports in a bin, by source (method 2.0.0, user decisions 2026-11-02) ----------------
 METAR_CLEAR = "MET000METAR KELP 010000Z 25010KT 10SM CLR 30/02 A3000"
+KELP_RMK = "MET100KELP 010051Z 12012G27KT 10SM CLR 30/02 A3027 RMK AO2 SLP042 BLDU DSNT SW"
+UNKNOWN_VIS = "999999,9,N,9"
+
+
+def test_dusty_hourly_metar_with_clear_synop_makes_dusty_day(settings: Settings) -> None:
+    """Niamey 2020: dust reported only in an hourly METAR between the SYNOPs."""
+    rows = _slots("2024-05-27", MW1="02,1") + [
+        isd_row("2024-05-27T13:00:00", **LON0, REPORT_TYPE="FM-15", MW1="07,1")
+    ]
+    d = _one_day(settings, rows)
+    assert d["dusty_day"] and d["valid_day"]
+    got = (d["n_bins_dusty"], d["n_bins_dust_metar"], d["n_bins_dust_synop"])
+    assert got == (1, 1, 0)
+
+
+def test_day_with_3_observed_bins_is_not_valid(settings: Settings) -> None:
+    rows = _slots("2024-01-01", range(0, 9, 3), MW1="02,1") + _slots(
+        "2024-01-01", range(9, 24, 3)
+    )  # five SYNOPs without weather code or iX: not observed
+    d = _one_day(settings, rows)
+    assert (d["n_bins"], d["n_bins_obs"], d["valid_day"]) == (8, 3, False)
+
+
+def test_source_counts_per_day(settings: Settings) -> None:
+    rows = (
+        [isd_row("2024-06-01T00:00:00", **LON0, MW1="07,1")]  # SYNOP dust
+        + _slots("2024-06-01", range(3, 21, 3), MW1="02,1")  # SYNOP clear, 03-18
+        + [isd_row("2024-06-01T18:51:00", **LON0, REPORT_TYPE="FM-15", MW1="07,1")]  # METAR dust
+        + [isd_row("2024-06-01T21:00:00", **LON0, REPORT_TYPE="AERO", MW1="07,1")]  # other dust
+    )
+    d = _one_day(settings, rows)
+    dust = (d["n_bins_dust_synop"], d["n_bins_dust_metar"], d["n_bins_dust_other"])
+    obs = (d["n_bins_obs_synop"], d["n_bins_obs_metar"], d["n_bins_obs_other"])
+    assert (dust, obs, d["n_bins_dusty"]) == ((1, 1, 1), (7, 1, 1), 3)
+    assert (d["valid_day_synop"], d["valid_day_metar"], d["valid_day_other"]) == (
+        True,
+        False,
+        False,
+    )
+    assert (d["dusty_day_synop"], d["dusty_day_metar"], d["dusty_day_other"]) == (True, True, True)
+    assert d["dusty_day"] and d["valid_day"]
 
 
 def test_metar_only_day_is_valid_and_counted_apart(settings: Settings) -> None:
-    """A METAR with no weather group at > 5 km fills a slot as "nothing significant, implied":
-    the day is valid, but not valid from explicit observations, and its METAR slots are counted."""
+    """A METAR with no weather group at > 5 km is "nothing significant, implied": the day is
+    valid, but not valid from explicit observations, and its bins count as METAR-observed."""
     rows = _slots("2024-04-01", REPORT_TYPE="FM-15", REM=METAR_CLEAR, VIS="016093,1,N,1")
-    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
+    d = _one_day(settings, rows)
     got = (
-        d["n_slots_pw"],
-        d["n_slots_nil_metar"],
-        d["n_slots_metar"],
+        d["n_bins_obs"],
+        d["n_bins_nil_metar"],
+        d["n_bins_obs_metar"],
         d["valid_day"],
         d["valid_day_explicit"],
         d["valid_day_vis5"],
@@ -229,17 +259,15 @@ def test_metar_only_day_is_valid_and_counted_apart(settings: Settings) -> None:
 
 
 @pytest.mark.parametrize(
-    "dust_vis,dusty,dusty_vis5,n_pw_vis5",
+    "dust_vis,dusty_vis5,n_obs_vis5",
     [
-        ("008000,1,N,1", True, False, 8),  # dust at 8 km: dusty, but not dust at <= 5 km
-        ("003000,1,N,1", True, True, 8),  # dust at 3 km: both
-        ("005000,1,N,1", True, True, 8),  # 5 000 m is included ("5 000 metres or less")
-        ("999999,9,9,9", True, False, 7),  # dust, visibility unknown: slot left out of vis5
+        ("008000,1,N,1", False, 8),  # dust at 8 km: dusty, but not dust at <= 5 km
+        ("003000,1,N,1", True, 8),  # dust at 3 km: both
+        ("005000,1,N,1", True, 8),  # 5 000 m is included ("5 000 metres or less")
+        (UNKNOWN_VIS, False, 7),  # dust, visibility unknown: bin left out of vis5
     ],
 )
-def test_dusty_day_vis5_counts_dust_with_visibility_at_or_below_5km(
-    settings: Settings, dust_vis: str, dusty: bool, dusty_vis5: bool, n_pw_vis5: int
-) -> None:
+def test_vis5_day(settings: Settings, dust_vis: str, dusty_vis5: bool, n_obs_vis5: int) -> None:
     rows = [
         isd_row(
             f"2024-05-01T{h:02d}:00:00",
@@ -249,9 +277,83 @@ def test_dusty_day_vis5_counts_dust_with_visibility_at_or_below_5km(
         )
         for h in range(0, 24, 3)
     ]
-    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
-    got = (d["dusty_day"], d["dusty_day_vis5"], d["n_slots_pw_vis5"], d["valid_day_vis5"])
-    assert got == (dusty, dusty_vis5, n_pw_vis5, True)
+    d = _one_day(settings, rows)
+    got = (d["dusty_day"], d["dusty_day_vis5"], d["n_bins_obs_vis5"], d["valid_day_vis5"])
+    assert got == (True, dusty_vis5, n_obs_vis5, True)
+
+
+def test_vis5_bin_with_dust_of_unknown_visibility_is_not_judged(settings: Settings) -> None:
+    rows = _slots("2024-05-01", range(3, 24, 3), MW1="02,1") + [
+        isd_row("2024-05-01T00:00:00", **LON0, MW1="07,1", VIS="008000,1,N,1"),
+        isd_row("2024-05-01T00:30:00", **LON0, REPORT_TYPE="FM-15", MW1="07,1", VIS=UNKNOWN_VIS),
+    ]
+    d = _one_day(settings, rows)
+    assert (d["dusty_day"], d["dusty_day_vis5"], d["n_bins_obs_vis5"]) == (True, False, 7)
+
+
+def test_means_from_state_reports_extremes_from_all(settings: Settings) -> None:
+    rows = _slots("2024-07-01", MW1="02,1", TMP="+0200,1", WND="090,1,N,0050,1") + [
+        isd_row(
+            "2024-07-01T00:51:00", **LON0, REPORT_TYPE="FM-15", TMP="+0300,1", WND="090,1,N,0120,1"
+        ),
+        isd_row("2024-07-01T04:10:00", **LON0, REPORT_TYPE="FM-16", OC1="0220,1"),
+    ]
+    d = _one_day(settings, rows)
+    assert (d["t_mean"], d["t_max"], d["wsd_mean"]) == (20.0, 20.0, 5.0)  # the SYNOPs only
+    assert (d["wsd_max"], d["gust_max"]) == (12.0, 22.0)  # over all reports
+
+
+def test_no_visibility_fallback(settings: Settings) -> None:
+    rows = _slots("2024-07-02", MW1="02,1", VIS=UNKNOWN_VIS) + [
+        isd_row("2024-07-02T00:51:00", **LON0, REPORT_TYPE="FM-15", VIS="003000,1,N,1")
+    ]
+    d = _one_day(settings, rows)
+    assert (d["vis_hmean"], d["vis_min"]) == (None, 3000.0)
+
+
+def test_dust_first_lmst_hour_is_bin_start(settings: Settings) -> None:
+    """Review Focus 5: at 15 E (LMST = UTC + 1 h), dust at 23:30 UTC is in the 21 UTC bin, which
+    starts at 22:00 LMST on the same day; a report-level hour would read 0.5."""
+    e15 = {"LONGITUDE": "15.0"}
+    rows = [isd_row(f"2024-01-01T{h:02d}:00:00", **e15, MW1="02,1") for h in range(0, 24, 3)]
+    rows.append(isd_row("2024-01-01T23:30:00", **e15, REPORT_TYPE="FM-15", MW1="07,1"))
+    d = _one_day(settings, rows)
+    assert (d["lmst_date"], d["dusty_day"]) == (date(2024, 1, 1), True)
+    assert d["dust_first_lmst_hour"] == pytest.approx(22.0)
+
+
+def test_bin_counts_on_the_lmst_date_it_starts_across_years(settings: Settings) -> None:
+    """Review Focus 3: at 45 E (LMST = UTC + 3 h) the 21 UTC bin of 31 December starts at 00:00
+    LMST on 1 January; that day is read from two silver year files and has 8 bins."""
+    e45 = {"LONGITUDE": "45.0"}
+    y2023 = [isd_row(f"2023-12-31T{h:02d}:00:00", **e45, MW1="02,1") for h in range(0, 24, 3)]
+    y2024 = [isd_row(f"2024-01-01T{h:02d}:00:00", **e45, MW1="02,1") for h in range(0, 24, 3)]
+    paths = [
+        _silver(settings, y2023, year=2023, next_year_exists=True),
+        _silver(settings, y2024, year=2024, previous=y2023),
+    ]
+    d = _daily(settings, paths)
+    n_bins = dict(zip(d["lmst_date"].to_list(), d["n_bins"].to_list(), strict=True))
+    assert (n_bins[date(2023, 12, 31)], n_bins[date(2024, 1, 1)]) == (7, 8)
+
+
+def test_evidence_is_never_counted(settings: Settings) -> None:
+    """Past weather, a daily summary, vicinity and remarks dust are evidence, kept apart."""
+    rows = _slots("2024-01-01", range(3, 24, 3), MW1="02,1") + [
+        isd_row("2024-01-01T00:00:00", **LON0, MW1="02,1", MV1="08,1"),  # vicinity (SYNOP MV)
+        isd_row("2024-01-01T06:30:00", **LON0, REPORT_TYPE="FM-15", AY1="3,1,06,1"),  # past
+        isd_row("2024-01-01T09:51:00", **LON0, REPORT_TYPE="FM-15", REM=KELP_RMK),  # remarks
+        isd_row("2024-01-01T23:59:00", **LON0, REPORT_TYPE="SOD", AX1="07,5,24,5"),  # summary
+    ]
+    d = _one_day(settings, rows)
+    assert not d["dusty_day"]
+    got = (
+        d["past_weather_dust"],
+        d["daily_summary_dust"],
+        d["vicinity_dust_day"],
+        d["remarks_dust_day"],
+    )
+    assert got == (True, True, True, True)
 
 
 def test_vicinity_dust_day_is_a_separate_flag(settings: Settings) -> None:
@@ -263,11 +365,7 @@ def test_vicinity_dust_day_is_a_separate_flag(settings: Settings) -> None:
         VIS="016093,1,N,1",
     )
     d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
-    assert (d["vicinity_dust_day"], d["dusty_day"], d["dusty_day_any"]) == (
-        True,
-        False,
-        False,
-    )
+    assert (d["vicinity_dust_day"], d["dusty_day"]) == (True, False)
 
 
 def test_remarks_dust_day_is_a_separate_flag(settings: Settings) -> None:
@@ -278,166 +376,5 @@ def test_remarks_dust_day_is_a_separate_flag(settings: Settings) -> None:
         VIS="016093,1,N,1",
     )
     d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
-    got = (d["remarks_dust_day"], d["vicinity_dust_day"], d["dusty_day"], d["dusty_day_any"])
-    assert got == (True, False, False, False)
-
-
-# --- SYNOP and METAR as independent sources per slot (user decision 2026-10-20) --------------
-# A slot is dusty if the selected SYNOP OR the selected METAR reports dust; it is observed if
-# either observed the weather. Per-source flags keep the two apart. Wind, temperature and
-# visibility means come from one primary report per slot (the SYNOP if it observed the weather).
-US_SYNOP_NO_GROUP = (
-    "SYN07472270 31956 22330 10222 21022 38651 49940 56042 92051="  # iX 1, no 7-group
-)
-SYNOP_NIL = "SYN08040829 12960 03406 10062 21002="  # iX 2: nothing significant
-METAR_BLDU = "MET000METAR KELP 010251Z 25030G42KT 3SM BLDU CLR 27/M07 A2978 RMK AO2"
-BLDU_AU = "0,5,00,5,0,1,1"  # AU: BL DU
-METAR_NIL = "MET000METAR OIZB 010300Z 34012KT 9999 NSC 30/10 Q1010"
-
-
-def _slot_day(day: str, at_03: list[dict]) -> list[dict]:
-    """Seven quiet observed SYNOP slots plus the given reports around 03 UTC."""
-    quiet = [isd_row(f"{day}T{h:02d}:00:00", **LON0, MW1="02,1") for h in range(0, 24, 3) if h != 3]
-    return quiet + at_03
-
-
-def test_metar_dust_is_not_hidden_by_an_unobserved_synop(settings: Settings) -> None:
-    """El Paso case: the SYNOP says iX 1 but has no weather group; the METAR 9 min earlier
-    reports blowing dust. Before 1.5.0 the SYNOP filled the slot and the dust was lost."""
-    rows = _slot_day(
-        "2024-06-01",
-        [
-            isd_row(
-                "2024-06-01T02:51:00",
-                **LON0,
-                REPORT_TYPE="FM-15",
-                REM=METAR_BLDU,
-                AU1=BLDU_AU,
-                VIS="004828,1,N,1",
-            ),
-            isd_row("2024-06-01T03:00:00", **LON0, REM=US_SYNOP_NO_GROUP),
-        ],
-    )
-    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
-    got = (
-        d["dusty_day"],
-        d["dusty_day_synop"],
-        d["dusty_day_metar"],
-        d["dusty_day_vis5"],
-        d["n_slots_pw"],
-        d["n_slots_pw_synop"],
-        d["n_slots_pw_metar"],
-    )
-    assert got == (True, False, True, True, 8, 7, 1)
-
-
-@pytest.mark.parametrize(
-    "synop,metar,expected",
-    [
-        # SYNOP observed nothing significant, METAR reports dust -> dusty (either is enough)
-        ({"REM": SYNOP_NIL}, {"REM": METAR_BLDU, "AU1": BLDU_AU}, (True, False, True)),
-        # SYNOP reports dust, METAR has no weather group -> dusty
-        ({"MW1": "07,1"}, {"REM": METAR_NIL}, (True, True, False)),
-        # both clear -> not dusty
-        ({"REM": SYNOP_NIL}, {"REM": METAR_NIL}, (False, False, False)),
-    ],
-)
-def test_slot_is_dusty_if_either_source_reports_dust(
-    settings: Settings, synop: dict, metar: dict, expected: tuple
-) -> None:
-    rows = _slot_day(
-        "2024-06-02",
-        [
-            isd_row("2024-06-02T03:00:00", **LON0, **synop),
-            isd_row("2024-06-02T02:51:00", **LON0, REPORT_TYPE="FM-15", **metar),
-        ],
-    )
-    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
-    assert (d["dusty_day"], d["dusty_day_synop"], d["dusty_day_metar"]) == expected
-    assert (d["n_slots"], d["n_slots_synop"], d["n_slots_metar"]) == (8, 8, 1)
-
-
-def test_speci_and_extra_metars_count_only_in_dusty_day_any(settings: Settings) -> None:
-    """Only the closest observed METAR per slot is used; SPECI never fill a slot."""
-    rows = _slot_day(
-        "2024-06-03",
-        [
-            isd_row("2024-06-03T03:00:00", **LON0, REPORT_TYPE="FM-15", REM=METAR_NIL),
-            isd_row(
-                "2024-06-03T02:35:00", **LON0, REPORT_TYPE="FM-15", REM=METAR_BLDU, AU1=BLDU_AU
-            ),
-            isd_row(
-                "2024-06-03T03:12:00",
-                **LON0,
-                REPORT_TYPE="FM-16",
-                REM=METAR_BLDU.replace("METAR", "SPECI"),
-                AU1=BLDU_AU,
-            ),
-        ],
-    )
-    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
-    assert (d["dusty_day"], d["dusty_day_metar"], d["dusty_day_any"]) == (False, False, True)
-
-
-def test_weather_means_come_from_the_primary_report(settings: Settings) -> None:
-    """Wind is averaged over one report per slot (the observed SYNOP), never double counted."""
-    rows = [
-        isd_row(f"2024-06-04T{h:02d}:00:00", **LON0, MW1="02,1", WND="090,1,N,0100,1")
-        for h in range(0, 24, 3)
-    ] + [
-        isd_row(
-            "2024-06-04T02:51:00", **LON0, REPORT_TYPE="FM-15", REM=METAR_NIL, WND="090,1,N,0500,1"
-        )
-    ]
-    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
-    assert d["wsd_mean"] == pytest.approx(10.0)
-
-
-def test_weather_means_come_from_the_synop_even_when_only_the_metar_saw_dust(
-    settings: Settings,
-) -> None:
-    """User decision: SYNOP supplies the weather variables whenever the slot has one, so a
-    station's series does not switch report types; the METAR still makes the slot dusty."""
-    rows = [
-        isd_row(f"2024-06-05T{h:02d}:00:00", **LON0, MW1="02,1", WND="090,1,N,0100,1")
-        for h in range(0, 24, 3)
-        if h != 3
-    ] + [
-        isd_row("2024-06-05T03:00:00", **LON0, REM=US_SYNOP_NO_GROUP, WND="090,1,N,0100,1"),
-        isd_row(
-            "2024-06-05T02:51:00",
-            **LON0,
-            REPORT_TYPE="FM-15",
-            REM=METAR_BLDU,
-            AU1=BLDU_AU,
-            WND="090,1,N,0500,1",
-        ),
-    ]
-    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
-    assert d["dusty_day"] and d["wsd_mean"] == pytest.approx(10.0)
-
-
-def test_visibility_comes_from_the_metar_when_the_synop_has_none(settings: Settings) -> None:
-    """User decision (c): only visibility, and only when the slot's SYNOP has none."""
-    rows = [
-        isd_row(f"2024-06-06T{h:02d}:00:00", **LON0, MW1="02,1", VIS="016000,1,N,1")
-        for h in range(0, 24, 3)
-        if h != 3
-    ] + [
-        isd_row("2024-06-06T03:00:00", **LON0, MW1="02,1", VIS="999999,9,9,9"),
-        isd_row(
-            "2024-06-06T02:51:00", **LON0, REPORT_TYPE="FM-15", REM=METAR_NIL, VIS="005000,1,N,1"
-        ),
-    ]
-    d = _daily(settings, [_silver(settings, rows)]).row(0, named=True)
-    assert (d["vis_min"], d["n_vis_from_metar"]) == (5000.0, 1)
-
-
-def test_daily_counts_dusty_slots(settings: Settings) -> None:
-    mw = {3: "06,1", 6: "06,1", 9: "07,1"}
-    rows = [
-        isd_row(f"2024-01-01T{h:02d}:00:00", **LON0, MW1=mw.get(h, "02,1")) for h in range(0, 24, 3)
-    ]
-    rows += _slots("2024-01-02", MW1="02,1")
-    d = _daily(settings, [_silver(settings, rows)]).sort("lmst_date")
-    assert d["n_slots_dusty"].to_list() == [3, 0]
+    got = (d["remarks_dust_day"], d["vicinity_dust_day"], d["dusty_day"])
+    assert got == (True, False, False)

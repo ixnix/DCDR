@@ -145,7 +145,7 @@ All method choices live in `src/dcdr/default.yaml`, validated by Pydantic models
 | `classify` | weather fields used, haze window, snow/sand temperatures, SYNOP iX rule, inferred nil (V3) and its guard, METAR rules (`metar_rules`, `metar_report_types`, `metar_nil_min_vis_m`), METAR inference and its guard (`metar_infer_nil`, `metar_nil_guard_*`), derived SYNOPs (`derived_*`) | yes |
 | `sources` | excluded report types (`exclude_types`: SOD, SOM), source groups (`groups`: SYNOP and METAR report types; every other type is "other") | yes |
 | `sampling` | synoptic window, slot sources (`sources`: SYNOP and METAR report types, in order of preference), off-grid schedules (`schedule_*`) | yes |
-| `products` | valid-day threshold, visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept | no (gold only) |
+| `products` | valid-day threshold (`min_bins_per_day`), visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept | no (gold only) |
 | `stations` | default station list | no |
 
 Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
@@ -224,33 +224,35 @@ allowed values, unique `row_key`, at most one primary report and one report per 
 and a source group exactly on the reports that are not summaries.
 
 ### 7.3 Gold `daily`
-One row per station per local (LMST) day. Columns (definitions in Part 2, section 9):
-`n_reports, n_slots, n_slots_pw, valid_day, dusty_day, n_slots_dusty, n_slots_pw_explicit, valid_day_explicit,
-n_slots_nil_inferred, n_slots_nil_metar, n_slots_synop, n_slots_pw_synop, valid_day_synop,
-dusty_day_synop, n_slots_metar, n_slots_pw_metar, valid_day_metar, dusty_day_metar,
-n_slots_pw_vis5, valid_day_vis5, dusty_day_vis5, dusty_day_any, past_weather_dust,
-daily_summary_dust, vicinity_dust_day, remarks_dust_day, dusty_day_any_source, n_dust_slots_{suspended, blowing,
-whirls, storm, dust_haze}, n_slots_rh_screened, dust_first_lmst_hour, wsd_mean, wsd_max, gust_max,
-vis_min, vis_hmean, n_vis_zero, n_vis_from_metar, t_mean, t_min, t_max, td_mean, rh_mean, slp_mean, dup6_mean,
-d_t_mean, d_slp_mean`.
+One row per station per local (LMST) day, built from the `three_hourly` bins of the same gold run
+(`aggregate.PRODUCTS` runs `three_hourly` first; `daily.sql` reads it as a view, and silver only
+for daily-summary dust). Columns (definitions in Part 2, section 9):
+`n_reports, n_bins, n_bins_obs, valid_day, dusty_day, n_bins_dusty, n_bins_obs_explicit,
+valid_day_explicit, n_bins_nil_inferred, n_bins_nil_metar, n_bins_obs_{synop, metar, other},
+n_bins_dust_{synop, metar, other}, valid_day_{synop, metar, other}, dusty_day_{synop, metar, other},
+n_bins_obs_vis5, valid_day_vis5, dusty_day_vis5, past_weather_dust, daily_summary_dust,
+vicinity_dust_day, remarks_dust_day, n_dust_bins_{suspended, blowing, whirls, storm, dust_haze},
+n_bins_rh_screened, dust_first_lmst_hour, wsd_mean, wsd_max, gust_max, vis_min, vis_hmean,
+n_vis_zero, t_mean, t_min, t_max, td_mean, rh_mean, slp_mean, dup6_mean, d_t_mean, d_slp_mean`.
 Which dusty-day column to use (each with its own `valid_day*`): `dusty_day` for the fullest count
-(SYNOP or METAR per slot); `dusty_day_synop` to compare with duISD v1 or SYNOP-only stations;
+(any report in a bin); `dusty_day_synop` (SYNOP judged alone) to compare SYNOP stations;
 `dusty_day_vis5` to compare stations or years with different report mixes; see Part 2,
-sections 5.2, 5.3 and 9.
+sections 5.2, 5.3 and 9. The valid-day threshold reaches the SQL as `getvariable('min_bins')`
+(config `products.min_bins_per_day`).
 
-Checks run before activation (each must return 0 rows): at most 8 slots per day; observed slots ≤
-slots; explicit, per-source, inferred, implied and vis5-judgeable slots ≤ observed slots; per-source
-slots ≤ slots; `dusty_day` = `dusty_day_synop` OR `dusty_day_metar`; the narrower dusty-day flags
-imply `dusty_day`; every `valid_day*` matches its definition; dusty days have slots;
-dusty slots ≤ observed slots, and `n_slots_dusty > 0` exactly on `dusty_day` days; one row per
-station-day; day-to-day changes only between valid days.
+Checks run before activation (each must return 0 rows): at most 8 bins per day; observed bins ≤
+bins; explicit, per-source, inferred, implied and vis5-judgeable bins ≤ observed bins; a source's
+dusty bins ≤ the bins it observed; `dusty_day` = `dusty_day_synop` OR `_metar` OR `_other`; each
+source's dusty bins ≤ `n_bins_dusty` ≤ their sum; `dusty_day_vis5` implies `dusty_day`; dusty bins
+≤ observed bins, and `n_bins_dusty > 0` exactly on `dusty_day` days; every `valid_day*` matches its
+definition; one row per station-day; day-to-day changes only between valid days.
 
 Planned gold products (not built yet): `stations` catalog, `climatology`, `diurnal`, `trends`, Uth,
 code-6 diagnostic.
 
 ### 7.4 Gold `three_hourly`
 One row per station per 3-hour UTC bin (00 = 00:00-02:59, ..., 21), for every bin with a report.
-Built from silver in the same gold run as `daily`, but independently of it (no slots). Columns
+Built from silver first in each gold run; `daily` is built from it (method 2.0.0). Columns
 (definitions in Part 2, section 10): `station_id, bin_time, lmst_date, lmst_hour, state_time_utc,
 state_report_type, wsd, wind_dir, t, td, rh, slp, vis, dup6, gust_max, wsd_max, vis_min, observed,
 observed_explicit, dusty, c_{suspended, blowing, whirls, storm, dust_haze, screened},
@@ -305,7 +307,7 @@ valid day, `dusty_freq_obs` exactly when there is no observed day (and lies in 0
 f / (f + r(1 − f)) with f = `dusty_freq_obs` and r = `validity_ratio` (Part 2, 11.4), within
 1e-9, which ties the three rates together. These come from `aggregate._count_order_checks(table)`, shared by the statistics
 tables. `yearly` adds: one row per station and year; days, observed, valid and dusty days and
-observed slots equal the sums over `monthly`; covered ≤ valid ≤ observed months ≤ 12. `decadal`
+observed bins equal the sums over `monthly`; covered ≤ valid ≤ observed months ≤ 12. `decadal`
 adds: one row per station, decade and period; decades start in a year ending in 1; periods are
 known names; days, valid days, dusty days and dusty days at any coverage of the `annual` rows equal
 the `yearly` sums over the decade, and the 12 months and the 4 seasons each add up to `annual`;

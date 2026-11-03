@@ -107,7 +107,7 @@ sources:
     metar: [FM-15, FM-16, SAO, SAOSP, AUTO]
 
 products:
-  min_slots_per_day: 4  # a day is valid with >= 4 of 8 slots carrying a weather observation
+  min_bins_per_day: 4  # a day is valid with >= 4 of its 8 bins observed (any report observed the weather)
   # dusty_day_vis5: dust that reduced visibility to <= 5 km (the METAR limit, WMO FM 15.8.12),
   # caught equally by SYNOP and METAR; used to compare stations and years with mixed reports.
   vis5_max_m: 5000

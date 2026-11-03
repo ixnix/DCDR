@@ -59,7 +59,7 @@ agg AS (
         -- every additive monthly count, as in yearly.sql (n_calendar_days recomputed, no
         -- visibility counts); DuckDB sums BIGINT into HUGEINT, so cast back
         CAST(sum(COLUMNS(c -> starts_with(c, 'n_') AND c NOT IN (
-            'n_calendar_days', 'n_days_vis', 'n_days_vis_dusty', 'n_slots_vis_zero'
+            'n_calendar_days', 'n_days_vis', 'n_days_vis_dusty', 'n_bins_vis_zero'
         ))) AS BIGINT),
         -- the rates from the summed counts, as in yearly.sql
         sum(n_dusty_days) / nullif(sum(n_valid_days), 0) AS dusty_freq,

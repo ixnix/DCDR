@@ -16,7 +16,7 @@ SELECT
     CAST(date_diff('day', make_date(year, 1, 1), make_date(year + 1, 1, 1)) AS BIGINT)
         AS n_calendar_days,
     CAST(sum(COLUMNS(c -> starts_with(c, 'n_') AND c NOT IN (
-        'n_calendar_days', 'n_days_vis', 'n_days_vis_dusty', 'n_slots_vis_zero'
+        'n_calendar_days', 'n_days_vis', 'n_days_vis_dusty', 'n_bins_vis_zero'
     ))) AS BIGINT),
     -- the rates from the summed counts, as in monthly.sql (not means of the monthly rates)
     sum(n_dusty_days) / nullif(sum(n_valid_days), 0) AS dusty_freq,

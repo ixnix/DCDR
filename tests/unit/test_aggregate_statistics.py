@@ -1,5 +1,5 @@
 """Gold statistics tables (aggregate.py + sql/monthly.sql, yearly.sql, decadal.sql): per-station dust
-day counts, coverage and slot counts per local month, year and decade.
+day counts, coverage and bin counts per local month, year and decade.
 
 Builds small silver station-years from fake ISD rows, runs the real gold build into a temporary
 data root, and checks the counts: valid days and frequency, presence on any day, coverage of the
@@ -54,11 +54,11 @@ def _day(
 # --- monthly ---------------------------------------------------------------------------------
 
 
-def test_monthly_valid_presence_and_slot_counts(settings: Settings) -> None:
+def test_monthly_valid_presence_and_bin_counts(settings: Settings) -> None:
     rows = (
         _day("2024-01-01", {3: "06,1"})  # valid, dusty (suspended)
         + _day("2024-01-02")  # valid, clear
-        + _day("2024-01-03", {0: "07,1"}, hours=range(0, 6, 3))  # 2 slots: dusty, not valid
+        + _day("2024-01-03", {0: "07,1"}, hours=range(0, 6, 3))  # 2 bins: dusty, not valid
     )
     m = _tables(settings, [_silver(settings, rows, 2024)])["monthly"].row(0, named=True)
     assert (m["year"], m["month"], m["n_calendar_days"]) == (2024, 1, 31)
@@ -66,7 +66,7 @@ def test_monthly_valid_presence_and_slot_counts(settings: Settings) -> None:
     assert (m["n_dusty_days"], m["n_dusty_days_obs"], m["dusty_freq"]) == (1, 2, 0.5)
     assert (m["n_valid_days_synop"], m["n_valid_days_metar"]) == (2, 0)
     assert (m["n_days_suspended"], m["n_days_blowing"], m["n_days_raised"]) == (1, 0, 0)
-    assert (m["n_slots_dusty"], m["n_slots_dusty_valid"], m["n_slots_pw_valid"]) == (2, 1, 16)
+    assert (m["n_bins_dusty"], m["n_bins_dusty_valid"], m["n_bins_obs_valid"]) == (2, 1, 16)
 
 
 def test_monthly_without_valid_days_has_null_rate(settings: Settings) -> None:
@@ -85,14 +85,14 @@ def test_monthly_extinction(settings: Settings) -> None:
 
 
 def test_monthly_follows_the_local_month(settings: Settings) -> None:
-    # Las Vegas: the 06 UTC slot of 2024-02-01 is 22:19 on 2024-01-31 local
+    # Las Vegas: the 06 UTC bin of 2024-02-01 is 22:19 on 2024-01-31 local
     rows = [isd_row("2024-02-01T06:00:00", LONGITUDE="-115.16343", MW1="02,1")]
     m = _tables(settings, [_silver(settings, rows, 2024)])["monthly"]
     assert m.select("year", "month").rows() == [(2024, 1)]
 
 
 def _dusty_day(day: str) -> list[dict]:
-    """A valid day with dust (suspended) in all 8 slots."""
+    """A valid day with dust (suspended) in all 8 bins."""
     return _day(day, {h: "06,1" for h in range(0, 24, 3)})
 
 
@@ -109,8 +109,8 @@ def test_monthly_lower_bound_and_validity_ratio(settings: Settings) -> None:
 
 
 def test_validity_ratio_when_only_dusty_days_are_valid(settings: Settings) -> None:
-    # Tidjikja's pattern: a clear day has too few observed slots to be valid, a dusty day has dust
-    # coded in every slot, so every valid day is dusty
+    # Tidjikja's pattern: a clear day has too few observed bins to be valid, a dusty day has dust
+    # coded in every bin, so every valid day is dusty
     rows = [r for d in (1, 2, 3) for r in _day(f"2024-01-0{d}", hours=range(0, 6, 3))]
     rows += _dusty_day("2024-01-04") + _dusty_day("2024-01-05")
     m = _tables(settings, [_silver(settings, rows, 2024)])["monthly"].row(0, named=True)
@@ -212,7 +212,7 @@ def test_yearly_covered_months_threshold_from_config(settings: Settings) -> None
 def test_visibility_only_in_monthly(settings: Settings) -> None:
     t = _tables(settings, [_silver(settings, _day("2024-01-01", VIS="010000,1,N,1"), 2024)])
     vis = {"n_days_vis", "ext_mean", "n_days_vis_dusty", "ext_mean_dusty", "vis_min"}
-    vis.add("n_slots_vis_zero")
+    vis.add("n_bins_vis_zero")
     assert vis <= set(t["monthly"].columns)
     assert vis & set(t["yearly"].columns) == set()
 
