@@ -7,8 +7,6 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] **Rebuild gold for `dusty_freq_obs` and `validity_ratio`** (user; silver unchanged):
-      `uv run dcdr aggregate --years 1931-2025 --stations config/stations/pilot_100.csv`.
 - [ ] Re-run notebook 07 (Australia) and look at the first `three_hourly` table (e.g. one outbreak
       at Phoenix and one at Niamey).
 - [ ] Station catalog with aridity index and the dust-source flag (criteria from the statistics,
@@ -19,8 +17,11 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
       the shift works; revisit only if notebook 07 shows off-hour reports the shift misses.
 - [ ] Check Niamey (Diori Hamani) before ~1975 (almost no dust, then >= 150 days a year) and the
       fall at Ciudad Constitucion (2000-2023): reporting changes or real?
-- [ ] NOAA's S3 ISD files end on 2025-08-27 (no 2026): check whether ISD is still updated or
-      replaced (e.g. by another NCEI hourly product) before relying on recent years.
+- [ ] Distribution (B) and website (C), designed together on the pilot dataset (user decision
+      2026-11-02); needs a basic station table (name, coordinates, elevation, country, published
+      set). Licence: open, non-commercial, compatible with the ISD terms.
+- [ ] *Postponed* (user decision 2026-11-02): update functionality. NOAA's S3 ISD files end on
+      2025-08-27; ISD's future is outside our control, so releases cover the existing record.
 - [ ] FMH-1: replace the 2005 mirror copy (everyspec.com) with an ICAMS/NOAA copy if one appears.
 - [ ] Coverage criteria for the published products (valid days per year and decade), from the
       station catalog.
@@ -40,8 +41,8 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   (3.1 per day; every dusty day has one). Annual decadal coverage: 82-90 stations with >= 8 valid
   years in 1991, 2001 and 2011; 1931-1961 sparse; 2021-2030 partial.
 - **Finding: valid days chosen by the weather.** The decadal ranking for 2011 is led by Tidjikja
-  (61450, 221 valid of 1,881 observed days, `dusty_freq` 1.0, annual mean 365.3), Tombouctou
-  (61226, 0.993) and Tessalit (61223, 0.97); the same three exceed 0.84 in every decade since
+  (61450, 221 valid of 1,881 observed days, `dusty_freq` 1.0, annual mean 365.3), Gao
+  (61226, 0.993) and Tombouctou (61223, 0.97); the same three exceed 0.84 in every decade since
   1991. Cause, at Tidjikja 2014 (silver): iX 2 is sent only at 09 and 18 UTC; at 06, 12 and 15 UTC a
   report without weather carries iX 3 (not observed). A clear day has at most 2 valid slots (< 4,
   `min_slots_per_day`), a dusty day has codes at every hour, so only dusty days are valid. The
@@ -60,10 +61,27 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   dropped). Every rate defined with its formula in rules.md 11.4. New gold checks: null exactly
   where undefined, `dusty_freq_obs` in 0-1, and the identity `dusty_freq = f / (f + r(1 − f))`;
   a mutation test shows each new check fires. Run in memory on the real `daily`: all checks pass;
-  median r 0.99 (station-decades), Tidjikja 0.0, Tombouctou 0.04, Tessalit 0.15 (2011-2020).
+  median r 0.99 (station-decades), Tidjikja 0.0, Gao 0.04, Tombouctou 0.15 (2011-2020).
   *Rulings:* rates from summed counts (not means of monthly rates); primary definition only; no
   minimum number of dusty days for the ratio (documented as noisy with few). `METHOD_VERSION`
-  unchanged.
+  unchanged. (632c899)
+- **Gold rebuilt with the rates** (user ran it; gold 20261102T163756Z-05f054, silver 1.10.1, all
+  checks pass; values as in the in-memory run). `validity_ratio` defined for 34,511 of 65,611
+  station-months (median 1.0, 2,081 below 0.5), 4,777 of 5,675 station-years (0.997, 249) and
+  9,895 of 12,288 decadal rows (0.99, 537). 2011-2020 annual: below the three Sahel stations
+  (r 0.0-0.15) the leading stations have r 0.88-1.05 and `dusty_freq` within 0.03 of
+  `dusty_freq_obs`. Monthly ratios are the noisiest (few dusty days per month).
+- **Finding: daily slot sampling misses short events at hourly stations.** Niamey 2020 has 7 days
+  with dust in some report but no dusty day (`dusty_day_any` and not `dusty_day`); all 7 come from
+  routine hourly METARs (FM-15) not chosen for a slot (`is_source_selected` false), none from SPECIs.
+  One is the 27 May haboob (dust storm in the 14:00 UTC METAR, visibility 50 m): a dust storm in
+  the 3-hourly table, not a dusty day in the daily record. Known trade-off of equal sampling
+  (rules.md 9-10); first case seen for a major event. No rule change; shown to the user while
+  designing the daily web page.
+- **Next phase: distribution and website** (*user decisions*): the dataset is open and
+  non-commercial, licensed accordingly; the pilot dataset (100 stations) is used to finish the
+  website design before the full station set; update functionality is postponed (ISD's future is
+  outside our control), releases cover the existing record.
 
 ## 2026-10-31
 

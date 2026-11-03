@@ -737,7 +737,7 @@ r = 0 gives 1 whatever f is.
 18 UTC and iX 3 ("not observed") at 06, 12 and 15 UTC when it has no weather to code (silver
 2014). A clear day has at most 2 observed slots and is never valid; a dusty day has dust coded at
 every hour. In 2011-2020: 962 dusty and 919 clear observed days, 221 and 0 of them valid, so r = 0,
-`dusty_freq` = 1.0 and `dusty_freq_obs` = 0.51. Tombouctou (61226) and Tessalit (61223) look
+`dusty_freq` = 1.0 and `dusty_freq_obs` = 0.51. Gao (61226) and Tombouctou (61223) look
 the same in 1991-2000 and 2011-2020 (r 0.02-0.15). Across the pilot, the median r is 0.99 over
 the station-decades (`annual`) and 1.0 over the station-months.
 

@@ -375,7 +375,7 @@ as dust-free.
 ## Statistics: lower bound and validity ratio (2026-11-02, no method version change)
 
 *Why:* the first look at the rebuilt gold (20261102T152055Z-66b2fc) found `dusty_freq` near 1 at
-Tidjikja, Tombouctou and Tessalit because only dusty days can become valid there (iX 3 at fixed
+Tidjikja, Gao and Tombouctou because only dusty days can become valid there (iX 3 at fixed
 hours on clear days; rules.md 11.4). `dusty_freq` alone cannot show this. *User decisions*
 (2026-11-02): no rule change; keep the counts as the primary record (as in the author's duISD
 research, which used counts of observed dusty days with filters for non-representative periods);
