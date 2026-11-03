@@ -32,6 +32,7 @@ import polars as pl
 import typer
 
 from dcdr import __version__, pipeline
+from dcdr.aggregate import station_status_counts
 from dcdr.config import DEFAULT_CONFIG, Settings, load_settings
 
 # The application object that the `dcdr` launcher calls. `no_args_is_help`: plain `dcdr` shows help.
@@ -142,7 +143,9 @@ def aggregate(
 
     def body(ctx: pipeline.RunContext) -> dict[str, Any]:
         ids = _station_ids(ctx.settings, stations)
-        return {"gold": str(pipeline.run_aggregate(ctx, ids, pipeline.parse_years(years)))}
+        gold = pipeline.run_aggregate(ctx, ids, pipeline.parse_years(years))
+        # stations per position status; the ones needing a decision are in stations_review.csv
+        return {"gold": str(gold), "stations": station_status_counts(gold)}
 
     _execute("aggregate", config, profile, body)
 
@@ -169,6 +172,7 @@ def run(
             "silver_failed": sil.failed,
             "silver_failures": sil.failures,
             "gold": str(gold),
+            "stations": station_status_counts(gold),
         }
 
     _execute("run", config, profile, body)

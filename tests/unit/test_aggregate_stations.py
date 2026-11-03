@@ -259,3 +259,18 @@ def test_summary_dated_with_trusted_offset(settings: Settings) -> None:
     daily = _table(_build(settings, [path]), "daily")
     flagged = daily.filter(pl.col("daily_summary_dust"))["lmst_date"].cast(pl.String).to_list()
     assert flagged == ["2024-01-06"]
+
+
+def test_station_status_counts(settings: Settings) -> None:
+    from dcdr.aggregate import station_status_counts
+
+    other = "40583099999"
+    _history(settings, (KUWAIT, "+29.227", "+047.969"), (other, "+29.227", "+049.000"))
+    out = _build(
+        settings,
+        [
+            _station(settings, KUWAIT, "29.227", "47.969"),
+            _station(settings, other, "29.227", "47.969"),
+        ],
+    )
+    assert station_status_counts(out) == {"agree": 1, "conflict": 1}

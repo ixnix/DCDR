@@ -11,6 +11,12 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
       metar_test_100; then compare dusty-day counts with the 1.10.1 gold (Niamey 2020: the 7 days
       found only in unselected METARs, 27 May among them, must be dusty; every station whose
       count drops is listed and explained).
+- [ ] **Pilot gold with station positions** (user; silver unchanged): `uv run dcdr aggregate
+      --years 1931-2025 --stations config/stations/pilot_100.csv`; expected 99 `agree` and 1
+      `moved` (61230 Nioro du Sahel), and `three_hourly`/`daily` unchanged against the 2.0.0 gold
+      built just before.
+- [ ] Review `stations_review.csv` (conflicts and unverified, most dusty first) and write
+      `config/stations/position_overrides.csv` before the whole-ISD gold.
 - [ ] "Dusty stations" threshold for keeping stations after silver (whole ISD; user decision in
       principle 2026-11-02: only stations with dust reports go forward).
 - [ ] Station table for the whole ISD: isd-history.csv positions with the four-way rule (< 10 km
@@ -63,7 +69,9 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   station's LMST offset from `stations.trusted_lon`; `daily` dates the daily summaries with it
   (no longer silver's `summary_lmst_date`, from the in-file longitude). New gold checks: only
   stations in gold in `three_hourly` and `daily`. Unchanged for agree/moved/unverified stations
-  (same longitude as before); a resolved 949999 station now has Australian local days.
+  (same longitude as before); a resolved 949999 station now has Australian local days. (a1af02d)
+- **`dcdr aggregate` and `dcdr run` print the stations per position status**
+  (`aggregate.station_status_counts`), beside the gold folder.
 - **Method 2.0.0 started: source groups in silver** (spec
   `docs/superpowers/specs/2026-11-02-all-reports-bins-design.md`, approved 2026-11-03; plan
   `docs/superpowers/plans/2026-11-03-all-reports-bins.md`). User decisions 2026-11-02: 3-hour UTC

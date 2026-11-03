@@ -97,7 +97,7 @@ environment). Every pipeline command records a run (section 7.6).
 |---|---|---|
 | `dcdr ingest` | List NOAA's S3 files for the years; download new or changed station-years into bronze; saves the download record and logs progress every 500 files, so a stopped run resumes where it left off; re-downloads recorded files missing from disk | `--years`, `--stations` |
 | `dcdr process` | Build silver for station-years that are missing or out of date | `--years`, `--stations`, `--force` |
-| `dcdr aggregate` | Build a new gold version from silver, check it, activate it | `--years`, `--stations` |
+| `dcdr aggregate` | Build a new gold version from silver, check it, activate it; prints the gold folder and the stations per position status (e.g. `{'agree': 99, 'moved': 1}`); the stations needing a decision are in its `stations_review.csv` | `--years`, `--stations` |
 | `dcdr run` | `ingest`, then `process`, then `aggregate` | as above |
 | `dcdr status` | Download status counts and the five latest runs (read-only) | |
 | `dcdr --version` | Package version | |

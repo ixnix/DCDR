@@ -385,6 +385,15 @@ def _sql_path(path: Path) -> str:
     return text
 
 
+def station_status_counts(gold_dir: Path) -> dict[str, int]:
+    """Stations per position status in a gold version (statuses without a station omitted)."""
+    path = gold_dir / "stations" / "part-000.parquet"
+    rows = duckdb.sql(
+        f"SELECT status, count(*) FROM '{_sql_path(path)}' GROUP BY status ORDER BY status"
+    ).fetchall()
+    return {status: int(n) for status, n in rows}
+
+
 def _write_review(con: duckdb.DuckDBPyConnection, path: Path) -> None:
     """The stations that need a human decision (conflict, unverified, moved; not overridden),
     plus override rows for stations with no silver, most dusty first (docs/rules.md)."""
