@@ -31,7 +31,6 @@ def _silver(
     nil_guard: bool | None = None,
     year: int = 2024,
     previous: list[dict] | None = None,
-    next_year_exists: bool = False,
 ) -> Path:
     cfg_hash = cfg_hash or silver_config_hash(settings)
     prev = bronze_frame(previous) if previous else None
@@ -40,7 +39,6 @@ def _silver(
         prev,
         year,
         settings,
-        next_year_exists=next_year_exists,
         nil_guard=nil_guard,
     )
     path = settings.data_root / "silver" / f"year={year}" / f"{name}.parquet"
@@ -329,7 +327,7 @@ def test_bin_counts_on_the_lmst_date_it_starts_across_years(settings: Settings) 
     y2023 = [isd_row(f"2023-12-31T{h:02d}:00:00", **e45, MW1="02,1") for h in range(0, 24, 3)]
     y2024 = [isd_row(f"2024-01-01T{h:02d}:00:00", **e45, MW1="02,1") for h in range(0, 24, 3)]
     paths = [
-        _silver(settings, y2023, year=2023, next_year_exists=True),
+        _silver(settings, y2023, year=2023),
         _silver(settings, y2024, year=2024, previous=y2023),
     ]
     d = _daily(settings, paths)

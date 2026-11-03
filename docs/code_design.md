@@ -61,7 +61,6 @@ DCDR/
 │   │   ├── parse.py            decode ISD packed fields; local mean solar time; SYNOP iX
 │   │   ├── qc.py               quality flags, RH, capped visibility, gusts
 │   │   ├── classify.py         dust class per report; haze rule; RH screen
-│   │   ├── sampling.py         one report per 3-hourly synoptic slot
 │   │   ├── sources.py          source group of each report (SYNOP / METAR / other)
 │   │   ├── guard.py            station guards for inferred "nothing significant" (V3; METAR)
 │   │   ├── derived.py          are a station-year's SYNOPs copies of its METARs?
@@ -119,11 +118,10 @@ uv run dcdr status
 `ingest` also downloads the year before the first requested year: the haze rule looks back 24 h,
 which on 1 January reaches the previous year.
 
-`process` builds each station-year from its own bronze plus its neighbours' when on disk: the
-previous year's last day (haze look-back) and December, and the next year's January. The two
-months feed only the slot-grid detection (method 1.10.1: a local month can straddle New Year, and
-both year files must decide it from the same reports). Their fingerprints (`prev_source_md5`,
-`next_source_md5`) are stored, so a change in either neighbour rebuilds the year.
+`process` builds each station-year from its own bronze plus the previous year's last day (haze
+look-back), when on disk. Each report is stored in the file of its own UTC year (method 2.0.0).
+The previous year's fingerprint (`prev_source_md5`) is stored, so a change there rebuilds the
+year; the next year is not read.
 
 ## 5. Configuration
 
@@ -144,7 +142,6 @@ All method choices live in `src/dcdr/default.yaml`, validated by Pydantic models
 | `qc` | QC code mapping, accepted flags, visibility cap, RH screen | yes |
 | `classify` | weather fields used, haze window, snow/sand temperatures, SYNOP iX rule, inferred nil (V3) and its guard, METAR rules (`metar_rules`, `metar_report_types`, `metar_nil_min_vis_m`), METAR inference and its guard (`metar_infer_nil`, `metar_nil_guard_*`), derived SYNOPs (`derived_*`) | yes |
 | `sources` | excluded report types (`exclude_types`: SOD, SOM), source groups (`groups`: SYNOP and METAR report types; every other type is "other") | yes |
-| `sampling` | synoptic window, slot sources (`sources`: SYNOP and METAR report types, in order of preference), off-grid schedules (`schedule_*`) | yes |
 | `products` | valid-day threshold (`min_bins_per_day`), visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept | no (gold only) |
 | `stations` | default station list | no |
 
@@ -207,12 +204,12 @@ All columns of the NOAA CSV, **as text**, unchanged, plus `source_key`, `source_
 
 ### 7.2 Silver
 One row per report (exact duplicates collapsed), about 250 columns: decoded values, QC flags,
-local time, dust class and evidence, synoptic selection. Core columns come first:
+local time, dust class and evidence, source group. Core columns come first:
 
 | Group | Columns |
 |---|---|
 | Identity, time | `station_id, time_utc, time_lmst, lmst_date, lmst_hour, summary_lmst_date, report_type, source_group` (synop/metar/other; null for summaries), `source, lat, lon, lon_used, elev` |
-| Sampling | `slot_time, slot_lmst_date, slot_delta_min, slot_offset_min` (0, or ±60 for an off-grid schedule), `is_candidate, is_excluded_type` (SOD/SOM), `slot_source` (synop/metar), `source_rank, is_source_selected` (the slot's report for its source), `selection_rank, selection_reason, is_synoptic_selected` (the slot's primary report: its SYNOP if any, else its METAR) |
+| Source | `source_group` (synop/metar/other; null for summaries), `is_excluded_type` (SOD/SOM) |
 | Weather observed? | `has_pw`, `pw_status` (reported, nil_significant, nil_inferred, nil_metar, not_observed), `syn_ix`, `metar_text` (full, fragment), `metar_auto`, `metar_wx` (missing, group, cavok, none), `metar_rmk_dust`, `synop_derived` |
 | Dust | `dust_rank, dust_class_rule, dust_rule_id, dust_class_final, dust_haze, rh_screened, flag_du, flag_duhz, flag_susp, flag_bd, flag_ds, flag_vicinity, flag_past, flag_ambiguous, flag_daily_dust, pw_evidence` |
 | Weather values | `wsd, use_wsd, wind_dir, use_wind_dir, gust, use_gust, gust_src, vis_raw, vis_capped, use_vis, t, use_t, td, use_td, rh, slp, use_slp` |
@@ -220,8 +217,8 @@ local time, dust class and evidence, synoptic selection. Core columns come first
 | Raw decoded fields | e.g. `mw1_code, mw1_qc, au1_obsc, ay1_code, ...` (alphabetical) |
 
 Meanings are in Part 2. The contract (`schemas.py`) is checked before every write: types,
-allowed values, unique `row_key`, at most one primary report and one report per source per slot,
-and a source group exactly on the reports that are not summaries.
+allowed values, unique `row_key`, and a source group exactly on the reports that are not
+summaries.
 
 ### 7.3 Gold `daily`
 One row per station per local (LMST) day, built from the `three_hourly` bins of the same gold run
@@ -317,7 +314,7 @@ dust years ≤ valid years ≤ observed years ≤ 10 and dust years ≤ dust yea
 ### 7.6 Provenance
 - Bronze metadata: `dcdr_layer, source_md5, source_key, run_id`.
 - Silver metadata: `dcdr_layer, method_version, config_hash, run_id, source_md5,
-  prev_source_md5, next_year_present, next_source_md5, nil_guard` (`1` pass, `0` fail, empty = no decision).
+  prev_source_md5, nil_guard, metar_guard` (`1` pass, `0` fail, empty = no decision).
 - Run log: `run_id, command, started_at, finished_at, status, git_commit, git_dirty,
   dcdr_version, config_hash, summary` (JSON with counts and failures).
 

@@ -3,7 +3,7 @@
 # Loaded by config.load_settings() and validated by the classes in config.py (a typo or an unknown
 # key stops the run with an error). Override any key with `--profile my.yaml` (only the keys it
 # names), and the data location with the DCDR_DATA environment variable.
-# Changing a key under parse/qc/classify/sampling changes the silver config hash, so the next run
+# Changing a key under parse/qc/classify/sources changes the silver config hash, so the next run
 # rebuilds silver; gold refuses silver built with different settings.
 
 paths:
@@ -50,8 +50,7 @@ classify:
   infer_nil_report_types: [FM-12]
   nil_guard_max_share: 0.02
   nil_guard_min_reports: 50
-  # METAR/SPECI (validated in notebooks/03; user decisions 2026-10-20). A METAR fills a slot only
-  # when no SYNOP does. AUTO reports and "//" are not observed (machines cannot detect dust);
+  # METAR/SPECI (validated in notebooks/03; user decisions 2026-10-20). AUTO reports and "//" are not observed (machines cannot detect dust);
   # CAVOK is "nothing significant"; a non-AUTO METAR without a weather group is "nothing
   # significant, implied" (pw_status nil_metar) only if visibility > 5 km: at <= 5 km WMO
   # requires DU/SA/HZ/BR to be coded, so an empty group there means something went unnamed.
@@ -74,27 +73,6 @@ classify:
   derived_max_minutes: 15
   derived_t_share: 0.95
   derived_wind_share: 0.80
-
-sampling:
-  window_min: 30  # a report within +-30 min of a synoptic hour (00, 03, ..., 21 UTC) is a candidate
-  # Slot sources (user decision 2026-10-20). Each slot takes at most ONE report per source: the
-  # closest one that observed the weather (types listed first are preferred). A slot is dusty if
-  # either source reports dust; its primary report (wind, temperature, visibility means) is the
-  # SYNOP if it observed the weather, otherwise the METAR. SPECI (FM-16) never fill a slot: they
-  # are sent because conditions changed, often when dust arrives; they count in dusty_day_any.
-  sources:
-    # AUST = "Dataset from Australia" (ISD format document p. 6), 1945-1984 (method 1.10.0)
-    synop: [FM-12, SY-MT, SY-SA, SY-AE, SY-AU, AUST]
-    metar: [FM-15, SAO, AUTO]
-  # Off-grid schedules (method 1.10.0, user decision 2026-10-29; notebook 07): Australian SYNOPs
-  # are often made 3-hourly one hour off the synoptic hours, by local clock time (so the offset
-  # moves with daylight saving). If a station-month's observed SYNOPs are < 10 % on the grid and
-  # >= 80 % at one offset, that month's slots move by the offset.
-  schedule_shift: true
-  schedule_offsets_min: [60, -60]
-  schedule_max_on_grid: 0.10
-  schedule_min_share: 0.80
-  schedule_min_reports: 30  # per month: about one observed SYNOP a day
 
 sources:
   exclude_types: [SOD, SOM]  # daily and monthly summaries are not observations at a time

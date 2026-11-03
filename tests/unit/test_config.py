@@ -45,6 +45,12 @@ def test_sources_rejects_type_in_two_groups() -> None:
         load_settings(overrides={"sources": {"groups": {"synop": ["FM-12"], "metar": ["FM-12"]}}})
 
 
+def test_config_rejects_sampling_section() -> None:
+    """Method 2.0.0: slot sampling is gone; a profile that still sets it fails loudly."""
+    with pytest.raises(ValidationError):
+        load_settings(overrides={"sampling": {"window_min": 30}})
+
+
 def test_env_var_overrides_data_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("DCDR_DATA", str(tmp_path))
     assert load_settings().data_root == tmp_path

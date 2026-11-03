@@ -261,7 +261,7 @@ def test_inference_can_be_switched_off(settings: Settings) -> None:
 
 
 # --- METAR/SPECI present weather (user decisions 2026-10-20; docs/rules.md 5.2) -------------
-# Each report is judged on its own; sampling then combines SYNOP and METAR per slot. Rules:
+# Each report is judged on its own; gold then combines all reports per 3-hour bin. Rules:
 #   AUTO (any content) or "//"          -> not observed (machines cannot detect dust)
 #   weather group, decoded by ISD       -> reported (dust at any visibility; visibility = strength)
 #   weather group ISD could not decode  -> not observed

@@ -26,7 +26,6 @@ def _silver(
     name: str = "S",
     year: int = 2024,
     previous: list[dict] | None = None,
-    next_year_exists: bool = False,
     nil_guard: bool | None = None,
 ) -> Path:
     prev = bronze_frame(previous) if previous else None
@@ -35,7 +34,6 @@ def _silver(
         prev,
         year,
         settings,
-        next_year_exists=next_year_exists,
         nil_guard=nil_guard,
     )
     path = settings.data_root / "silver" / f"year={year}" / f"{name}.parquet"
@@ -147,15 +145,15 @@ def test_counts_by_type_and_summaries_excluded(settings: Settings) -> None:
 
 
 def test_bin_spans_two_silver_files(settings: Settings) -> None:
-    # The 23:40 METAR competes for the 1-January 00:00 slot, so it is stored in the 2024 file;
-    # its bin (31 December 21:00) still gets one row with both reports.
+    # Both 31-December reports are stored in the 2023 file; the 2024 file reads them only for the
+    # haze look-back. Their bin (31 December 21:00) gets one row with both reports.
     y2023 = [
         isd_row("2023-12-31T21:00:00", **LON0),
         isd_row("2023-12-31T23:40:00", **LON0, REPORT_TYPE="FM-15"),
     ]
     y2024 = [isd_row("2024-01-01T00:00:00", **LON0)]
     paths = [
-        _silver(settings, y2023, year=2023, next_year_exists=True),
+        _silver(settings, y2023, year=2023),
         _silver(settings, y2024, year=2024, previous=y2023),
     ]
     b = _bins(settings, paths)

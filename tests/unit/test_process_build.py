@@ -1,12 +1,11 @@
 """Building one silver station-year (process/build.py) end to end, in memory.
 
 Covers the haze look-back across New Year, duplicate collapsing, independence from input row
-order, bad dates, empty input, silver metadata, the silver contract, which file owns the
-31-December slot candidates, and longitude sentinels.
+order, bad dates, empty input, silver metadata, no slot columns, which file owns a 31-December
+report, and longitude sentinels.
 """
 
 import random
-from datetime import date
 from pathlib import Path
 
 import polars as pl
@@ -16,7 +15,7 @@ from polars.testing import assert_frame_equal
 from dcdr.config import Settings
 from dcdr.process import METHOD_VERSION
 from dcdr.process.build import build_station_year, write_silver
-from dcdr.schemas import SilverContractError, validate_silver
+from dcdr.schemas import validate_silver
 from dcdr.state import read_parquet_metadata
 from tests.fixtures.isd import bronze_frame, isd_row
 
@@ -77,54 +76,44 @@ def test_write_silver_records_metadata(settings: Settings, tmp_path: Path) -> No
         "run_id": "r1",
         "source_md5": "m1",
         "prev_source_md5": "m0",
-        "next_year_present": "0",
-        "next_source_md5": "",
         "nil_guard": "",
         "metar_guard": "",
     }
 
 
-def test_contract_rejects_two_selected_reports_in_one_slot(settings: Settings) -> None:
-    rows = _day("2024-01-01") + [
-        isd_row("2024-01-01T03:10:00", REPORT_TYPE="FM-15")
-    ]  # 2 reports in slot 03
-    out = build_station_year(bronze_frame(rows), None, 2024, settings)
-    validate_silver(out)  # the real output satisfies the contract
-    broken = out.with_columns(is_synoptic_selected=pl.lit(True))
-    with pytest.raises(SilverContractError):
-        validate_silver(broken)
+SLOT_COLUMNS = [
+    "slot_time",
+    "slot_lmst_date",
+    "slot_delta_min",
+    "slot_offset_min",
+    "is_candidate",
+    "selection_rank",
+    "selection_reason",
+    "slot_source",
+    "source_rank",
+    "is_source_selected",
+    "is_synoptic_selected",
+]
 
 
-def test_year_boundary_slot_is_selected_once_across_files(settings: Settings) -> None:
-    """A 23:56 Dec-31 report is a candidate for the Jan-1 00:00 slot: it must live in ONE file."""
-    from datetime import datetime
+def test_silver_has_no_slot_columns(settings: Settings) -> None:
+    """Method 2.0.0: no slot sampling in silver; gold judges all reports in 3-hour bins."""
+    out = build_station_year(bronze_frame(_day("2024-01-01")), None, 2024, settings)
+    assert [c for c in SLOT_COLUMNS if c in out.columns] == []
 
+
+def test_report_belongs_to_its_utc_year(settings: Settings) -> None:
+    """A 23:56 Dec-31 report lives in the file of its own UTC year, whether or not the next
+    year's file exists; the next year's file reads it only for the haze look-back."""
     prev_rows = [
         isd_row("2023-12-31T21:00:00", REPORT_TYPE="FM-15"),
         isd_row("2023-12-31T23:56:00", REPORT_TYPE="FM-15"),
     ]
     cur_rows = [isd_row("2024-01-01T00:00:00", REPORT_TYPE="FM-15")]
-    s23 = build_station_year(bronze_frame(prev_rows), None, 2023, settings, next_year_exists=True)
+    s23 = build_station_year(bronze_frame(prev_rows), None, 2023, settings)
     s24 = build_station_year(bronze_frame(cur_rows), bronze_frame(prev_rows), 2024, settings)
-    both = pl.concat([s23, s24], how="diagonal_relaxed")
-    assert both["row_key"].n_unique() == both.height  # every report stored exactly once
-    jan1 = both.filter(
-        pl.col("is_synoptic_selected") & (pl.col("slot_time") == datetime(2024, 1, 1))
-    )
-    assert jan1.height == 1
-    assert jan1["time_utc"].item() == datetime(2024, 1, 1)  # closest report wins the slot
-
-
-def test_last_year_keeps_dec31_candidates_when_next_year_absent(settings: Settings) -> None:
-    """Review I2: a 23:56 Dec-31 row must not vanish when the next year's file will not exist."""
-    rows = [
-        isd_row("2024-12-31T21:00:00", REPORT_TYPE="FM-15"),
-        isd_row("2024-12-31T23:56:00", REPORT_TYPE="FM-15"),
-    ]
-    alone = build_station_year(bronze_frame(rows), None, 2024, settings, next_year_exists=False)
-    assert alone.height == 2
-    handed_on = build_station_year(bronze_frame(rows), None, 2024, settings, next_year_exists=True)
-    assert handed_on.height == 1  # the 23:56 row belongs to the 2025 file
+    assert (s23.height, s24.height) == (2, 1)
+    assert s24["time_utc"].dt.year().to_list() == [2024]
 
 
 def test_longitude_sentinel_is_treated_as_missing(settings: Settings) -> None:
@@ -162,37 +151,3 @@ def test_inferred_nil_needs_the_station_guard(settings: Settings, tmp_path: Path
         on, path, run_id="r", config_hash="h", source_md5="m", prev_source_md5="", nil_guard=True
     )
     assert read_parquet_metadata(path)["nil_guard"] == "1"
-
-
-def _hourly(start: str, days: int, hours: range, **fields: str) -> list[dict]:
-    """Observed reports (MW1 02) at the given UTC hours on `days` days from `start` (YYYY-MM-DD)."""
-    from datetime import datetime, timedelta
-
-    t0 = datetime.fromisoformat(start)
-    return [
-        isd_row((t0 + timedelta(days=d, hours=h)).isoformat(), MW1="02,1", **fields)
-        for d in range(days)
-        for h in hours
-    ]
-
-
-def test_year_files_agree_on_the_grid_at_new_year(settings: Settings) -> None:
-    # Method 1.10.1. At 134 E the local day 1 January 2024 starts at 31 December 15:04 UTC, so
-    # part of it lies in the 2023 file. December is on the synoptic grid, January one hour before
-    # it (-60). Both files must use January's grid for that day: the 2023 file reads the next
-    # year's January, the 2024 file the previous year's December.
-    east = {"LONGITUDE": "134.0"}
-    dec = _hourly("2023-12-01", 31, range(0, 24, 3), **east)
-    jan = _hourly("2024-01-01", 31, range(2, 24, 3), **east)
-    y2023 = build_station_year(
-        bronze_frame(dec), None, 2023, settings, next_year_exists=True, next_year=bronze_frame(jan)
-    )
-    y2024 = build_station_year(bronze_frame(jan), bronze_frame(dec), 2024, settings)
-    sel = pl.concat([y2023, y2024], how="diagonal_relaxed").filter(pl.col("is_source_selected"))
-    per_day = sel.group_by("slot_lmst_date").agg(
-        n=pl.col("slot_time").n_unique(), offs=pl.col("slot_offset_min").unique()
-    )
-    assert per_day["n"].max() <= 8
-    offs = {r["slot_lmst_date"]: r["offs"] for r in per_day.iter_rows(named=True)}
-    assert offs[date(2024, 1, 1)] == [-60]
-    assert offs[date(2023, 12, 31)] == [0]

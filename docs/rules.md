@@ -1,7 +1,7 @@
 # DCDR documentation, Part 2: Rules
 
 The rules DCDR applies **now** to NOAA ISD station reports: how they are decoded, how DCDR decides
-what was observed, how dust is classified, how reports are sampled and aggregated into daily
+what was observed, how dust is classified, how reports are grouped and aggregated into daily
 and 3-hourly records and monthly, yearly and decadal statistics, and briefly why. Part 1 ([code_design.md](code_design.md)) covers the software;
 [rules_history.md](rules_history.md) records how each rule came about, with the evidence, the
 superseded rules and the decisions; [worklog.md](worklog.md) is the dated log.
@@ -58,7 +58,7 @@ Two properties of the CSV matter:
   in three forms: full messages since about 2000 (in the 2000s often without the word `METAR`),
   and before 2000 only the fragments ISD did not decode (e.g. `CAVOK NOSIG`).
 
-Example, Zabol (Iran) 2023: 2,840 SYNOP (97 % of 3-hourly slots), 8,226 METAR, 11 SPECI.
+Example, Zabol (Iran) 2023: 2,840 SYNOP (97 % of 3-hour bins), 8,226 METAR, 11 SPECI.
 
 ## 3. Ingest (bronze)
 
@@ -105,13 +105,12 @@ saving. The difference from apparent solar time (±16 min) does not matter at 3-
 Special cases:
 - A summary-of-day (SOD) report is stamped 23:59 local *standard* time, which can fall after
   LMST midnight; it is dated to the day it summarises: `date(time_lmst − 12 h)`.
-- A synoptic slot is counted on the local day of the **slot**, not of the report that fills it
-  (a report up to 30 min early can sit across midnight).
 - A 3-hour bin (gold `three_hourly`, section 10) uses **one offset per station** (method 2.0.0):
   its most common longitude over all its silver reports (ties: the smallest). The bin belongs to
   the local date on which it starts. *Why:* with each bin's own state report, a 0.1° difference
   between SYNOP and METAR coordinates moved a bin across local midnight near some longitudes (9
-  bins on one day, 7 on the next), the failure slot sampling had in Australia (section 8). *Cost:*
+  bins on one day, 7 on the next), the failure the former slot sampling had in Australia
+  (rules_history.md, 1.10.1). *Cost:*
   a station that moved 50 km east-west keeps an offset about 2 min off for part of its record.
 
 ## 5. Was the weather observed?
@@ -170,19 +169,13 @@ cases. In ISD, iX exists mainly from 2013 on. Evidence and the selection bias th
 
 ### 5.2 METAR and SPECI
 
-**Role (user decisions 2026-10-20; methods 1.5.0 and 1.6.0).** SYNOP and METAR are judged
-independently in each 3-hourly slot: the slot is **dusty if either reports dust**, and observed if
-either observed the weather. When the SYNOP observed the weather it is the primary input and the
-METAR a supplement; when the SYNOP observed nothing, the METAR fills the gap for dust. Wind,
-temperature, humidity, pressure and visibility always come from the slot's **SYNOP whenever it has
-one** (observed or not), and from the METAR only in slots without SYNOP, so a station's series
-does not switch report types from slot to slot (1.6.0). Each source contributes at
-most one report per slot (the closest that observed the weather), so a busy airport gets no extra
-chances; SPECI never fill a slot (they are sent because conditions changed, often when dust
-arrives). *Superseded in gold by method 2.0.0:* `daily` now judges every report in 3-hour bins
-(section 9), so SPECIs count there too. Section 8 has the sampling; 5.3 the tables.
+**Role (method 2.0.0, user decisions 2026-11-02).** METAR and SPECI are reports like any other
+in their 3-hour bin (section 8): a bin is **dusty if any report in it is dusty**, and observed if any
+report observed the weather. SPECIs count (they are sent because conditions changed, often when
+dust arrives). Each source group is also judged alone (`dusty_day_metar`, `dusty_day_synop`). The
+bin's weather values come from its state report, the first regular SYNOP or METAR (section 10).
 
-Evidence for this arrangement: [rules_history.md](rules_history.md), methods 1.5.0 and 1.6.0.
+History (one SYNOP and one METAR per slot, methods 1.5.0-1.10.1): [rules_history.md](rules_history.md).
 
 **What the code rules say** (extracts with page citations:
 [references/metar-weather.md](references/metar-weather.md)):
@@ -229,7 +222,7 @@ Validation of these rules (notebooks 03 and 06): [rules_history.md](rules_histor
    15 min; `process/derived.py`), the SYNOP's codes and iX are not used (`not_observed`, flag
    `synop_derived`): dust and validity come from the METAR. US stations since ~2005 (94.7 % of
    their station-years with both types), 0.7 % elsewhere. Their wind, temperature and pressure
-   are still the slot's weather values (they equal the METAR's).
+   are still the bin's state values (they equal the METAR's).
 10. **Visibility for the day** (method 2.0.0, user decision 2026-11-02): the harmonic mean from
    the bins' state reports, the minimum from all reports; no value is taken from another report
    (the 2026-10-28 fallback to the slot METAR's visibility is gone).
@@ -249,7 +242,7 @@ Settings: `classify.metar_rules`, `metar_report_types` ([FM-15, FM-16]), `metar_
 
 **Known limitation: light dust where only METAR observed.** SYNOP codes 06 and 07 have no
 visibility limit (WMO table 4677; the automatic table 4680 splits only at 1 km), but METAR codes
-dust only at <= 5 km (US: < 7 mi). Where a slot's only observation is a METAR, light dust above
+dust only at <= 5 km (US: < 7 mi). Where a bin's only observation is a METAR, light dust above
 5 km is mostly missed, so `dusty_day` is a lower bound at stations or in years with few observed
 SYNOPs (see `n_bins_obs_synop` against `n_bins_obs`). Two measures handle this (user decisions):
 the per-source flags (`dusty_day_synop`, `dusty_day_metar`) and `dusty_day_vis5`, which counts
@@ -276,7 +269,7 @@ pilot_100, all years: 8,333 reports, mostly El Paso, Las Vegas, Phoenix, Luqa, M
 
 **Station caveat: Niamey** (user decision 2026-10-29, no rule change). When its SYNOP reports dust
 at <= 5 km, its METAR of the same time has no weather group in 5.8 % of cases (other stations
-<= 0.6 %). Its SYNOPs fill almost every slot and either source's dust counts, so `dusty_day` is
+<= 0.6 %). Its SYNOPs observe almost every bin and any report's dust counts, so `dusty_day` is
 barely affected; `dusty_day_metar` there is somewhat low.
 
 ### 5.3 Rule tables: every report type and situation
@@ -285,25 +278,18 @@ barely affected; `dusty_day_metar` there is somewhat low.
 `nil_significant`, `nil_inferred` and `nil_metar` count as observed; `not_observed` does not.
 "Dusty" = a dust class (suspended, blowing, whirls, storms) or `dust_haze`.
 
-**Which reports judge a 3-hourly slot** (section 8; method 1.5.0):
+**How the reports of a 3-hour bin combine** (sections 8 and 10; method 2.0.0): every report except
+the summaries (SOD, SOM) is in its bin, whatever its type.
 
-| Source | Report types (in order of preference) | Report used in the slot |
-|---|---|---|
-| SYNOP | FM-12, SY-MT, SY-SA, SY-AE, SY-AU | the closest that observed the weather (else the closest) |
-| METAR | FM-15, SAO, AUTO | the same rule |
-| none | SPECI (FM-16), SOD, SOM, any other type | never used for slots (SPECI and others still count in `dusty_day_any`) |
+| Reports in the bin | Bin dusty? | Bin observed? | `dust_<group>` |
+|---|---|---|---|
+| any report dusty | **yes** (one is enough) | yes | true for each group with a dusty report |
+| some report observed, none dusty | no | yes | false for each group that observed |
+| no report observed the weather (iX 3/6, iX 1 without group, AUTO, no code) | null | no | null |
 
-| SYNOP in the slot | METAR in the slot | Slot dusty? | Slot observed? | Primary report (wind, T, pressure, visibility) |
-|---|---|---|---|---|
-| observed, dust | any | yes | yes | SYNOP |
-| observed, no dust | dust | **yes** (either is enough) | yes | SYNOP |
-| observed, no dust | no dust or not observed | no | yes | SYNOP |
-| not observed (iX 3/6, iX 1 without group, no code) | dust | **yes** | yes | SYNOP |
-| not observed | no dust | no | yes | SYNOP |
-| not observed | not observed or none | no | no | SYNOP |
-| none | any | as the METAR | as the METAR | METAR |
-
-A missing value in the slot's SYNOP (e.g. no wind) stays missing; it is not taken from the METAR.
+A group that has no observing report in the bin gets null (not "no dust"). The bin's weather values
+come from its state report alone; a missing value (e.g. no wind) stays missing, it is not taken
+from another report.
 
 **SYNOP (FM-12)**
 
@@ -317,7 +303,7 @@ A missing value in the slot's SYNOP (e.g. no wind) stays missing; it is not take
 | S6 | no code, no iX (BUFR-only, older years), visibility reported, station guard passes | nil_inferred | none | rule V3, 5.1 |
 | S7 | no code, no iX, otherwise | not_observed | unknown | |
 | S8 | code 05 (haze) | reported | haze; dust_haze if dust in the previous 24 h | 6.5 |
-| S9 | dust code; visibility <= 5 km / > 5 km / unknown | reported | dusty | `dusty_day_vis5`: dust / not dust / slot left out |
+| S9 | dust code; visibility <= 5 km / > 5 km / unknown | reported | dusty | `dust_vis5`: dust / not dust / bin not judged |
 | S10 | vicinity code (MV 03, 04, 05, 07, 08) | (as the rest) | not dust at the station | `vicinity_dust_day` |
 | S11 | RH > 90 % with haze, haze_or_suspended or dust_haze (not code 06) | reported | screened (not dusty) | 6.6 |
 | S12 | derived SYNOP (station-year copies its METARs; US since ~2005) | not_observed | unknown (codes, iX not used) | 5.2 rule 9 |
@@ -354,11 +340,11 @@ A missing value in the slot's SYNOP (e.g. no wind) stays missing; it is not take
 
 | Type | Meaning | Treatment |
 |---|---|---|
-| SY-MT, SY-SA, SY-AE, SY-AU | SYNOP merged with METAR, airways, aero or automatic report | slot priority right after FM-12; code → reported, no code → not observed (rule V3 applies to FM-12 only) |
-| SAO | airways report (US, older) | after METAR; code → reported, else not observed |
-| AUTO | report from an automatic station | after SAO; codes read with ISD's AW list (6.3); no code → not observed |
-| SOD, SOM | summary of day / month (US ASOS/AWOS) | no slot; daily dust codes (AT, AX) → `daily_summary_dust` |
-| any other type | e.g. FM-13 SHIP, CRN, MESONET (not in the pilot data) | lowest slot priority; code → reported, else not observed |
+| SY-MT, SY-SA, SY-AE, SY-AU | SYNOP merged with METAR, airways, aero or automatic report | SYNOP group; code → reported, no code → not observed (rule V3 applies to FM-12 only) |
+| SAO | airways report (US, older) | METAR group; code → reported, else not observed |
+| AUTO | report from an automatic station | METAR group; codes read with ISD's AW list (6.3); no code → not observed |
+| SOD, SOM | summary of day / month (US ASOS/AWOS) | in no bin; daily dust codes (AT, AX) → `daily_summary_dust` (evidence) |
+| any other type | e.g. AERO, FM-13 SHIP, CRN, MESONET | "other" group; code → reported, else not observed |
 
 Pilot data, bronze 2020: FM-12 343 587, FM-15 305 980, FM-16 9 093, SOD 1 335, SOM 36, SY-MT 12.
 
@@ -472,10 +458,24 @@ screened too: 0.6 % of it overall (3,724 of 616,000 reports, pilot_100, all year
 
 *Why flags, not deletion:* rejected data stay countable and the policy is a setting.
 
-## 8. Synoptic sampling (`sampling.py`)
+## 8. Bins and source groups (`sources.py`, `sql/three_hourly.sql`)
 
-**Source groups** (method 2.0.0, user decisions 2026-11-02; `sources.py`, config `sources`). Every
-report carries `source_group`, the kind of report that saw the weather:
+**Bins** (method 2.0.0, user decisions 2026-11-02). Dust is judged in fixed 3-hour UTC windows:
+00:00-02:59, 03:00-05:59, ..., 21:00-23:59. A bin holds **all** reports in its window except the
+daily and monthly summaries (SOD, SOM), SPECIs included. A bin is **observed** if at least one of
+its reports observed the weather (section 5), and **dusty** if at least one report's present
+weather is dust at the station (section 6, after the haze rule and the humidity screen); an
+unobserved bin has no verdict. The bins are the gold table `three_hourly` (section 10); the local
+day takes the 8 bins that start on it (sections 4.2 and 9).
+
+*Why all reports:* at Niamey in 2020 the former slot sampling (one SYNOP and one METAR per
+3-hourly slot, methods 1.5.0-1.10.1) missed 7 dusty days whose dust was reported only in hourly
+METARs it did not select, among them the 27 May 2020 haboob. Equal observation frequency cannot be
+enforced between stations (4 to 48 reports a day) and must not stop comparisons; the counts per
+source show the difference instead. Off-grid schedules (Australian SYNOPs at local-clock hours,
+e.g. 23 and 05 UTC) need no special handling: a report simply falls in its bin.
+
+**Source groups.** Every report carries `source_group`, the kind of report that saw the weather:
 
 | Group | Report types |
 |---|---|
@@ -484,66 +484,19 @@ report carries `source_group`, the kind of report that saw the weather:
 | other | every other type (AERO, FM-13, FM-14, FM-18, BRAZ, SMARS, SHEF, 99999, CRN05, NSRDB, ...), also a missing or unknown type |
 | (none) | SOD, SOM: daily and monthly summaries (`is_excluded_type`), not observations at a time |
 
-*Planned (method 2.0.0, in progress):* 3-hour bins over all reports replace the slot sampling below.
+`AUST` ("Dataset from Australia", ISD format document p. 6; 1939-1984) carries FM-12-like
+observations at local-clock hours (dust in 1.25 % vs 1.45 % of observed reports in the same
+station-years), so it is SYNOP. Each group is also **judged alone** (`dust_synop`, `dust_metar`,
+`dust_other` per bin; `dusty_day_<group>` with `valid_day_<group>` per day; statistics
+`n_*_days_<group>`), so a SYNOP-only frequency stays comparable between SYNOP stations. Settings:
+`sources.groups`, `sources.exclude_types`.
 
-*Why:* stations report at very different rates (SYNOP every 3 h; airports every 30-60 min plus
-special reports when weather changes, often exactly when dust arrives). Counting dust in all
-reports would make busy airports look dustier. So, as in duISD v1, dust is judged in 3-hourly
-slots (00, 03, ..., 21 UTC), with a fixed number of reports per slot.
+Example: Zabol 2023 has 8,226 METAR and 2,840 SYNOP; its SYNOPs observe almost every bin. Phoenix
+2020 has 4 SYNOPs a day, so half its bins are judged by METAR alone (`n_bins_obs_synop` shows it).
 
-Rules (user decisions 2026-10-20):
-- Candidates: reports within ±30 min of the slot whose type belongs to a source
-  (`sampling.sources`: SYNOP = FM-12, the merged SY-* types and `AUST`; METAR = FM-15, SAO, AUTO).
-  `AUST` ("Dataset from Australia", ISD format document p. 6; 1945-1984) carries the same
-  observations as FM-12 at complementary hours (dust in 1.25 % vs 1.45 % of observed reports in
-  the same station-years); it was not a source before 1.10.0.
-- **Off-grid schedules** (method 1.10.0, user decision 2026-10-29). Some stations observe every
-  3 hours but one hour off the synoptic hours, by local clock time: Australia (east and centre
-  02, 05, ... UTC; west 01, 04, ... UTC; the offset moves with daylight saving), Sydney, and
-  Central Asian stations in the 1930s. Per station and **local (LMST) month** (method 1.10.1),
-  from the SYNOP-source reports
-  that **observed the weather**: if >= 30 of them, < 10 % within ±30 min of the synoptic hours and
-  >= 80 % within ±30 min of one offset (+60 or -60 min), that month's slots move by the offset
-  (`slot_offset_min`; e.g. 01, 04, ..., 22 UTC). Each slot still takes one report per source, 8 a
-  day. *Why observed reports:* since 2000 these stations also send automatic on-grid SYNOPs that
-  rarely observe the weather (iX 6, 91-96 % not observed); counting them would hide the schedule.
-  *Why per month:* the schedule follows the local clock (Woomera 2005: +60 min in summer, -60 min
-  in winter) and can change within a year (Meekatharra 1975). Settings: `sampling.schedule_*`.
-  *Why local months* (method 1.10.1): the daily product's days are local days. With UTC months
-  (1.10.0) the first local day of a month at an eastern station mixed two grids, and where they
-  met two slots were one hour apart: 68 days with 9 slots at 7 Australian stations (the gold
-  check "at most 8 slots" stopped the build). Now a report fills a slot only on the grid of the
-  **slot's** local month, so a local day always uses one grid. A report just beside a local
-  midnight where the grid changes may fit no slot (it stays in silver, not a candidate): the first
-  local day after a change can have fewer than 8 slots. A local month can straddle New Year (at
-  134 E the local 1 January starts on 31 December UTC), so each year file also reads the previous
-  December and the next January for this decision, and "observed" is judged here without the
-  per-year derived-SYNOP decision: both year files decide from the same reports.
-  *Validation* (notebook 07 follow-up): where the METAR at the same minute reports dust, the
-  offset SYNOP does too in 91 % (-60 min) and 68 % (+60 min, 19 cases), against 94 % for on-grid
-  SYNOPs at the other pilot stations. On pilot_100, 7,084 station-months at 16 stations are
-  shifted, none elsewhere.
-  Summaries (SOD, SOM) and SPECI are never candidates.
-- Per source, one report per slot: weather observed (`has_pw`) first, then the type order, then
-  the closest in time, then fixed tie-breakers (`source_rank`, `is_source_selected`).
-- The slot's **primary** report (`is_synoptic_selected`): the slot's SYNOP whenever it has one,
-  observed or not, otherwise its METAR. It supplies wind, temperature, humidity, pressure
-  and visibility statistics, which therefore come from one report type per slot and are never
-  double counted. *Why:* otherwise a station's series would switch between SYNOP and METAR values
-  (different instruments, times and rounding; up to 2.4 m/s and 1.0 °C apart at some stations).
-- Gold combines the two sources per slot: dusty if either reports dust (table in 5.3).
-- Every candidate keeps its ranks and a `selection_reason`.
-- *Why `has_pw` first:* a report that observed the weather beats a closer one that did not.
-  "Observed" includes "nothing significant", so this does not favour dusty reports (kept, user
-  decision 2026-10-29).
-
-Example: Zabol 2023 has 8,226 METAR and 2,840 SYNOP. Its SYNOPs observe almost every slot and
-carry nearly all the dust (2020: 126 dusty days from SYNOP, 34 from METAR alone). Phoenix 2020 has
-4 SYNOPs a day, so half its slots are judged by METAR alone.
-
-*Trade-off:* a station with both SYNOP and METAR gets two looks per slot, a SYNOP-only station
-one, so `dusty_day` is somewhat more sensitive where both exist; `dusty_day_synop` stays
-comparable across SYNOP stations.
+*Trade-off:* a station that reports hourly (with SPECIs) looks at more of each bin than a 3-hourly
+SYNOP station, so `dusty_day` is more sensitive there; `dusty_day_synop` stays comparable across
+SYNOP stations, and `dusty_day_vis5` across report mixes.
 
 ## 9. Daily aggregation (gold `daily`, `sql/daily.sql`)
 
@@ -598,11 +551,11 @@ One row per station per **3-hour UTC bin**: 00 = 00:00–02:59, 03 = 03:00–05:
 (`bin_time` = start of the bin). Only bins with at least one report have a row. Purpose: follow the
 weather through dust outbreaks, bin by bin (user decision 2026-10-30). It replaces the legacy
 3-hourly files (`resample_raw_into_3hrly` in `legacy/master_DCDR.py`) and supports the analyses
-they fed (threshold wind, wind and visibility on dusty bins). Built from silver, **independently of
-the daily table**: the daily product keeps its slots (section 8) and does not use this table.
+they fed (threshold wind, wind and visibility on dusty bins). Built from silver; since method
+2.0.0 it is **the definition of a bin** (section 8), and the daily table is built from it.
 
 **Reports:** every report except daily and monthly summaries (SOD, SOM), SPECIs included (user
-decision 2026-10-30: "aggregate all reports"). No slots, no ±30 min window, no grid shift.
+decision 2026-10-30: "aggregate all reports"; method 2.0.0 for dust).
 
 | Column(s) | Definition | Why |
 |---|---|---|
@@ -620,10 +573,10 @@ decision 2026-10-30: "aggregate all reports"). No slots, no ±30 min window, no 
 | `n_reports`, `n_reports_pw`, `n_synop`, `n_metar`, `n_speci`, `n_other` | reports in the bin: all, observed, and per group (synop; metar without the special reports; speci = FM-16 SPECI and its pre-1996 US predecessor SAOSP, "Airways special report", ISD format document p. 6; other) | sampling rate |
 | `lmst_date`, `lmst_hour` | local mean solar time of the bin start (section 4.2), with **one offset per station** (method 2.0.0) | join with the daily table; local timing |
 
-**Caution: sampling rate.** `dusty`, `gust_max` and `vis_min` use every report, so they grow with how
-often a station reports (an hourly airport with SPECIs sees more of each bin than a 3-hourly SYNOP
-station). Use the counts to compare like with like; for dust climatology and trends use
-`dusty_day` (section 9), which is built on equal sampling.
+**Caution: reporting rate.** `dusty`, `gust_max` and `vis_min` use every report, so they grow with
+how often a station reports (an hourly airport with SPECIs sees more of each bin than a 3-hourly
+SYNOP station). Use the counts (`n_synop`, `n_metar`, ...) and the per-source columns to compare
+like with like (section 8).
 
 **Where the state report sits in the bin depends on the network:** a SYNOP station's is at the bin
 start (00:00); a US METAR station's is at :51 (00:51), and its routine report for 03 UTC (02:51)
@@ -648,7 +601,7 @@ period has a row only if it has at least one `daily` row; periods follow the LMS
 variables except visibility, and visibility only in `monthly` (user decisions 2026-10-31).
 
 Two questions, two kinds of count (accepted 2026-10-31):
-- *Has dust been reported?* Any day with a dusty observed slot, whatever its coverage
+- *Has dust been reported?* Any day with a dusty observed bin, whatever its coverage
   (`n_dusty_days_obs`): a dust report is verified on its own.
 - *How often?* Valid days (section 9) in numerator and denominator: `dusty_freq` =
   `n_dusty_days / n_valid_days`, so a day with too little observation is never counted dust-free
@@ -739,8 +692,8 @@ reaches 365.3 at Tidjikja 2011-2020 (`validity_ratio` 0; section 11.4).
 
 All three use the primary dusty-day definition and the day counts of the same row (in `yearly`
 and `decadal`, the summed counts). With D = `n_dusty_days_obs` (observed days with dust seen) and
-C = `n_obs_days − n_dusty_days_obs` (observed days without dust seen; a dusty slot is always an
-observed slot, so D and C split the observed days):
+C = `n_obs_days − n_dusty_days_obs` (observed days without dust seen; a dusty bin is always an
+observed bin, so D and C split the observed days):
 
 | Rate | Formula | Reads as | Null when |
 |---|---|---|---|
@@ -748,7 +701,7 @@ observed slot, so D and C split the observed days):
 | `dusty_freq_obs` | D / `n_obs_days` | share of observed days with dust seen | no observed day |
 | `validity_ratio` | (valid share of C) / (valid share of D) = [(`n_valid_days − n_dusty_days`) / C] / [`n_dusty_days` / D] | how likely a clear observed day is to be valid, relative to a dusty one | D = 0, C = 0, or `n_dusty_days` = 0 |
 
-**`dusty_freq_obs` is a lower bound.** An observed day needs only one observed slot (a valid day
+**`dusty_freq_obs` is a lower bound.** An observed day needs only one observed bin (a valid day
 needs 4), and dust at the other hours goes unseen, so the true share of dusty days among the
 observed days is at least `dusty_freq_obs`. It is lower at stations that observe at fewer hours, so
 it bounds one station and period; it does not compare stations.
@@ -765,7 +718,7 @@ r = 0 gives 1 whatever f is.
 
 *Example (found 2026-11-02).* Tidjikja (61450) sends iX 2 ("nothing significant") only at 09 and
 18 UTC and iX 3 ("not observed") at 06, 12 and 15 UTC when it has no weather to code (silver
-2014). A clear day has at most 2 observed slots and is never valid; a dusty day has dust coded at
+2014). A clear day has at most 2 observed bins and is never valid; a dusty day has dust coded at
 every hour. In 2011-2020: 962 dusty and 919 clear observed days, 221 and 0 of them valid, so r = 0,
 `dusty_freq` = 1.0 and `dusty_freq_obs` = 0.51. Gao (61226) and Tombouctou (61223) look
 the same in 1991-2000 and 2011-2020 (r 0.02-0.15). Across the pilot, the median r is 0.99 over
@@ -807,6 +760,8 @@ be set for the published products, from the station catalog.
 
 1. NOAA's ISD files end on 2025-08-27: is ISD still updated?
 2. Coverage criteria for the published products (valid days per year and decade).
+3. Which stations go forward after silver ("dusty stations": the threshold of dust reports), and
+   the station positions (isd-history.csv vs in-file coordinates), before the whole-ISD build.
 
 Resolved questions: [rules_history.md](rules_history.md), "Resolved questions".
 

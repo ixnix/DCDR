@@ -90,8 +90,9 @@ def test_one_bad_station_year_does_not_abort_silver(settings: Settings, monkeypa
     assert (s.built, s.failed) == (1, 1)
 
 
-def test_previous_year_rebuilt_when_next_year_bronze_arrives(settings: Settings) -> None:
-    """Review I2: the Dec-31 23:56 row moves to the next year's file once that file exists."""
+def test_next_year_bronze_does_not_rebuild_previous_year(settings: Settings) -> None:
+    """Method 2.0.0: a report belongs to its own UTC year's file, and silver no longer reads the
+    next year, so the next year's bronze arriving leaves the previous year's silver as it is."""
     store = MemoryStore()
     _put(
         store,
@@ -103,27 +104,11 @@ def test_previous_year_rebuilt_when_next_year_bronze_arrives(settings: Settings)
     )
     ctx = start_run(settings, "test")
     run_ingest(ctx, [STATION], [2023], store=store)  # 2024 bronze does not exist yet
-    run_process(ctx, [STATION], [2023])
-    assert pl.read_parquet(silver_path(ctx.root, 2023, STATION)).height == 2
+    assert run_process(ctx, [STATION], [2023]).built == 1
     _jan1(store)
     run_ingest(ctx, [STATION], [2024], store=store)
-    assert run_process(ctx, [STATION], [2023]).built == 1  # 2023 rebuilt because 2024 now exists
-    assert pl.read_parquet(silver_path(ctx.root, 2023, STATION)).height == 1
-
-
-def test_year_rebuilt_when_next_year_bronze_changes(settings: Settings) -> None:
-    """Method 1.10.1: the slot grid of a local month that straddles New Year is decided from the
-    next year's January too, so a correction there must rebuild this year's silver."""
-    store = MemoryStore()
-    _put(store, 2023, [isd_row("2023-12-31T21:00:00", **LON0)])
-    _jan1(store)
-    ctx = start_run(settings, "test")
-    run_ingest(ctx, [STATION], [2024], store=store)  # downloads 2024 and 2023
-    assert run_process(ctx, [STATION], [2023]).built == 1
-    assert run_process(ctx, [STATION], [2023]).built == 0  # unchanged: skipped
-    _put(store, 2024, [isd_row("2024-01-01T03:00:00", **LON0, MW1="02,1")])
-    assert run_ingest(ctx, [STATION], [2024], store=store).downloaded == 1
-    assert run_process(ctx, [STATION], [2023]).built == 1
+    assert run_process(ctx, [STATION], [2023]).built == 0  # still current
+    assert pl.read_parquet(silver_path(ctx.root, 2023, STATION)).height == 2
 
 
 IX2 = "SYN08040582 12960 03406 10062="  # SYNOP: weather group omitted, nothing significant

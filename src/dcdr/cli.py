@@ -115,7 +115,7 @@ def process(
     config: Path = ConfigOpt,
     profile: Path | None = ProfileOpt,
 ) -> None:
-    """Process bronze into silver: parse, QC, classify dust, pick synoptic slots (incremental)."""
+    """Process bronze into silver: parse, QC, classify dust, source groups (incremental)."""
 
     def body(ctx: pipeline.RunContext) -> dict[str, Any]:
         ids = _station_ids(ctx.settings, stations)

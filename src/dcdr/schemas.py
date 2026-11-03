@@ -10,8 +10,7 @@ file is written, so a bug in processing fails loudly instead of quietly producin
 Two kinds of checks
 -------------------
 * Per column (Pandera): type, nullability, value range or allowed set, uniqueness.
-* Across rows (plain Polars): at most one primary report, and one report per source, per slot;
-  a source group exactly on the reports that are not summaries. Pandera's column
+* Across rows (plain Polars): a source group exactly on the reports that are not summaries. Pandera's column
   checks can't express "per group" rules like this as clearly, so it is written out by hand.
 """
 
@@ -30,9 +29,6 @@ SILVER_SCHEMA = pa.DataFrameSchema(
         "lmst_date": pa.Column(pl.Date, nullable=False),  # local mean solar date
         "lmst_hour": pa.Column(pl.Float64, pa.Check.in_range(0, 24, include_max=False)),
         "dust_class_final": pa.Column(pl.String, pa.Check.isin(FINAL_CLASSES)),
-        "is_synoptic_selected": pa.Column(pl.Boolean),  # the slot's primary report
-        "is_source_selected": pa.Column(pl.Boolean),  # the slot's report for its source
-        "slot_source": pa.Column(pl.String, pa.Check.isin(["synop", "metar"]), nullable=True),
         # SYNOP / METAR / other (process/sources.py); null exactly for daily/monthly summaries
         "source_group": pa.Column(
             pl.String, pa.Check.isin(["synop", "metar", "other"]), nullable=True
@@ -61,18 +57,9 @@ def validate_silver(df: pl.DataFrame) -> pl.DataFrame:
     """Check one station-year against the silver contract; raise on any violation.
 
     Returns the frame unchanged, so it can be used inline: `write(validate_silver(df))`.
-    Raises pandera's SchemaError for column problems, SilverContractError for the slot rule.
+    Raises pandera's SchemaError for column problems, SilverContractError for the cross-row rule.
     """
     SILVER_SCHEMA.validate(df)
-    # The synoptic sampling picks at most one primary report per 3-hourly slot, and at most one
-    # report per source (SYNOP, METAR) per slot.
-    for col, keys, what in (
-        ("is_synoptic_selected", ["station_id", "slot_time"], "primary report"),
-        ("is_source_selected", ["station_id", "slot_time", "slot_source"], "report per source"),
-    ):
-        dup = df.filter(pl.col(col)).group_by(keys).len().filter(pl.col("len") > 1)
-        if dup.height:
-            raise SilverContractError(f"{dup.height} synoptic slots have more than one {what}")
     # Summaries (SOD, SOM) have no source group; every other report has one.
     wrong = df.filter(pl.col("source_group").is_null() != pl.col("is_excluded_type")).height
     if wrong:

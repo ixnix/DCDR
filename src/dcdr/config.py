@@ -42,7 +42,7 @@ DEFAULT_CONFIG = files("dcdr") / "default.yaml"
 
 # Config sections that change silver output. Only these feed the silver hash, so editing e.g. the
 # download concurrency (`ingest`) or the gold settings (`products`) never triggers a silver rebuild.
-SILVER_SECTIONS = ("parse", "qc", "classify", "sampling", "sources")
+SILVER_SECTIONS = ("parse", "qc", "classify", "sources")
 
 
 class _Section(BaseModel):
@@ -111,23 +111,6 @@ class ClassifyCfg(_Section):
     derived_wind_share: float  # ... and identical wind speed, to call the SYNOPs derived
 
 
-class SamplingCfg(_Section):
-    window_min: int  # +- minutes around each 3-hourly synoptic hour
-    # Slot sources, in order of preference: {"synop": [FM-12, ...], "metar": [FM-15, ...]}. Each
-    # source contributes at most one report per slot; types listed first are preferred. Types in
-    # no source (e.g. SPECI FM-16) never fill a slot.
-    sources: dict[str, list[str]]
-    # Off-grid schedules (method 1.10.0): a station-month whose observed SYNOPs keep a 3-hourly
-    # schedule offset from the synoptic hours gets its slot grid moved by that offset.
-    schedule_shift: bool
-    schedule_offsets_min: list[int]  # offsets tried, minutes (e.g. [60, -60])
-    schedule_max_on_grid: (
-        float  # shift only if fewer observed SYNOPs than this share are on the grid
-    )
-    schedule_min_share: float  # ... and at least this share sit at one offset
-    schedule_min_reports: int  # ... out of at least this many observed SYNOPs in the month
-
-
 class SourcesCfg(_Section):
     exclude_types: list[str]  # daily/monthly summaries: not observations at a time, never in a bin
     # Source groups (method 2.0.0): {"synop": [FM-12, ...], "metar": [FM-15, ...]}; every other
@@ -164,7 +147,6 @@ class Settings(_Section):
     parse: ParseCfg
     qc: QcCfg
     classify: ClassifyCfg
-    sampling: SamplingCfg
     sources: SourcesCfg
     products: ProductsCfg
     stations: StationsCfg

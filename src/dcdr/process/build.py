@@ -10,8 +10,7 @@ This is the conductor of the process step: it runs the sub-steps in order and wr
       -> classify_reports  dust class per report from weather codes               (classify.py)
       -> apply_haze_and_rh haze-after-dust rule and humidity screen               (classify.py)
       -> add_source_group  SYNOP / METAR / other; summaries excluded               (sources.py)
-      -> select_synoptic   per 3-hourly slot: one report per source + a primary   (sampling.py)
-      -> keep the rows this year's file owns, put core columns first
+      -> keep this year's reports (by UTC year), put core columns first
     silver rows (typed, flagged, classified) -> validated -> written with provenance metadata
 
 Every function here works on a whole Polars DataFrame at once (vectorised), never row by row.
@@ -31,7 +30,6 @@ from dcdr.process.classify import apply_haze_and_rh, classify_reports
 from dcdr.process.derived import synop_is_derived
 from dcdr.process.parse import add_time_columns, parse_reports
 from dcdr.process.qc import apply_qc
-from dcdr.process.sampling import select_synoptic
 from dcdr.process.sources import add_source_group
 from dcdr.schemas import validate_silver
 from dcdr.state import atomic_write_parquet
@@ -58,18 +56,7 @@ CORE_COLUMNS = [
     "lon",
     "lon_used",
     "elev",
-    "slot_time",
-    "slot_lmst_date",
-    "slot_delta_min",
-    "slot_offset_min",
-    "is_candidate",
     "is_excluded_type",
-    "selection_rank",
-    "selection_reason",
-    "slot_source",
-    "source_rank",
-    "is_source_selected",
-    "is_synoptic_selected",
     "has_pw",
     "pw_status",
     "syn_ix",
@@ -147,7 +134,7 @@ def dedupe(raw: pl.DataFrame) -> pl.DataFrame:
     """Keep one copy of rows that are identical in every source column; `dup_count` says how many.
 
     NOAA's merged files sometimes contain the same report twice. Rows that share a timestamp but
-    differ in any value are NOT duplicates: they stay as separate candidates for sampling.
+    differ in any value are NOT duplicates: both stay (gold judges every report in its bin).
     """
     raw = raw.with_columns(_row_keys(raw))
     counts = raw.group_by("row_key").agg(pl.len().cast(pl.Int32).alias("dup_count"))
@@ -156,53 +143,12 @@ def dedupe(raw: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _schedule_evidence(
-    df: pl.DataFrame,
-    context: list[pl.DataFrame],
-    derived: bool,
-    settings: Settings,
-    nil_guard: bool | None,
-    metar_guard: bool | None,
-) -> pl.DataFrame:
-    """The reports the slot-grid detection reads (sampling.schedule_offsets), method 1.10.1.
-
-    The grid is chosen per local month, and a local month can straddle New Year (at 134 E the
-    local 1 January starts on 31 December UTC). The year files on both sides must decide such a
-    month from the same reports, so this year's frame is joined by the neighbouring December and
-    January (`context`, bronze rows) for the detection only. "Observed" is judged without the
-    station-year's derived-SYNOP decision (process/derived.py), which each file makes for its own
-    year; otherwise the same report could count in one file and not in the other.
-    """
-    synop = settings.sampling.sources["synop"]
-    cols = ["time_utc", "lon_used", "report_type", "has_pw"]
-
-    def classified(frame: pl.DataFrame) -> pl.DataFrame:
-        return classify_reports(
-            frame.filter(pl.col("report_type").is_in(synop)),
-            settings.classify,
-            settings.qc,
-            nil_guard=nil_guard,
-            metar_guard=metar_guard,
-        ).select(cols)
-
-    # this year's reports: already classified, unless derived SYNOPs were set aside
-    own = classified(df) if derived else df.filter(pl.col("report_type").is_in(synop)).select(cols)
-    parts = [own]
-    for raw in context:
-        if raw.height:
-            ctx = add_time_columns(parse_reports(raw)).filter(pl.col("time_utc").is_not_null())
-            parts.append(classified(apply_qc(ctx, settings.qc, settings.parse)))
-    return pl.concat(parts, how="vertical_relaxed")
-
-
 def build_station_year(
     current: pl.DataFrame,
     previous: pl.DataFrame | None,
     year: int,
     settings: Settings,
     *,
-    next_year_exists: bool = False,
-    next_year: pl.DataFrame | None = None,
     nil_guard: bool | None = None,
     metar_guard: bool | None = None,
 ) -> pl.DataFrame:
@@ -210,16 +156,12 @@ def build_station_year(
 
     current          bronze rows of `year`
     previous         bronze rows of `year - 1` (or None): its last day is processed with this
-                     year (haze look-back); its December also feeds the slot-grid detection
-    next_year        bronze rows of `year + 1` (or None): only its January is read, for the
-                     slot-grid detection (method 1.10.1; see `_schedule_evidence`)
-    next_year_exists whether bronze for `year + 1` exists; decides which file keeps the
-                     31-December reports that compete for the 1-January 00:00 slot
+                     year (haze look-back), then dropped
     nil_guard        the station's guard for inferred "nothing significant" (process/guard.py):
                      True allows rule V3, False/None do not
     metar_guard      the station's METAR guard: True allows the inference for METARs without
                      full text (process/guard.py)
-    The `*` makes `next_year_exists` keyword-only, so call sites must spell out its name.
+    The `*` makes the guards keyword-only, so call sites must spell out their names.
     """
     frames = [current] if previous is None else [previous_year_tail(previous, year), current]
     # "diagonal_relaxed": the two years may have different column sets (ISD adds fields over
@@ -247,27 +189,9 @@ def build_station_year(
     )
     df = apply_haze_and_rh(df, settings.classify, settings.qc)
     df = add_source_group(df, settings.sources)  # SYNOP / METAR / other; summaries excluded
-    context = [
-        f.filter(pl.col("DATE").is_between(pl.lit(lo), pl.lit(hi), closed="left"))
-        for f, lo, hi in [
-            (previous, f"{year - 1}-12-01", f"{year - 1}-12-31"),  # the 31st is already in `df`
-            (next_year, f"{year + 1}-01-01", f"{year + 1}-02-01"),
-        ]
-        if f is not None
-    ]
-    evidence = _schedule_evidence(df, context, derived, settings, nil_guard, metar_guard)
-    df = select_synoptic(df, settings.sampling, evidence)
-    # Each report lives in exactly one station-year file: slot candidates belong to their SLOT's
-    # year (a 23:56 Dec-31 report competes for the Jan-1 00:00 slot), others to their own year.
-    owner_year = (
-        pl.when(pl.col("is_candidate"))
-        .then(pl.col("slot_time").dt.year())
-        .otherwise(pl.col("time_utc").dt.year())
-    )
-    # ...unless the next year's file will not exist: then keep them here so nothing is lost.
-    keep = (owner_year == year) | (pl.lit(not next_year_exists) & (owner_year == year + 1))
-    # This also drops the previous year's look-back rows: they belong to the previous file.
-    df = df.filter(keep).sort(_SORT, nulls_last=True)
+    # Each report lives in the file of its own UTC year (method 2.0.0); this drops the previous
+    # year's look-back rows, which belong to the previous file.
+    df = df.filter(pl.col("time_utc").dt.year() == year).sort(_SORT, nulls_last=True)
     rest = sorted(c for c in df.columns if c not in CORE_COLUMNS)
     return df.select(CORE_COLUMNS + rest)
 
@@ -280,8 +204,6 @@ def write_silver(
     config_hash: str,
     source_md5: str,
     prev_source_md5: str,
-    next_year_present: bool = False,
-    next_source_md5: str = "",
     nil_guard: bool | None = None,
     metar_guard: bool | None = None,
 ) -> None:
@@ -301,8 +223,6 @@ def write_silver(
             "run_id": run_id,
             "source_md5": source_md5,
             "prev_source_md5": prev_source_md5,
-            "next_year_present": "1" if next_year_present else "0",
-            "next_source_md5": next_source_md5,  # its January feeds the slot-grid detection
             "nil_guard": {True: "1", False: "0", None: ""}[nil_guard],  # station guard (rule V3)
             "metar_guard": {True: "1", False: "0", None: ""}[metar_guard],  # METAR inference guard
         },

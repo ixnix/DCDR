@@ -7,14 +7,21 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
+- [ ] **Rebuild silver and gold on the pilot for method 2.0.0** (user): pilot_100 and
+      metar_test_100; then compare dusty-day counts with the 1.10.1 gold (Niamey 2020: the 7 days
+      found only in unselected METARs, 27 May among them, must be dusty; every station whose
+      count drops is listed and explained).
+- [ ] "Dusty stations" threshold for keeping stations after silver (whole ISD; user decision in
+      principle 2026-11-02: only stations with dust reports go forward).
+- [ ] Station table for the whole ISD: isd-history.csv positions with the four-way rule (< 10 km
+      agree; 10-50 km flag; >= 50 km conflict, out until resolved, 949999 stations resolved by
+      isd-history; no reference = unverified), before the whole-ISD build.
 - [ ] Re-run notebook 07 (Australia) and look at the first `three_hourly` table (e.g. one outbreak
       at Phoenix and one at Niamey).
 - [ ] Station catalog with aridity index and the dust-source flag (criteria from the statistics,
       window 1991-2020), then wind histograms and Uth for source stations (decisions 2026-10-31).
 - [ ] Papunya is dusty on 43 % of its valid days in the 1.10.1 gold (1,489 of 3,449; other
       Australian stations 8-11 %): real (central desert) or a station habit?
-- [ ] Daily slots: a ±90 min fallback window instead of the 1.10.0 grid shift? Not needed while
-      the shift works; revisit only if notebook 07 shows off-hour reports the shift misses.
 - [ ] Check Niamey (Diori Hamani) before ~1975 (almost no dust, then >= 150 days a year) and the
       fall at Ciudad Constitucion (2000-2023): reporting changes or real?
 - [ ] Distribution (B) and website (C), designed together on the pilot dataset (user decision
@@ -69,6 +76,32 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   `n_valid_days_other`, `n_dusty_days_other`, `n_dusty_days_obs_other`, `n_bins_obs_other`;
   `yearly` and `decadal` sum them generically; `STAT_VARIANTS` gains `_other`, so the count-order
   checks cover it. The all-source columns keep their names (`n_dusty_days`, `dusty_freq`, ...).
+  (a910c1d)
+- **Slot sampling removed from silver** (method 2.0.0, user decision 2026-11-02): `sampling.py`,
+  the slot columns, the off-grid shift (1.10.0), the neighbouring December/January reads (1.10.1)
+  and the config section `sampling` are gone; each report lives in the file of its own UTC year,
+  so the next year's bronze is no longer read (silver metadata without `next_year_present`,
+  `next_source_md5`). A profile that still sets `sampling` is rejected. The open item "±90 min
+  fallback window" is obsolete (no slots).
+- **Whole-bronze census** (2026-11-02, read-only scratch scripts, not in the repository): 711,411
+  station-year files, 30,375 stations, 1901-2025, 3.90 billion reports. Largest types: FM-15
+  1,445 M; FM-12 1,147 M; SAO 469 M; CRN05 329 M (no weather); FM-16 116 M; AUTO 83 M; SY-MT
+  74.5 M (rough dust codes at 2,035 stations); NSRDB 68 M; AERO 4.9 M (dust codes at 234 stations,
+  1952-84). Timing: FM-12 7.8 reports a day, 8 bins on 40.6 % of days; SY-MT like FM-12; SY-SA 4
+  bins (00/06/12/18) on 67 % of days; AUST 1.2 % on synoptic hours, peaks at 23 and 05 UTC (local
+  standard clock). AUST only in Australia (716 stations, 1939-1984; 89 % of its station-years
+  without FM-12). These findings set the source groups (user decisions 2026-11-02).
+- **Finding: wrong in-file metadata at 949999 stations** (2026-11-02). 370 stations with USAF
+  949999 are Australian in isd-history.csv; 268 carry a US station's NAME/LATITUDE/LONGITUDE/
+  ELEVATION in NOAA's data files (shared WBAN). Example 94999900108: in-file "SCAMMON BAY
+  AIRPORT, AK US", isd-history ADELAIDE (WEST TERRACE), -34.93, +138.58, 1954-1979; the data
+  confirm Adelaide (January 22.8 C, July 11.5 C). None in the pilot. Positions vs isd-history,
+  largest station-year distance: < 10 km 27,794 stations; 10-50 km 76; 50-200 km 14; 200-1000 km
+  12; >= 1000 km 279 (268 of them 949999); no reference 1,874. Errors go both ways (in-file WBAN
+  collisions and digit slips; isd-history wrong for Concepcion BO and Sable Island). *User
+  decision:* the four-way position rule (Open items). isd-history.csv saved at
+  `$DCDR_DATA/catalog/isd-history.csv` (S3 Last-Modified 2025-08-30 01:27:57 GMT, 2,914,601
+  bytes, md5 b086d8ee9fdbfa8cf545847827031e0b, 29,661 stations).
 
 ## 2026-11-02
 

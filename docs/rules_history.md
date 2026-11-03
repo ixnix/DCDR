@@ -28,7 +28,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | 1.10.1 | 2026-10-30 | fix: slot grid chosen per local (LMST) month; year files read the neighbouring December/January | user (option A) | 715cb41 |
 | (no change) | 2026-10-31 | new gold tables `monthly`, `yearly`, `decadal` (statistics); daily `n_slots_dusty` | user + rulings | 0002138, c02f436, 7cdc26c, 794a619, 18abf2d |
 | (no change) | 2026-11-02 | statistics: lower bound `dusty_freq_obs` and `validity_ratio` beside `dusty_freq`; no flag | user | 632c899 |
-| 2.0.0 | 2026-11-03 | all-reports 3-hour bins replace slot sampling; source groups SYNOP / METAR / other, each judged alone | user + rulings | 9313d86, 6ef64dc, (this commit) |
+| 2.0.0 | 2026-11-03 | all-reports 3-hour bins replace slot sampling; source groups SYNOP / METAR / other, each judged alone | user + rulings | 9313d86, 6ef64dc, 0239af7, a910c1d, (this commit) |
 
 ---
 
@@ -421,6 +421,14 @@ approved 2026-11-03): one LMST offset per station (the most common longitude), b
 report's own longitude put 9 bins on a local day near some longitudes; `dust_vis5` null when a
 dusty report's visibility is unknown; `dust_first_lmst_hour` = start of the first dusty bin;
 `t_min`/`t_max` from the state reports; SPECI and SAOSP never the state report.
+
+*Silver* (same version): slot sampling removed (`sampling.py`; the columns `slot_time`,
+`slot_lmst_date`, `slot_delta_min`, `slot_offset_min`, `is_candidate`, `selection_rank`,
+`selection_reason`, `slot_source`, `source_rank`, `is_source_selected`, `is_synoptic_selected`;
+the config section `sampling`), with the off-grid schedule shift of 1.10.0 and the neighbouring
+December/January reads of 1.10.1: bins need neither. Each report now lives in the file of its own
+UTC year, so the next year's bronze is no longer read. New: `source_group` (`sources.py`, config
+`sources`).
 
 ## Resolved questions
 
