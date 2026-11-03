@@ -185,7 +185,6 @@ def select_synoptic(
     rt = pl.col("report_type")
     df = df.with_columns(
         slot_delta_min=(pl.col("time_utc") - pl.col("slot_time")).dt.total_seconds().abs() / 60,
-        is_excluded_type=rt.is_in(cfg.exclude_types).fill_null(False),
         slot_source=rt.replace_strict(source_of, default=None, return_dtype=pl.String),
     )
     df = df.with_columns(

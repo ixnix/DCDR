@@ -38,6 +38,13 @@ def test_unknown_key_is_rejected() -> None:
         load_settings(overrides={"qc": {"bogus": 1}})
 
 
+def test_sources_rejects_type_in_two_groups() -> None:
+    ok = load_settings(overrides={"sources": {"groups": {"synop": ["FM-12"], "metar": ["FM-15"]}}})
+    assert ok.sources.groups == {"synop": ["FM-12"], "metar": ["FM-15"]}
+    with pytest.raises(ValidationError, match="more than one group"):
+        load_settings(overrides={"sources": {"groups": {"synop": ["FM-12"], "metar": ["FM-12"]}}})
+
+
 def test_env_var_overrides_data_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("DCDR_DATA", str(tmp_path))
     assert load_settings().data_root == tmp_path

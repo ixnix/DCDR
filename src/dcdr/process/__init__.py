@@ -8,6 +8,7 @@ Modules, in the order they run (build.py calls them):
     qc.py        quality flags, relative humidity, capped visibility, gusts
     classify.py  dust class of each report from its weather codes; haze and humidity rules
     sampling.py  pick one report per 3-hourly synoptic slot
+    sources.py   source group of each report (SYNOP / METAR / other)
     build.py     run all of the above for one station-year and write the silver file
 
 Version numbers follow MAJOR.MINOR.PATCH: a change that alters results bumps at least MINOR.
@@ -15,7 +16,8 @@ Bumping it makes the next run rebuild every silver file, because each file recor
 that built it (see pipeline._silver_is_current).
 """
 
-METHOD_VERSION = "1.10.1"  # 1.10.1: slot grid per local month; 1.10.0: off-grid schedules;
+METHOD_VERSION = "2.0.0"  # 2.0.0: all-reports 3-hour bins, source groups (no slot sampling);
+# 1.10.1: slot grid per local month; 1.10.0: off-grid schedules;
 # 1.9.0: RH screen on haze classes, remarks dust;
 # 1.8.0: METAR fragments (CAVOK), METAR inference, derived SYNOPs;
 # 1.7.0: METAR text without the word METAR (2000s) is read;

@@ -33,6 +33,18 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ---
 
+## 2026-11-03
+
+- **Method 2.0.0 started: source groups in silver** (spec
+  `docs/superpowers/specs/2026-11-02-all-reports-bins-design.md`, approved 2026-11-03; plan
+  `docs/superpowers/plans/2026-11-03-all-reports-bins.md`). User decisions 2026-11-02: 3-hour UTC
+  bins over all reports replace slot sampling; groups SYNOP (FM-12, SY-MT, SY-SA, SY-AE, SY-AU,
+  AUST), METAR (FM-15, FM-16, SAO, SAOSP, AUTO), other (every other type); SOD/SOM excluded.
+  New `process/sources.py` adds `source_group` and `is_excluded_type`; config section `sources`
+  (`exclude_types` moved there from `sampling`); silver contract: a group exactly on the
+  non-summary reports. Sampling still runs until the bins replace it. `METHOD_VERSION` 2.0.0.
+  *Ruling:* a missing or unknown report type is "other" (never excluded).
+
 ## 2026-11-02
 
 - **Gold rebuilt with the statistics** (user ran it; gold 20261102T152055Z-66b2fc, silver 1.10.1,

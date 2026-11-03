@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 # The defaults file lives inside the package (src/dcdr/default.yaml). `files("dcdr")` finds the
 # installed package folder, so this works both in the repo and from an installed wheel.
@@ -42,7 +42,7 @@ DEFAULT_CONFIG = files("dcdr") / "default.yaml"
 
 # Config sections that change silver output. Only these feed the silver hash, so editing e.g. the
 # download concurrency (`ingest`) or the gold settings (`products`) never triggers a silver rebuild.
-SILVER_SECTIONS = ("parse", "qc", "classify", "sampling")
+SILVER_SECTIONS = ("parse", "qc", "classify", "sampling", "sources")
 
 
 class _Section(BaseModel):
@@ -113,7 +113,6 @@ class ClassifyCfg(_Section):
 
 class SamplingCfg(_Section):
     window_min: int  # +- minutes around each 3-hourly synoptic hour
-    exclude_types: list[str]  # report types never used for slots (daily/monthly summaries)
     # Slot sources, in order of preference: {"synop": [FM-12, ...], "metar": [FM-15, ...]}. Each
     # source contributes at most one report per slot; types listed first are preferred. Types in
     # no source (e.g. SPECI FM-16) never fill a slot.
@@ -127,6 +126,23 @@ class SamplingCfg(_Section):
     )
     schedule_min_share: float  # ... and at least this share sit at one offset
     schedule_min_reports: int  # ... out of at least this many observed SYNOPs in the month
+
+
+class SourcesCfg(_Section):
+    exclude_types: list[str]  # daily/monthly summaries: not observations at a time, never in a bin
+    # Source groups (method 2.0.0): {"synop": [FM-12, ...], "metar": [FM-15, ...]}; every other
+    # report type is "other" (process/sources.py).
+    groups: dict[str, list[str]]
+
+    @model_validator(mode="after")
+    def _groups_are_synop_and_metar(self) -> SourcesCfg:
+        if set(self.groups) != {"synop", "metar"}:
+            raise ValueError(f"sources.groups must be synop and metar, got {sorted(self.groups)}")
+        listed = [t for types in self.groups.values() for t in types]
+        twice = sorted({t for t in listed if listed.count(t) > 1})
+        if twice:
+            raise ValueError(f"report types in more than one group: {twice}")
+        return self
 
 
 class ProductsCfg(_Section):
@@ -149,6 +165,7 @@ class Settings(_Section):
     qc: QcCfg
     classify: ClassifyCfg
     sampling: SamplingCfg
+    sources: SourcesCfg
     products: ProductsCfg
     stations: StationsCfg
 

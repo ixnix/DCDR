@@ -6,8 +6,8 @@ and 3-hourly records and monthly, yearly and decadal statistics, and briefly why
 [rules_history.md](rules_history.md) records how each rule came about, with the evidence, the
 superseded rules and the decisions; [worklog.md](worklog.md) is the dated log.
 
-> Describes the method **as implemented** (method version **1.10.1**). Planned steps are marked
-> *planned*. Last updated: 2026-11-02.
+> Describes the method **as implemented** (method version **2.0.0**). Planned steps are marked
+> *planned*. Last updated: 2026-11-03.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`,
 local) and the WMO *Manual on Codes* (WMO-No. 306) as published in the WMO Codes Registry
@@ -467,6 +467,18 @@ screened too: 0.6 % of it overall (3,724 of 616,000 reports, pilot_100, all year
 *Why flags, not deletion:* rejected data stay countable and the policy is a setting.
 
 ## 8. Synoptic sampling (`sampling.py`)
+
+**Source groups** (method 2.0.0, user decisions 2026-11-02; `sources.py`, config `sources`). Every
+report carries `source_group`, the kind of report that saw the weather:
+
+| Group | Report types |
+|---|---|
+| SYNOP | FM-12, SY-MT, SY-SA, SY-AE, SY-AU, AUST |
+| METAR | FM-15, FM-16 (SPECI), SAO, SAOSP (its pre-1996 US predecessor), AUTO |
+| other | every other type (AERO, FM-13, FM-14, FM-18, BRAZ, SMARS, SHEF, 99999, CRN05, NSRDB, ...), also a missing or unknown type |
+| (none) | SOD, SOM: daily and monthly summaries (`is_excluded_type`), not observations at a time |
+
+*Planned (method 2.0.0, in progress):* 3-hour bins over all reports replace the slot sampling below.
 
 *Why:* stations report at very different rates (SYNOP every 3 h; airports every 30-60 min plus
 special reports when weather changes, often exactly when dust arrives). Counting dust in all

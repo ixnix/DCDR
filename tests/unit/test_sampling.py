@@ -27,7 +27,7 @@ def _frame(rows: list[tuple[str, str, bool, str]]) -> pl.DataFrame:
             "row_key": [k for _, _, _, k in rows],
             "lon_used": [0.0] * len(rows),
         }
-    )
+    ).with_columns(is_excluded_type=pl.col("report_type").is_in(["SOD", "SOM"]))
 
 
 def _selected(df: pl.DataFrame) -> list[str]:

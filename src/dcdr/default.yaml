@@ -77,7 +77,6 @@ classify:
 
 sampling:
   window_min: 30  # a report within +-30 min of a synoptic hour (00, 03, ..., 21 UTC) is a candidate
-  exclude_types: [SOD, SOM]  # daily and monthly summaries are not observations at a time
   # Slot sources (user decision 2026-10-20). Each slot takes at most ONE report per source: the
   # closest one that observed the weather (types listed first are preferred). A slot is dusty if
   # either source reports dust; its primary report (wind, temperature, visibility means) is the
@@ -96,6 +95,16 @@ sampling:
   schedule_max_on_grid: 0.10
   schedule_min_share: 0.80
   schedule_min_reports: 30  # per month: about one observed SYNOP a day
+
+sources:
+  exclude_types: [SOD, SOM]  # daily and monthly summaries are not observations at a time
+  # Source groups (method 2.0.0, user decisions 2026-11-02): which group saw the weather in each
+  # 3-hour bin. SPECI (FM-16) and its predecessor SAOSP count under METAR; AUST ("Dataset from
+  # Australia", FM-12-like at local-clock hours) under SYNOP. Every type not listed is "other"
+  # (AERO, FM-13, FM-14, FM-18, BRAZ, SMARS, SHEF, 99999, CRN05, NSRDB, ...).
+  groups:
+    synop: [FM-12, SY-MT, SY-SA, SY-AE, SY-AU, AUST]
+    metar: [FM-15, FM-16, SAO, SAOSP, AUTO]
 
 products:
   min_slots_per_day: 4  # a day is valid with >= 4 of 8 slots carrying a weather observation

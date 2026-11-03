@@ -10,7 +10,8 @@ file is written, so a bug in processing fails loudly instead of quietly producin
 Two kinds of checks
 -------------------
 * Per column (Pandera): type, nullability, value range or allowed set, uniqueness.
-* Across rows (plain Polars): at most one primary report, and one report per source, per slot. Pandera's column
+* Across rows (plain Polars): at most one primary report, and one report per source, per slot;
+  a source group exactly on the reports that are not summaries. Pandera's column
   checks can't express "per group" rules like this as clearly, so it is written out by hand.
 """
 
@@ -32,6 +33,11 @@ SILVER_SCHEMA = pa.DataFrameSchema(
         "is_synoptic_selected": pa.Column(pl.Boolean),  # the slot's primary report
         "is_source_selected": pa.Column(pl.Boolean),  # the slot's report for its source
         "slot_source": pa.Column(pl.String, pa.Check.isin(["synop", "metar"]), nullable=True),
+        # SYNOP / METAR / other (process/sources.py); null exactly for daily/monthly summaries
+        "source_group": pa.Column(
+            pl.String, pa.Check.isin(["synop", "metar", "other"]), nullable=True
+        ),
+        "is_excluded_type": pa.Column(pl.Boolean, nullable=False),
         "has_pw": pa.Column(pl.Boolean),  # weather observed: a code reported, or iX "nothing"
         "pw_status": pa.Column(
             pl.String,
@@ -67,4 +73,8 @@ def validate_silver(df: pl.DataFrame) -> pl.DataFrame:
         dup = df.filter(pl.col(col)).group_by(keys).len().filter(pl.col("len") > 1)
         if dup.height:
             raise SilverContractError(f"{dup.height} synoptic slots have more than one {what}")
+    # Summaries (SOD, SOM) have no source group; every other report has one.
+    wrong = df.filter(pl.col("source_group").is_null() != pl.col("is_excluded_type")).height
+    if wrong:
+        raise SilverContractError(f"{wrong} reports with a source group that contradicts its type")
     return df

@@ -9,6 +9,7 @@ This is the conductor of the process step: it runs the sub-steps in order and wr
       -> apply_qc          quality flags, RH, capped visibility, gusts            (qc.py)
       -> classify_reports  dust class per report from weather codes               (classify.py)
       -> apply_haze_and_rh haze-after-dust rule and humidity screen               (classify.py)
+      -> add_source_group  SYNOP / METAR / other; summaries excluded               (sources.py)
       -> select_synoptic   per 3-hourly slot: one report per source + a primary   (sampling.py)
       -> keep the rows this year's file owns, put core columns first
     silver rows (typed, flagged, classified) -> validated -> written with provenance metadata
@@ -31,6 +32,7 @@ from dcdr.process.derived import synop_is_derived
 from dcdr.process.parse import add_time_columns, parse_reports
 from dcdr.process.qc import apply_qc
 from dcdr.process.sampling import select_synoptic
+from dcdr.process.sources import add_source_group
 from dcdr.schemas import validate_silver
 from dcdr.state import atomic_write_parquet
 
@@ -50,6 +52,7 @@ CORE_COLUMNS = [
     "lmst_hour",
     "summary_lmst_date",
     "report_type",
+    "source_group",
     "source",
     "lat",
     "lon",
@@ -243,6 +246,7 @@ def build_station_year(
         synop_derived=derived,
     )
     df = apply_haze_and_rh(df, settings.classify, settings.qc)
+    df = add_source_group(df, settings.sources)  # SYNOP / METAR / other; summaries excluded
     context = [
         f.filter(pl.col("DATE").is_between(pl.lit(lo), pl.lit(hi), closed="left"))
         for f, lo, hi in [
