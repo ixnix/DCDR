@@ -104,3 +104,52 @@ def test_station_guards_returns_both_guards(settings: Settings, tmp_path: Path) 
     df.write_parquet(p)
     assert station_guards([p], settings) == (True, True)
     assert station_guards([], settings) == (None, None)
+
+
+def test_guard_counts_match_classifying_every_row(settings: Settings) -> None:
+    """The guards classify only rows that can be evidence (speed-up for whole-ISD runs). Parse, QC
+    and classify work row by row, so the counts must equal classifying every row and filtering."""
+    from dcdr.process.classify import classify_reports
+    from dcdr.process.parse import parse_reports
+    from dcdr.process.qc import apply_qc
+
+    m = {"REPORT_TYPE": "FM-15"}
+    rows = (
+        _rows(5, REM=IX2)
+        + _rows(2, "2024-02-01T00:00:00", REM=IX3)
+        + _rows(3, "2024-03-01T00:00:00", REM=IX2, MW1="06,1")
+        + _rows(4, "2024-04-01T00:00:00", REM=IX2, VIS="999999,9,9,9")
+        + _rows(2, "2024-04-10T00:00:00", REM=IX2, VIS="010000,3,N,1")  # QC 3: erroneous
+        + _rows(6, "2024-05-01T00:00:00", REM="SYN004BUFR")
+        + _rows(5, "2024-06-01T00:00:00", REM=CLEAR, **m)
+        + _rows(2, "2024-07-01T00:00:00", REM=AUTO, **m)
+        + _rows(3, "2024-08-01T00:00:00", REM=CLEAR, VIS="004000,1,N,1", **m)
+        + _rows(4, "2024-09-01T00:00:00", REM="MET006NOSIG?", **m)
+        + _rows(2, "2024-10-01T00:00:00", REM=CLEAR, AU1="0,5,00,5,0,1,1", **m)
+    )
+    raw = bronze_frame(rows)
+    cfg = settings.classify
+
+    def classify_all(prefix: str) -> pl.DataFrame:
+        part = raw.filter(pl.col("REM").str.starts_with(prefix))
+        return classify_reports(
+            apply_qc(parse_reports(part), settings.qc, settings.parse), cfg, settings.qc
+        )
+
+    no_code_vis = (pl.col("pw_status") != "reported") & pl.col("use_vis").fill_null(False)
+    syn = classify_all("SYN").filter(
+        pl.col("report_type").is_in(cfg.infer_nil_report_types),
+        no_code_vis,
+        pl.col("syn_ix").is_in(["2", "3", "5", "6"]),
+    )
+    met = classify_all("MET").filter(
+        pl.col("report_type").is_in(cfg.metar_report_types),
+        pl.col("metar_text") == "full",
+        no_code_vis,
+        pl.col("vis_raw") > cfg.metar_nil_min_vis_m,
+    )
+    met_not_obs = met.filter(~pl.col("pw_status").is_in(["nil_metar", "nil_significant"])).height
+    assert guard_counts(raw, settings) == (syn.height, syn["syn_ix"].is_in(["3", "6"]).sum())
+    assert metar_guard_counts(raw, settings) == (met.height, met_not_obs)
+    assert guard_counts(raw, settings) == (7, 2)
+    assert metar_guard_counts(raw, settings) == (7, 2)

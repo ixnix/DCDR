@@ -5,7 +5,7 @@ Where this fits
 `cli.py` calls the functions here; they call the stage modules:
 
     run_ingest    -> ingest.py               NOAA S3 -> bronze
-    run_process   -> process/build.py        bronze  -> silver   (one station-year at a time)
+    run_process   -> process/build.py        bronze  -> silver   (station by station, or in parallel)
     run_aggregate -> aggregate.py            silver  -> gold     (all stations at once)
 
 and `start_run` / `finish_run` wrap every command with a run ID and a run-log entry.
@@ -24,8 +24,13 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
+from collections.abc import Iterator
+from concurrent.futures import ProcessPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
+from multiprocessing import get_context
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +55,7 @@ from dcdr.state import (
 )
 
 log = logging.getLogger(__name__)
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"  # console log lines (CLI, workers)
 PACKAGE_DIR = Path(__file__).resolve().parent  # a git checkout only when run from source
 
 
@@ -199,39 +205,122 @@ def _silver_is_current(
 
 
 def run_process(
-    ctx: RunContext, stations: list[str], years: list[int], force: bool = False
+    ctx: RunContext,
+    stations: list[str],
+    years: list[int],
+    force: bool = False,
+    workers: int = 1,
 ) -> ProcessSummary:
     """Build silver for every requested station-year that is missing or out of date.
 
     `force=True` rebuilds everything (e.g. after changing the code without bumping
     METHOD_VERSION). Station-years are independent, so one failure is logged and skipped.
+
+    `workers > 1` builds that many stations at a time, each in its own process (stations are
+    independent; results are identical to `workers=1`). Each worker runs Polars on one thread,
+    so the workers, not Polars, share out the CPU cores.
     """
+    job = _StationJob(ctx.settings, ctx.run_id, tuple(years), force)
     summary = ProcessSummary()
-    cfg_hash = silver_config_hash(ctx.settings)
-    for station in stations:
-        # Station guards for inferred "nothing significant" (rule V3 for SYNOP; the METAR guard for
-        # METARs without full text), from ALL bronze years of the station on disk: the evidence
-        # (iX, full METAR text) exists only in recent years; older years rely on it.
+    if workers <= 1:
+        _collect(summary, map(job, stations), len(stations))
+        return summary
+    with (
+        _env(POLARS_MAX_THREADS="1"),  # inherited by the worker processes when they start
+        ProcessPoolExecutor(
+            max_workers=workers, mp_context=get_context("spawn"), initializer=_worker_logging
+        ) as pool,
+    ):
+        try:
+            _collect(summary, pool.map(job, stations), len(stations))
+        except KeyboardInterrupt:  # Ctrl-C: drop the queued stations instead of finishing them
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+    return summary
+
+
+PROGRESS_EVERY = 500  # stations between progress lines in the log
+
+
+def _collect(summary: ProcessSummary, parts: Iterator[ProcessSummary], total: int) -> None:
+    """Add each station's summary to the run's summary, in station order, logging progress."""
+    for i, part in enumerate(parts, 1):
+        summary.built += part.built
+        summary.skipped += part.skipped
+        summary.missing_bronze += part.missing_bronze
+        summary.failed += part.failed
+        summary.failures += part.failures
+        summary.paths += part.paths
+        if i % PROGRESS_EVERY == 0 or i == total:
+            log.info(
+                "silver: %d/%d stations (built %d, skipped %d, failed %d)",
+                i,
+                total,
+                summary.built,
+                summary.skipped,
+                summary.failed,
+            )
+
+
+@contextmanager
+def _env(**values: str) -> Iterator[None]:
+    """Set environment variables for the duration of a block, then restore them."""
+    saved = {k: os.environ.get(k) for k in values}
+    os.environ.update(values)
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def _worker_logging() -> None:
+    """A worker process starts with no log set-up; give it the same console format as the CLI."""
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+
+
+@dataclass(frozen=True)
+class _StationJob:
+    """Build silver for all requested years of one station. A plain picklable object, so it can
+    be sent to a worker process (`run_process` with workers > 1)."""
+
+    settings: Settings
+    run_id: str
+    years: tuple[int, ...]
+    force: bool
+
+    def __call__(self, station: str) -> ProcessSummary:
+        summary = ProcessSummary()
+        root = self.settings.data_root
+        cfg_hash = silver_config_hash(self.settings)
+        # Station guards for inferred "nothing significant" (rule V3 for SYNOP; the METAR guard
+        # for METARs without full text), from ALL bronze years of the station on disk: the
+        # evidence (iX, full METAR text) exists only in recent years; older years rely on it.
         years_on_disk = sorted(
-            p.name for p in safe_listdir(ctx.root / "bronze") if p.name.startswith("year=")
+            p.name for p in safe_listdir(root / "bronze") if p.name.startswith("year=")
         )
         guard, metar_guard = station_guards(
             [
                 p
                 for y in years_on_disk
-                if (p := ctx.root / "bronze" / y / f"{station}.parquet").exists()
+                if (p := root / "bronze" / y / f"{station}.parquet").exists()
             ],
-            ctx.settings,
+            self.settings,
         )
-        for year in years:
-            bpath = bronze_path(ctx.root, year, station)
+        for year in self.years:
+            bpath = bronze_path(root, year, station)
             if not bpath.exists():
                 summary.missing_bronze += 1
                 continue
-            prev_path = bronze_path(ctx.root, year - 1, station)
+            prev_path = bronze_path(root, year - 1, station)
             md5, prev_md5 = _bronze_md5(bpath), _bronze_md5(prev_path)
-            spath = silver_path(ctx.root, year, station)
-            if not force and _silver_is_current(spath, cfg_hash, md5, prev_md5, guard, metar_guard):
+            spath = silver_path(root, year, station)
+            if not self.force and _silver_is_current(
+                spath, cfg_hash, md5, prev_md5, guard, metar_guard
+            ):
                 summary.skipped += 1
                 summary.paths.append(spath)
                 continue
@@ -241,14 +330,14 @@ def run_process(
                     pl.read_parquet(bpath),
                     previous,
                     year,
-                    ctx.settings,
+                    self.settings,
                     nil_guard=guard,
                     metar_guard=metar_guard,
                 )
                 write_silver(
                     df,
                     spath,
-                    run_id=ctx.run_id,
+                    run_id=self.run_id,
                     config_hash=cfg_hash,
                     source_md5=md5,
                     prev_source_md5=prev_md5,
@@ -262,7 +351,7 @@ def run_process(
                 continue
             summary.built += 1
             summary.paths.append(spath)
-    return summary
+        return summary
 
 
 def all_silver_paths(root: Path, stations: list[str], years: list[int]) -> list[Path]:

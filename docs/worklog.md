@@ -30,8 +30,36 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - [ ] Later gold products: climatology, diurnal cycle, trends, code-06 diagnostic.
 - [ ] Publish documentation (e.g. MkDocs) when stable.
 - [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
+- [ ] Log station-years without any valid longitude as "skipped: no position" instead of
+      `ERROR`/failed, so real failures stand out in whole-ISD runs.
 
 ---
+
+## 2026-11-04
+
+- **Silver build speed-up** (user decision: option A, after the whole-ISD `process` run reached
+  38 % in 17.5 h, about 258 station-years a minute). Profile of one station (New Delhi, 70
+  station-years, on the internal disk: same speed as on the USB SSD, so not disk-bound): 18.4 s,
+  of which 7.8 s station guards and 8.8 s building; `classify_reports` costs ~0.08 s per call
+  even on a nearly empty frame (Polars sets up its ~250-column expression each time). Changes,
+  results unchanged (no `METHOD_VERSION` bump, so files already built stay current):
+  - the guards classify only reports that can be evidence and skip years with none (guards
+    7.8 s -> 3.4 s; New Delhi 18.4 s -> 13.4 s). *Ruling:* not a single classification shared
+    by guard and build: the build collapses exact duplicates and the guard does not, so a
+    shared pass could change guard counts and results.
+  - `dcdr process --workers N`: N stations at a time in separate processes, Polars on one
+    thread each; a progress line every 500 stations.
+  - Checks: 24 sample stations (426 station-years) copied to the scratchpad: new code identical
+    to the running build's files (235 of 235) and parallel identical to serial (425 of 425).
+    Timings on the sample while the old run still used ~1.7 cores: 1 worker 106 s, 4 51 s,
+    6 39 s, 8 37 s, 10 37 s; above 6 the time is set by the largest station (22 % of the
+    sample's data), not by the cores. Memory about 0.2 GB per worker.
+  - *Ruling:* recommend `--workers 8` (4 performance + 4 of the 6 efficiency cores of the M5;
+    two cores left for the system).
+- **"no valid LONGITUDE" errors in the whole-ISD run are expected**: 1,206 by 05:44, from
+  station-years whose every report has LONGITUDE 999.999 (ISD missing) and no isd-history
+  position (checked 49 stations: none has one; 34 are ISD placeholders named "BOGUS ...").
+  They are skipped and counted as failed. Open: log them as skipped, not as errors.
 
 ## 2026-11-03
 

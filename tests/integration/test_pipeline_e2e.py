@@ -144,3 +144,40 @@ def test_inferred_nil_uses_the_stations_ix_years_and_follows_the_guard(settings:
     assert run_process(ctx, [STATION], [2023, 2024]).built == 2  # 2023 rebuilt: its guard changed
     s23 = pl.read_parquet(silver_path(ctx.root, 2023, STATION))
     assert set(s23["pw_status"]) == {"not_observed"}
+
+
+def test_parallel_process_matches_serial(settings: Settings) -> None:
+    """`workers > 1` builds stations in separate processes: same files, same counts, and a failing
+    station-year (no valid longitude) is still counted and skipped."""
+    store = MemoryStore()
+    _jan1(store)
+    _put(store, 2023, [isd_row("2023-12-31T22:00:00", **LON0, MW1="06,1")])
+    other = "72386023169"
+    for year in (2023, 2024):
+        obs.put(
+            store,
+            f"{year}/{other}.csv",
+            make_isd_csv([isd_row(f"{year}-03-01T00:00:00", STATION=other, MW1="07,1")]),
+        )
+    bad = "71234099999"  # ISD's missing longitude: this station-year cannot be built
+    obs.put(
+        store,
+        f"2024/{bad}.csv",
+        make_isd_csv([isd_row("2024-01-01T00:00:00", STATION=bad, LONGITUDE="+999.999")]),
+    )
+    ids = [STATION, other, bad]
+    ctx = start_run(settings, "test")
+    run_ingest(ctx, ids, [2023, 2024], store=store)
+
+    serial = run_process(ctx, ids, [2023, 2024])
+    frames = {p: pl.read_parquet(p) for p in serial.paths}
+    parallel = run_process(ctx, ids, [2023, 2024], force=True, workers=2)
+
+    assert (parallel.built, parallel.failed, parallel.missing_bronze) == (4, 1, 1)
+    assert (serial.built, serial.failed, serial.missing_bronze) == (4, 1, 1)
+    assert parallel.paths == serial.paths
+    assert parallel.failures[0].startswith(f"{bad}/2024")
+    for p, df in frames.items():
+        assert pl.read_parquet(p).equals(df)
+    # unchanged inputs: a parallel re-run skips everything
+    assert run_process(ctx, ids, [2023, 2024], workers=2).skipped == 4

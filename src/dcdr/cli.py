@@ -60,9 +60,7 @@ def main(
 ) -> None:
     """DCDR pipeline."""
     # Runs before every command: send log messages (INFO and above) to the console with a time.
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format=pipeline.LOG_FORMAT)
 
 
 def _station_ids(settings: Settings, stations: Path | None) -> list[str]:
@@ -113,6 +111,9 @@ def process(
     years: str = YearsOpt,
     stations: Path | None = StationsOpt,
     force: bool = typer.Option(False, "--force", help="Rebuild even if current."),
+    workers: int = typer.Option(
+        1, "--workers", min=1, help="Stations built at a time, each in its own process."
+    ),
     config: Path = ConfigOpt,
     profile: Path | None = ProfileOpt,
 ) -> None:
@@ -120,7 +121,9 @@ def process(
 
     def body(ctx: pipeline.RunContext) -> dict[str, Any]:
         ids = _station_ids(ctx.settings, stations)
-        s = pipeline.run_process(ctx, ids, pipeline.parse_years(years), force=force)
+        s = pipeline.run_process(
+            ctx, ids, pipeline.parse_years(years), force=force, workers=workers
+        )
         return {
             "built": s.built,
             "skipped": s.skipped,

@@ -43,21 +43,25 @@ from dcdr.process.qc import apply_qc
 def guard_counts(raw: pl.DataFrame, settings: Settings) -> tuple[int, int]:
     """(evidence, not_obs) from bronze rows of one station, using the same decoding and QC as silver.
 
-    Only rows whose raw message is SYNOP text are decoded, so years without iX cost almost nothing.
+    Only rows whose raw message is SYNOP text are decoded, and only rows that can be evidence
+    (visibility reported, iX 2/3/5/6) are classified: parse, QC and classification work row by
+    row, so this gives the same counts as classifying every row, at a fraction of the cost (a
+    year without candidates skips classification entirely).
     """
     if "REM" not in raw.columns:
         return 0, 0
     syn = raw.filter(pl.col("REM").str.starts_with("SYN"))
     if syn.height == 0:
         return 0, 0
-    df = apply_qc(parse_reports(syn), settings.qc, settings.parse)
-    df = classify_reports(df, settings.classify, settings.qc)  # no guard: explicit statuses only
-    ev = df.filter(
+    df = apply_qc(parse_reports(syn), settings.qc, settings.parse).filter(
         pl.col("report_type").is_in(settings.classify.infer_nil_report_types),
-        pl.col("pw_status") != "reported",
         pl.col("use_vis").fill_null(False),
         pl.col("syn_ix").is_in(["2", "3", "5", "6"]),
-    )
+    )  # only rows that can be evidence are classified (classify works row by row)
+    if df.height == 0:  # most years before iX: skip classify, whose set-up alone costs ~0.1 s
+        return 0, 0
+    df = classify_reports(df, settings.classify, settings.qc)  # no guard: explicit statuses only
+    ev = df.filter(pl.col("pw_status") != "reported")
     return ev.height, ev.filter(pl.col("syn_ix").is_in(["3", "6"])).height
 
 
@@ -76,15 +80,16 @@ def metar_guard_counts(raw: pl.DataFrame, settings: Settings) -> tuple[int, int]
     if met.height == 0:
         return 0, 0
     cfg = settings.classify
-    df = apply_qc(parse_reports(met), settings.qc, settings.parse)
-    df = classify_reports(df, cfg, settings.qc)  # no guards: the text rules alone
-    ev = df.filter(
+    df = apply_qc(parse_reports(met), settings.qc, settings.parse).filter(
         pl.col("report_type").is_in(cfg.metar_report_types),
         pl.col("metar_text") == "full",
-        pl.col("pw_status") != "reported",
         pl.col("use_vis").fill_null(False),
         pl.col("vis_raw") > cfg.metar_nil_min_vis_m,
-    )
+    )  # only rows that can be evidence are classified
+    if df.height == 0:
+        return 0, 0
+    df = classify_reports(df, cfg, settings.qc)  # no guards: the text rules alone
+    ev = df.filter(pl.col("pw_status") != "reported")
     return ev.height, ev.filter(~pl.col("pw_status").is_in(["nil_metar", "nil_significant"])).height
 
 

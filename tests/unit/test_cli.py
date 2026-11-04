@@ -18,3 +18,10 @@ def test_stage_commands_are_named_by_action() -> None:
     for command in ("ingest", "process", "aggregate", "run", "status"):
         assert command in out
     assert "build" not in out
+
+
+def test_process_rejects_zero_workers() -> None:
+    """`--workers` sets how many stations are built at a time; at least one."""
+    result = CliRunner().invoke(app, ["process", "--years", "2024", "--workers", "0"])
+    assert result.exit_code != 0
+    assert "--workers" in result.output

@@ -6,7 +6,7 @@ how they came about.
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-11-03 (method version 2.0.0).
+> Last updated: 2026-11-04 (method version 2.0.0).
 
 ---
 
@@ -96,7 +96,7 @@ environment). Every pipeline command records a run (section 7.6).
 | Command | What it does | Main options |
 |---|---|---|
 | `dcdr ingest` | List NOAA's S3 files for the years; download new or changed station-years into bronze; saves the download record and logs progress every 500 files, so a stopped run resumes where it left off; re-downloads recorded files missing from disk | `--years`, `--stations` |
-| `dcdr process` | Build silver for station-years that are missing or out of date | `--years`, `--stations`, `--force` |
+| `dcdr process` | Build silver for station-years that are missing or out of date; logs progress every 500 stations | `--years`, `--stations`, `--force`, `--workers` |
 | `dcdr aggregate` | Build a new gold version from silver, check it, activate it; prints the gold folder, the stations per position status and those left out as not dusty (e.g. `{'agree': 96, 'override': 1, 'not_dusty': 3}`); the stations needing a decision are in its `stations_review.csv` | `--years`, `--stations` |
 | `dcdr run` | `ingest`, then `process`, then `aggregate` | as above |
 | `dcdr status` | Download status counts and the five latest runs (read-only) | |
@@ -108,6 +108,8 @@ Common options:
   (currently `config/stations/pilot_100.csv`).
 - `--config FILE`: replace the built-in `default.yaml`. `--profile FILE`: override some keys.
 - `--force` (process, run): rebuild silver even if it is up to date.
+- `--workers N` (process): build N stations at a time, each in its own process (default 1).
+  Results are identical; see "Rebuild silver for the whole ISD" in section 8.
 
 Examples:
 
@@ -124,6 +126,14 @@ which on 1 January reaches the previous year.
 look-back), when on disk. Each report is stored in the file of its own UTC year (method 2.0.0).
 The previous year's fingerprint (`prev_source_md5`) is stored, so a change there rebuilds the
 year; the next year is not read.
+
+Per station, `process` first computes the two station guards (V3, METAR) from all the station's
+bronze years, then builds each requested year. The guards classify only the reports that can be
+evidence (visibility reported and iX 2/3/5/6, or full-text METARs with visibility > 5 km):
+parsing, QC and classification work report by report, so the counts are the same as classifying
+everything. With `--workers N`, stations go to N worker processes (`ProcessPoolExecutor`, spawn);
+each worker runs Polars on one thread (`POLARS_MAX_THREADS=1`), and its log lines use the same
+format as the main process.
 
 ## 5. Configuration
 
@@ -412,6 +422,19 @@ Notes: `listed`/`selected`/`skipped` in a run summary include the previous year'
 downloaded by the previous step, so skipped). Files written by a run that was stopped before its
 next checkpoint are not in the manifest yet and are downloaded again (overwritten). Adapt the
 paths (`/Users/xinxi/Projects/DCDR`, `/Volumes/CrucialX8/dcdr`) to your machine.
+
+**Rebuild silver for the whole ISD** (about 711,000 station-years; with `--workers 8` a few
+hours, serially about two days). Run it yourself in a terminal. `caffeinate -ims` keeps the Mac
+awake while it runs; `tee` keeps a copy of the log.
+```bash
+cd /Users/xinxi/Projects/DCDR && export DCDR_DATA=/Volumes/CrucialX8/dcdr
+caffeinate -ims uv run dcdr process --years 1901-2025 --stations config/stations/all_isd.csv --workers 8 2>&1 | tee -a ~/dcdr_process_all_isd.log
+grep "silver: " ~/dcdr_process_all_isd.log | tail -1     # progress (every 500 stations)
+```
+Ctrl-C stops it; files already written stay, and the next run skips them (it still recomputes
+each station's guards, a few minutes per thousand stations). More workers than cores does not
+help; each worker needs about 0.2 GB of memory. Lines `no valid LONGITUDE in this station-year`
+are station-years with no position in ISD (skipped).
 
 ## 9. Design decisions (engineering)
 
