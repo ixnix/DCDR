@@ -276,8 +276,26 @@ def parse_reports(raw: pl.DataFrame) -> pl.DataFrame:
     return d.select(exprs)
 
 
-class MissingLongitudeError(ValueError):
-    """No usable longitude in a station-year, so local time cannot be computed."""
+class NoPositionError(ValueError):
+    """A station-year without a usable position is not built (user decision 2026-11-04)."""
+
+
+def _valid_position(lat: pl.Expr, lon: pl.Expr) -> pl.Expr:
+    """True where a report has a usable position: both coordinates in range and not 0/0.
+
+    Out of range is ISD's missing code (+99999 / +999999 read as 99.999 / 999.999). 0/0 is what
+    ISD writes for stations it has no position for (e.g. the BOGUS stations); a real station at
+    0/0 does not exist (Gulf of Guinea). A single zero is real (the Greenwich meridian, the
+    equator) and is kept.
+    """
+    return lat.is_between(-90, 90) & lon.is_between(-180, 180) & ~((lat == 0) & (lon == 0))
+
+
+def has_position(raw: pl.DataFrame) -> bool:
+    """Whether any bronze row of a station-year has a usable position (`_valid_position`)."""
+    lat = _raw(raw, "LATITUDE").cast(pl.Float64, strict=False)
+    lon = _raw(raw, "LONGITUDE").cast(pl.Float64, strict=False)
+    return bool(raw.select(_valid_position(lat, lon).fill_null(False).any()).item())
 
 
 def lmst_shift(lon: pl.Expr) -> pl.Expr:
@@ -290,8 +308,8 @@ def lmst_shift(lon: pl.Expr) -> pl.Expr:
 def add_time_columns(df: pl.DataFrame) -> pl.DataFrame:
     """Local mean solar time = UTC + lon/15 h, using each report's own longitude.
 
-    Out-of-range coordinates (ISD missing code +999999 reads as 999.999) become null; a missing
-    longitude falls back to the station-year median. Daily-summary (SOD) rows are stamped 23:59
+    Out-of-range coordinates (ISD missing code +999999 reads as 999.999) and 0/0 become null; a
+    missing longitude falls back to the station-year median. Daily-summary (SOD) rows are stamped 23:59
     local STANDARD time, which can land just after LMST midnight, so their summarised day is
     date(time_lmst - 12 h).
 
@@ -299,15 +317,14 @@ def add_time_columns(df: pl.DataFrame) -> pl.DataFrame:
     the local day. Solar time depends only on longitude, so it is the same rule everywhere,
     unlike time zones and daylight saving.
     """
+    ok = _valid_position(pl.col("lat"), pl.col("lon")).fill_null(False)
     df = df.with_columns(
-        lat=pl.when(pl.col("lat").is_between(-90, 90)).then(pl.col("lat")),  # else null
-        lon=pl.when(pl.col("lon").is_between(-180, 180)).then(pl.col("lon")),
-    )
+        lat=pl.when(ok | ((pl.col("lat") != 0) & pl.col("lat").is_between(-90, 90))).then("lat"),
+        lon=pl.when(ok | ((pl.col("lon") != 0) & pl.col("lon").is_between(-180, 180))).then("lon"),
+    )  # out of range or 0/0 -> null; so is a lone 0 whose partner is missing (ISD: 0.0, 999.999)
     df = df.with_columns(lon_used=pl.col("lon").fill_null(pl.col("lon").median()))
     if df.height and df["lon_used"].null_count():
-        raise MissingLongitudeError(
-            "no valid LONGITUDE in this station-year (ISD missing 999.999?)"
-        )
+        raise NoPositionError("no valid position in this station-year (ISD missing or 0/0)")
     df = df.with_columns(time_lmst=pl.col("time_utc") + lmst_shift(pl.col("lon_used")))
     lmst = pl.col("time_lmst")
     return df.with_columns(

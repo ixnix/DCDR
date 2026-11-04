@@ -128,6 +128,8 @@ def process(
             "built": s.built,
             "skipped": s.skipped,
             "missing_bronze": s.missing_bronze,
+            "no_position": s.no_position,
+            "removed": s.removed,
             "failed": s.failed,
             "failures": s.failures,
         }

@@ -85,6 +85,21 @@ def test_lmst_uses_each_reports_longitude() -> None:
     assert second["lmst_date"] == date(2024, 6, 1) and second["lmst_hour"] == pytest.approx(1.0)
 
 
+def test_zero_zero_position_is_missing() -> None:
+    """ISD writes 0/0 when it has no position (e.g. BOGUS stations): user decision 2026-11-04."""
+    raw = bronze_frame(
+        [
+            isd_row("2024-01-01T01:00:00", LATITUDE="0.0", LONGITUDE="0.0"),
+            isd_row("2024-01-01T04:00:00", LATITUDE="29.2", LONGITUDE="-115.0"),
+            isd_row("2024-01-01T07:00:00", LATITUDE="29.2", LONGITUDE="0.0"),  # Greenwich: real
+        ]
+    )
+    df = add_time_columns(parse_reports(raw))
+    assert df["lat"].to_list() == [None, 29.2, 29.2]
+    assert df["lon"].to_list() == [None, -115.0, 0.0]
+    assert df["lon_used"].to_list() == [-57.5, -115.0, 0.0]  # missing: the station-year median
+
+
 def test_daily_and_past_weather_fields() -> None:
     # Layouts per ISD format document and real SOD rows ("AU,16,RA  ,5"; "08,6,24,6").
     r = _one(REPORT_TYPE="SOD  ", AT1="AU,07,DU  ,5", AX1="07,5,24,5", AZ1="2,1,06,1")

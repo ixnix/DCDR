@@ -28,7 +28,7 @@ from dcdr.config import Settings
 from dcdr.process import METHOD_VERSION
 from dcdr.process.classify import apply_haze_and_rh, classify_reports
 from dcdr.process.derived import synop_is_derived
-from dcdr.process.parse import add_time_columns, parse_reports
+from dcdr.process.parse import NoPositionError, add_time_columns, has_position, parse_reports
 from dcdr.process.qc import apply_qc
 from dcdr.process.sources import add_source_group
 from dcdr.schemas import validate_silver
@@ -162,7 +162,13 @@ def build_station_year(
     metar_guard      the station's METAR guard: True allows the inference for METARs without
                      full text (process/guard.py)
     The `*` makes the guards keyword-only, so call sites must spell out their names.
+
+    Raises NoPositionError when no report of `year` has a usable position (latitude and
+    longitude, not 0/0; user decision 2026-11-04): such a station-year is not built. The previous
+    year's rows cannot supply one. A header-only file (no reports) still gives an empty silver file.
     """
+    if current.height and not has_position(current):
+        raise NoPositionError("no valid position in this station-year (ISD missing or 0/0)")
     frames = [current] if previous is None else [previous_year_tail(previous, year), current]
     # "diagonal_relaxed": the two years may have different column sets (ISD adds fields over
     # time); missing columns are filled with nulls instead of raising an error.

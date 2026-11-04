@@ -5,7 +5,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 *ruling*, a choice made during implementation and open to review). The dated log of all work is
 [worklog.md](worklog.md); notebooks are kept locally (not in the public repository).
 
-> Last updated: 2026-11-03 (current method version 2.0.0). Commit hashes refer to this repository.
+> Last updated: 2026-11-04 (current method version 2.1.0). Commit hashes refer to this repository.
 
 ## Versions at a glance
 
@@ -30,7 +30,8 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | (no change) | 2026-11-02 | statistics: lower bound `dusty_freq_obs` and `validity_ratio` beside `dusty_freq`; no flag | user | 632c899 |
 | 2.0.0 | 2026-11-03 | all-reports 3-hour bins replace slot sampling; source groups SYNOP / METAR / other, each judged alone | user + rulings | 9313d86, 6ef64dc, 0239af7, a910c1d, b04ace6, b747481 |
 | (no change) | 2026-11-03 | station positions: four-way rule, 949999 southern-hemisphere gate, overrides; gold uses the trusted longitude | user + rulings | c82178f, 756b678, a1af02d, 7dde73e, d6a1a89 |
-| (no change) | 2026-11-03 | dusty-station threshold: >= 10 dusty days in >= 2 years to enter gold | user + rulings | (this commit) |
+| (no change) | 2026-11-03 | dusty-station threshold: >= 10 dusty days in >= 2 years to enter gold | user + rulings | 51e44dd |
+| 2.1.0 | 2026-11-04 | no station-year without a position (missing, or 0/0); 0/0 reports have no position | user + rulings | (this commit) |
 
 ---
 
@@ -463,6 +464,24 @@ census showed that stations with fewer than 10 dust reports hold 0.24 % of all d
 *Decision:* user, 2026-11-03 (threshold; pilot control stations not kept in the full build).
 *Rulings:* dusty days counted as in `daily` (bins, local day, any coverage); the review list
 shows only dusty stations; thresholds in config (0/0 keeps all).
+
+## 2.1.0 (2026-11-04): no position, no silver
+
+*What:* a report at 0/0 has no position (like ISD's missing codes); a station-year in which no
+report has a usable position is not built, an older silver file for it is deleted, and it gives
+no evidence to the station guards (rules.md 4.2). *Why:* after the whole-ISD 2.0.0 build, 2,146
+station-years (584 stations) failed for a missing longitude, and the check of the 272 stations
+that failed in only some years found that 167 of them had their "good" years at 0/0: accepted
+as a real position, so those years were built with local time = UTC (rules.md 4.2 already
+treated 0/0 in isd-history as an error, not 0/0 in the files). Borrowing a position from a
+station's other years was rejected: no failed year had a latitude, and only a name could link
+the years (not verifiable). *Replaced:* only the longitude was checked, and 0/0 counted as
+valid. *Decision:* user, 2026-11-04 ("do not need any station-years with missing geolocations,
+or lat/lon being 0"; remove them from silver). *Rulings:* "0" means both coordinates (a single 0
+is real: Tema, Pontianak, the South Pole); a single 0 whose partner is missing is missing; a
+station-year needs one report with both coordinates; no-position years are counted
+`no_position`, not `failed`; header-only files still give empty silver files; the guards skip
+no-position years. *Cost:* a full silver rebuild (every file carries the method version).
 
 ## Resolved questions
 

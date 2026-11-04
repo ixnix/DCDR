@@ -129,12 +129,43 @@ def test_longitude_sentinel_is_treated_as_missing(settings: Settings) -> None:
     assert out["lmst_date"].to_list() == [date(2024, 3, 1), date(2024, 3, 1)]
 
 
-def test_no_valid_longitude_fails_clearly(settings: Settings) -> None:
-    from dcdr.process.parse import MissingLongitudeError
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"LONGITUDE": "999.999"},  # ISD missing longitude
+        {"LATITUDE": "99.999"},  # ISD missing latitude
+        {"LATITUDE": "0.0", "LONGITUDE": "0.0"},  # ISD's 0/0 for "no position"
+        {"LATITUDE": "", "LONGITUDE": ""},
+    ],
+)
+def test_station_year_without_a_position_is_not_built(
+    settings: Settings, fields: dict[str, str]
+) -> None:
+    """User decision 2026-11-04: no station-year without a position (lat and lon, not 0/0)."""
+    from dcdr.process.parse import NoPositionError
 
-    rows = [isd_row("2024-03-01T00:00:00", LONGITUDE="999.999")]
-    with pytest.raises(MissingLongitudeError):
+    rows = [isd_row("2024-03-01T00:00:00", **fields), isd_row("2024-03-01T03:00:00", **fields)]
+    with pytest.raises(NoPositionError):
         build_station_year(bronze_frame(rows), None, 2024, settings)
+
+
+def test_previous_year_position_does_not_rescue_a_year_without_one(settings: Settings) -> None:
+    from dcdr.process.parse import NoPositionError
+
+    prev = [isd_row("2023-12-31T21:00:00")]  # a valid position on 31 December
+    cur = [isd_row("2024-01-01T00:00:00", LATITUDE="0.0", LONGITUDE="0.0")]
+    with pytest.raises(NoPositionError):
+        build_station_year(bronze_frame(cur), bronze_frame(prev), 2024, settings)
+
+
+def test_a_year_with_some_zero_zero_reports_is_built(settings: Settings) -> None:
+    rows = [
+        isd_row("2024-03-01T00:00:00", LATITUDE="0.0", LONGITUDE="0.0"),
+        isd_row("2024-03-01T03:00:00", LATITUDE="29.2", LONGITUDE="0.0"),
+    ]
+    out = build_station_year(bronze_frame(rows), None, 2024, settings)
+    assert out["lat"].to_list() == [None, 29.2]
+    assert out["lon_used"].to_list() == [0.0, 0.0]
 
 
 def test_inferred_nil_needs_the_station_guard(settings: Settings, tmp_path: Path) -> None:

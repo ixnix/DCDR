@@ -30,8 +30,8 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - [ ] Later gold products: climatology, diurnal cycle, trends, code-06 diagnostic.
 - [ ] Publish documentation (e.g. MkDocs) when stable.
 - [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
-- [ ] Log station-years without any valid longitude as "skipped: no position" instead of
-      `ERROR`/failed, so real failures stand out in whole-ISD runs.
+- [ ] Rebuild silver for the whole ISD under method 2.1.0 (every file is stale), then the
+      whole-ISD gold and the `stations_review.csv` review.
 
 ---
 
@@ -63,6 +63,28 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   station-years whose every report has LONGITUDE 999.999 (ISD missing) and no isd-history
   position (checked 49 stations: none has one; 34 are ISD placeholders named "BOGUS ...").
   They are skipped and counted as failed. Open: log them as skipped, not as errors.
+
+- **Whole-ISD silver under 2.0.0 finished** (run 20261104T112720Z-50021c, 06:27-17:25,
+  `--workers 6`): built 415,711, skipped 293,554 (current from the run of 2026-11-03), failed
+  2,146; 709,265 files on disk, no `.tmp` left; a sample of 374 files all 2.0.0 with config
+  6e37b492548f4874. The speed varied with the data, not the machine: ~1,100-1,200 station-years
+  a minute on small station-years, ~270 on US airports (~97 MB of bronze a minute; workers often
+  waiting on the exFAT USB disk).
+- **Dust-day list for a collaborator** (El Paso 72270, Phoenix 72278, Fresno 72389, 2015-2020):
+  gold built in the scratchpad from the three stations' silver 2014-2021 (thresholds 0, so Fresno
+  is kept: 4 dusty days, below the dusty-station threshold); El Paso 90 dust days, Phoenix 43,
+  Fresno 4; all 2,192 days valid at all three. El Paso and Phoenix identical to the pilot gold
+  except floating-point sums (~1e-13). Not checked: Phoenix 2019-2020 (1 and 2 dust days).
+- **Failures of the whole-ISD run**: all 2,146 "no valid LONGITUDE", in 584 stations and 37
+  years (1944-2004); all 584 are in isd-history without a position, 305 named "BOGUS ...". 312
+  stations failed in every year, 272 in some; of those, 167 had their built years at 0/0.
+- **User decision: no position, no silver** (method 2.1.0; rules_history.md): station-years with
+  a missing position or at 0/0 are not built and removed from silver; 0/0 reports have no
+  position. Census of the 2.0.0 silver: 4,406 station-years (0.6 %) in 755 stations would be
+  removed (rules.md 4.2). *Rulings:* "0" means both coordinates (single zeros are real: Tema,
+  Pontianak, the South Pole); counted `no_position`, not `failed` (closes the open item on
+  logging); the guards skip such years; no position is borrowed from other years (not
+  verifiable). Needs a full silver rebuild (open item).
 
 ## 2026-11-03
 

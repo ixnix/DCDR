@@ -106,6 +106,20 @@ def test_station_guards_returns_both_guards(settings: Settings, tmp_path: Path) 
     assert station_guards([], settings) == (None, None)
 
 
+def test_station_guards_ignore_years_without_a_position(settings: Settings, tmp_path: Path) -> None:
+    """A station-year that is not built (no position, user decision 2026-11-04) gives no evidence."""
+    nowhere = {"LATITUDE": "0.0", "LONGITUDE": "0.0"}
+    good = bronze_frame(_rows(30, REM=IX2))
+    bad = bronze_frame(_rows(30, "2023-01-01T00:00:00", REM=IX2, **nowhere))
+    paths = []
+    for name, df in (("good", good), ("bad", bad)):
+        p = tmp_path / f"{name}.parquet"
+        df.write_parquet(p)
+        paths.append(p)
+    assert station_guards(paths, settings) == (None, None)  # 30 reports, not 60: too few
+    assert station_guard(paths, settings) is None
+
+
 def test_guard_counts_match_classifying_every_row(settings: Settings) -> None:
     """The guards classify only rows that can be evidence (speed-up for whole-ISD runs). Parse, QC
     and classify work row by row, so the counts must equal classifying every row and filtering."""

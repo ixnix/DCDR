@@ -24,9 +24,18 @@ KUWAIT = "40582099999"
 
 
 def _station(
-    settings: Settings, station: str, lat: str, lon: str, n_dust: int = 0, name: str = ""
+    settings: Settings,
+    station: str,
+    lat: str,
+    lon: str,
+    n_dust: int = 0,
+    name: str = "",
+    no_lat: bool = False,
 ) -> Path:
-    """One day of 3-hourly SYNOPs at the given in-file position; the first `n_dust` have MW 07."""
+    """One day of 3-hourly SYNOPs at the given in-file position; the first `n_dust` have MW 07.
+
+    `no_lat` writes the silver file without latitudes. Since 2.1.0 silver never builds such a year
+    (no position, not built), but gold still checks for it (older or hand-made files)."""
     rows = [
         isd_row(
             f"2024-01-01T{h:02d}:00:00",
@@ -38,6 +47,8 @@ def _station(
         for i, h in enumerate(range(0, 24, 3))
     ]
     df = build_station_year(bronze_frame(rows), None, 2024, settings)
+    if no_lat:
+        df = df.with_columns(lat=pl.lit(None, dtype=pl.Float64))
     path = settings.data_root / "silver" / "year=2024" / f"{name or station}.parquet"
     write_silver(
         df,
@@ -138,7 +149,9 @@ def test_unlisted_or_zero_position_is_unverified(settings: Settings) -> None:
 
 def test_station_without_in_file_latitude_is_unverified(settings: Settings) -> None:
     _history(settings, (KUWAIT, "+29.227", "+047.969"))
-    st = _stations(_build(settings, [_station(settings, KUWAIT, "99.999", "47.969")]))[KUWAIT]
+    st = _stations(_build(settings, [_station(settings, KUWAIT, "29.2", "47.969", no_lat=True)]))[
+        KUWAIT
+    ]
     assert (st["status"], st["max_km"]) == ("unverified", None)
     assert st["trusted_lon"] == pytest.approx(47.969)
 
@@ -284,7 +297,9 @@ def test_949999_without_in_file_latitude_is_a_conflict(settings: Settings) -> No
     """Review finding: with no in-file latitude the distance cannot be checked, and the in-file
     longitude of a 949999 station may be a US one; not verifiable -> conflict, not unverified."""
     _history(settings, (ADELAIDE, "-34.930", "+138.580"))
-    st = _stations(_build(settings, [_station(settings, ADELAIDE, "99.999", "-165.57")]))[ADELAIDE]
+    st = _stations(
+        _build(settings, [_station(settings, ADELAIDE, "61.8", "-165.57", no_lat=True)])
+    )[ADELAIDE]
     assert (st["status"], st["in_gold"]) == ("conflict", False)
 
 

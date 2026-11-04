@@ -147,8 +147,8 @@ def test_inferred_nil_uses_the_stations_ix_years_and_follows_the_guard(settings:
 
 
 def test_parallel_process_matches_serial(settings: Settings) -> None:
-    """`workers > 1` builds stations in separate processes: same files, same counts, and a failing
-    station-year (no valid longitude) is still counted and skipped."""
+    """`workers > 1` builds stations in separate processes: same files, same counts, and a
+    station-year without a position is still counted and skipped."""
     store = MemoryStore()
     _jan1(store)
     _put(store, 2023, [isd_row("2023-12-31T22:00:00", **LON0, MW1="06,1")])
@@ -173,11 +173,36 @@ def test_parallel_process_matches_serial(settings: Settings) -> None:
     frames = {p: pl.read_parquet(p) for p in serial.paths}
     parallel = run_process(ctx, ids, [2023, 2024], force=True, workers=2)
 
-    assert (parallel.built, parallel.failed, parallel.missing_bronze) == (4, 1, 1)
-    assert (serial.built, serial.failed, serial.missing_bronze) == (4, 1, 1)
+    counts = (4, 0, 1, 1)  # built, failed, no_position, missing_bronze
+    assert (
+        parallel.built,
+        parallel.failed,
+        parallel.no_position,
+        parallel.missing_bronze,
+    ) == counts
+    assert (serial.built, serial.failed, serial.no_position, serial.missing_bronze) == counts
     assert parallel.paths == serial.paths
-    assert parallel.failures[0].startswith(f"{bad}/2024")
+    assert parallel.failures == []
     for p, df in frames.items():
         assert pl.read_parquet(p).equals(df)
     # unchanged inputs: a parallel re-run skips everything
     assert run_process(ctx, ids, [2023, 2024], workers=2).skipped == 4
+
+
+def test_station_year_without_a_position_loses_its_old_silver_file(settings: Settings) -> None:
+    """User decision 2026-11-04: no station-year without a position in silver. A file left by an
+    earlier method (e.g. a 0/0 year built under 2.0.0) is removed, so gold cannot pick it up."""
+    store = MemoryStore()
+    nowhere = {"LATITUDE": "0.0", "LONGITUDE": "0.0"}
+    _put(store, 2024, [isd_row("2024-03-01T00:00:00", **nowhere, MW1="07,1")])
+    ctx = start_run(settings, "test")
+    run_ingest(ctx, [STATION], [2024], store=store)
+    old = silver_path(ctx.root, 2024, STATION)
+    old.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame({"x": [1]}).write_parquet(old)  # stands in for the 2.0.0 file
+
+    s = run_process(ctx, [STATION], [2024])
+
+    assert (s.built, s.failed, s.no_position, s.removed) == (0, 0, 1, 1)
+    assert not old.exists() and s.paths == []
+    assert run_process(ctx, [STATION], [2024]).removed == 0  # nothing left to remove

@@ -15,7 +15,8 @@ detects that habit from the station's own reports that DO carry iX (in ISD: abou
                 none  if there is too little evidence (no inference at that station)
 
 It uses all bronze years of the station that are on disk, so older years without iX are judged by
-the station's recent practice (an assumption, see docs/rules.md section 5.1).
+the station's recent practice (an assumption, see docs/rules.md section 5.1). Years without a
+usable position are left out: they are not built, so they are not evidence either (2.1.0).
 Validated in notebooks/02_validate_inferred_nil.ipynb (precision 0.9998, recall 0.84).
 
 The METAR guard (user decision 2026-10-28; notebooks/06) does the same for METARs without full
@@ -36,7 +37,7 @@ import polars as pl
 
 from dcdr.config import ClassifyCfg, Settings
 from dcdr.process.classify import classify_reports
-from dcdr.process.parse import parse_reports
+from dcdr.process.parse import has_position, parse_reports
 from dcdr.process.qc import apply_qc
 
 
@@ -105,6 +106,8 @@ def station_guards(bronze_paths: list[Path], settings: Settings) -> tuple[bool |
     syn_e = syn_n = met_e = met_n = 0
     for path in bronze_paths:
         raw = pl.read_parquet(path)
+        if not has_position(raw):  # a year that is not built gives no evidence either
+            continue
         e, n = guard_counts(raw, settings)
         syn_e, syn_n = syn_e + e, syn_n + n
         e, n = metar_guard_counts(raw, settings)
@@ -116,7 +119,10 @@ def station_guard(bronze_paths: list[Path], settings: Settings) -> bool | None:
     """The V3 guard for one station from all its bronze files (any years; files may lack REM)."""
     evidence = not_obs = 0
     for path in bronze_paths:
-        e, n = guard_counts(pl.read_parquet(path), settings)
+        raw = pl.read_parquet(path)
+        if not has_position(raw):  # as in station_guards
+            continue
+        e, n = guard_counts(raw, settings)
         evidence += e
         not_obs += n
     return nil_guard(evidence, not_obs, settings.classify)

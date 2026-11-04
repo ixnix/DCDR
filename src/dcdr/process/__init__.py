@@ -15,7 +15,8 @@ Bumping it makes the next run rebuild every silver file, because each file recor
 that built it (see pipeline._silver_is_current).
 """
 
-METHOD_VERSION = "2.0.0"  # 2.0.0: all-reports 3-hour bins, source groups (no slot sampling);
+METHOD_VERSION = "2.1.0"  # 2.1.0: no station-year without a position (missing or 0/0);
+# 2.0.0: all-reports 3-hour bins, source groups (no slot sampling);
 # 1.10.1: slot grid per local month; 1.10.0: off-grid schedules;
 # 1.9.0: RH screen on haze classes, remarks dust;
 # 1.8.0: METAR fragments (CAVOK), METAR inference, derived SYNOPs;

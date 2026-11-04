@@ -43,6 +43,7 @@ from dcdr.ingest import IngestSummary, bronze_path, ingest, make_store
 from dcdr.process import METHOD_VERSION
 from dcdr.process.build import build_station_year, write_silver
 from dcdr.process.guard import station_guards
+from dcdr.process.parse import NoPositionError
 from dcdr.state import (
     Manifest,
     append_run_record,
@@ -163,6 +164,8 @@ class ProcessSummary:
     skipped: int = 0  # already up to date
     missing_bronze: int = 0  # no bronze for that station-year (station did not report)
     failed: int = 0  # build failed; any previous silver file is kept
+    no_position: int = 0  # not built: no usable position (user decision 2026-11-04)
+    removed: int = 0  # of those, silver files from an earlier build that were deleted
     failures: list[str] = field(default_factory=list)
     paths: list[Path] = field(default_factory=list)  # every current silver file (built + skipped)
 
@@ -249,15 +252,18 @@ def _collect(summary: ProcessSummary, parts: Iterator[ProcessSummary], total: in
         summary.skipped += part.skipped
         summary.missing_bronze += part.missing_bronze
         summary.failed += part.failed
+        summary.no_position += part.no_position
+        summary.removed += part.removed
         summary.failures += part.failures
         summary.paths += part.paths
         if i % PROGRESS_EVERY == 0 or i == total:
             log.info(
-                "silver: %d/%d stations (built %d, skipped %d, failed %d)",
+                "silver: %d/%d stations (built %d, skipped %d, no position %d, failed %d)",
                 i,
                 total,
                 summary.built,
                 summary.skipped,
+                summary.no_position,
                 summary.failed,
             )
 
@@ -324,7 +330,7 @@ class _StationJob:
                 summary.skipped += 1
                 summary.paths.append(spath)
                 continue
-            try:  # one bad station-year never aborts the stage; the previous silver file stays
+            try:  # one bad station-year never aborts the stage; its previous silver file stays
                 previous = pl.read_parquet(prev_path) if prev_path.exists() else None
                 df = build_station_year(
                     pl.read_parquet(bpath),
@@ -344,6 +350,15 @@ class _StationJob:
                     nil_guard=guard,
                     metar_guard=metar_guard,
                 )
+            except NoPositionError:
+                # Not built, and an older file (e.g. a 0/0 year built under 2.0.0) must go too, or
+                # gold would still read it.
+                summary.no_position += 1
+                if spath.exists():
+                    spath.unlink()
+                    summary.removed += 1
+                    log.warning("silver %s %s: no position, removed the old file", station, year)
+                continue
             except Exception as exc:
                 log.error("silver %s %s failed: %s", station, year, exc)
                 summary.failed += 1

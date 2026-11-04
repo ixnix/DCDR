@@ -6,8 +6,8 @@ and 3-hourly records and monthly, yearly and decadal statistics, and briefly why
 [rules_history.md](rules_history.md) records how each rule came about, with the evidence, the
 superseded rules and the decisions; [worklog.md](worklog.md) is the dated log.
 
-> Describes the method **as implemented** (method version **2.0.0**). Planned steps are marked
-> *planned*. Last updated: 2026-11-03.
+> Describes the method **as implemented** (method version **2.1.0**). Planned steps are marked
+> *planned*. Last updated: 2026-11-04.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`,
 local) and the WMO *Manual on Codes* (WMO-No. 306) as published in the WMO Codes Registry
@@ -96,7 +96,22 @@ gets a content fingerprint `row_key` (SHA-1) so results never depend on file row
 
 ### 4.2 Local mean solar time (LMST)
 `time_lmst = time_utc + longitude / 15 h` (4 min per degree), using each report's longitude
-(station-year median if missing; coordinates outside ±90/±180 are treated as missing).
+(station-year median if missing). A coordinate outside ±90/±180 (ISD's missing codes 99.999 and
+999.999) is missing; so are both coordinates of a report at **0/0**, and a single 0 whose partner
+is missing (ISD writes `0.0, 999.999`). A single 0 with a valid partner is real and kept (Tema,
+Ghana, lon 0; Pontianak, lat 0; the South Pole, -90/0).
+
+**No position, no silver** (method 2.1.0, user decision 2026-11-04: "do not need any station-years
+with missing geolocations, or lat/lon being 0"). A station-year in which no report has a usable
+position (latitude and longitude, not 0/0) is **not built**, and a silver file left by an earlier
+method is deleted, so gold cannot read it. The previous year's 31 December rows cannot supply a
+position. Such years give no evidence to the station guards (5.1, 5.2) either. A file with a
+header and no reports still gives an empty silver file. Whole-silver census of 2.0.0
+(2026-11-04): 4,406 of 709,264 station-years (0.6 %) in 755 stations, 1.2 million of 3.9 billion
+reports; 4,362 are 0/0 in every report, 44 have no latitude at all; 738 of the 739 all-0/0
+stations have no position in isd-history either (118 are ISD placeholders named "BOGUS ...");
+the exception is Xuzhou airport, 1974. Most are 1970-2009 (4,301). In 88 more station-years only
+some reports are 0/0: those reports now use the station-year median longitude instead of 0.
 
 *Why:* dust has a strong daily cycle (afternoon winds), so a "day" should be the local day.
 Solar time depends only on longitude: the same rule everywhere, unlike time zones and daylight
@@ -140,7 +155,7 @@ never used for verifying.
 | `moved` | largest distance 10 to < 50 km | in-file (probably a real move; flagged) | yes |
 | `conflict` | ≥ 50 km (`stations.conflict_km`); also any 949999 station whose isd-history position is not in the southern hemisphere, or that has no in-file latitude to check (its in-file longitude may be a US one) | none | **no**, until resolved |
 | `resolved_isd_history` | ≥ 50 km at a 949999 station with an isd-history latitude < 0 | isd-history | yes |
-| `unverified` | no isd-history position, not listed, or no in-file latitude (not 949999) | in-file | yes, marked |
+| `unverified` | no isd-history position, not listed, or no in-file latitude (not 949999; since 2.1.0 every built station-year has one, the check stays for older files) | in-file | yes, marked |
 | `override` | a row in `config/stations/position_overrides.csv` | `use`: the override's; `exclude`: none | `use`: yes; `exclude`: no |
 
 The 949999 rule is automatic because it was verified (the Adelaide check and the hemisphere test:

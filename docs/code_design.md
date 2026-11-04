@@ -6,7 +6,7 @@ how they came about.
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-11-04 (method version 2.0.0).
+> Last updated: 2026-11-04 (method version 2.1.0).
 
 ---
 
@@ -433,8 +433,10 @@ grep "silver: " ~/dcdr_process_all_isd.log | tail -1     # progress (every 500 s
 ```
 Ctrl-C stops it; files already written stay, and the next run skips them (it still recomputes
 each station's guards, a few minutes per thousand stations). More workers than cores does not
-help; each worker needs about 0.2 GB of memory. Lines `no valid LONGITUDE in this station-year`
-are station-years with no position in ISD (skipped).
+help; each worker needs about 0.2 GB of memory. Station-years without a position (rules.md
+4.2) are not built and are counted as `no_position` in the progress lines and the run summary,
+not as `failed`; a silver file from an earlier method for such a year is deleted (`removed`, with
+a warning line). `failed` is left for real errors.
 
 ## 9. Design decisions (engineering)
 
