@@ -1,5 +1,7 @@
 """Command-line interface (cli.py), exercised in-process with Typer's CliRunner."""
 
+import re
+
 from typer.testing import CliRunner
 
 from dcdr import __version__
@@ -24,4 +26,5 @@ def test_process_rejects_zero_workers() -> None:
     """`--workers` sets how many stations are built at a time; at least one."""
     result = CliRunner().invoke(app, ["process", "--years", "2024", "--workers", "0"])
     assert result.exit_code != 0
-    assert "--workers" in result.output
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)  # CI prints colour codes in the text
+    assert "--workers" in plain

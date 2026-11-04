@@ -56,6 +56,9 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
     sample's data), not by the cores. Memory about 0.2 GB per worker.
   - *Ruling:* recommend `--workers 8` (4 performance + 4 of the 6 efficiency cores of the M5;
     two cores left for the system).
+- **CI failed on 57ff180** (`test_process_rejects_zero_workers`): GitHub Actions prints Typer's
+  error message in colour, and the colour codes split `--workers`; the test now strips them
+  (reproduced locally with `FORCE_COLOR=1`).
 - **"no valid LONGITUDE" errors in the whole-ISD run are expected**: 1,206 by 05:44, from
   station-years whose every report has LONGITUDE 999.999 (ISD missing) and no isd-history
   position (checked 49 stations: none has one; 34 are ISD placeholders named "BOGUS ...").
