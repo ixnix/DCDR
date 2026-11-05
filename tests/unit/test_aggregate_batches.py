@@ -13,6 +13,7 @@ from pathlib import Path
 
 import duckdb
 import polars as pl
+import pyarrow.parquet as pq
 import pytest
 
 from dcdr import aggregate
@@ -175,14 +176,82 @@ def test_second_pass_reads_only_stations_in_gold(
     assert read == [STATIONS[0]]
 
 
-def test_a_station_in_gold_without_a_file_named_after_it_stops_gold(
+def _mixed_silver(settings: Settings, station: str, other: str) -> Path:
+    """A station-year whose file is named after `station` but whose 4th day of reports carries
+    another station ID, `other`, as 46 real ISD files do (a station renumbered mid-year)."""
+    rows = [
+        isd_row(
+            f"2024-01-0{d}T{h:02d}:00:00",
+            STATION=station if d < 4 else other,
+            LATITUDE="10.0",
+            LONGITUDE="0.0",
+            **({"MW1": "06,1"} if d == 1 else {}),
+        )
+        for d in (1, 2, 3, 4)
+        for h in range(0, 24, 3)
+    ]
+    df = build_station_year(bronze_frame(rows), None, 2024, settings)
+    path = settings.data_root / "silver" / "year=2024" / f"{station}.parquet"
+    cfg = silver_config_hash(settings)
+    write_silver(df, path, run_id="r", config_hash=cfg, source_md5="m", prev_source_md5="")
+    return path
+
+
+def test_silver_check_finds_files_holding_another_station(
+    settings: Settings, tmp_path: Path
+) -> None:
+    s = _with(settings, tmp_path / "k")
+    paths = [_mixed_silver(s, STATIONS[0], STATIONS[2]), _silver(s, STATIONS[1])]
+    check = aggregate._check_silver(paths, pl.DataFrame(schema={"station_id": pl.String}))
+    assert check.links == {(STATIONS[0], STATIONS[2])}
+
+
+def test_linked_stations_share_a_batch() -> None:
+    paths = [Path(f"year=2001/{s}.parquet") for s in ("A", "B", "C")]
+    # A's file also holds reports of C: A and C go together, before B (A sorts first)
+    batches = _station_batches(paths, [5, 5, 5], budget=5, links={("A", "C")})
+    assert [sorted(p.stem for p in b) for b in batches] == [["A", "C"], ["B"]]
+
+
+def test_a_linked_station_brings_its_partner_files_into_pass_two() -> None:
+    paths = [Path(f"year=2001/{s}.parquet") for s in ("A", "B", "C")]
+    # only C is in gold, but some of C's reports are in A's file
+    batches = _station_batches(paths, [1, 1, 1], budget=9, order=[("C", 0)], links={("A", "C")})
+    assert [sorted(p.stem for p in b) for b in batches] == [["A", "C"]]
+
+
+def test_a_station_split_over_two_files_stays_one_station(
+    settings: Settings, tmp_path: Path
+) -> None:
+    one = _with(settings, tmp_path / "one", gold_batch_reports=10**9)
+    many = _with(settings, tmp_path / "many", gold_batch_reports=1)
+    outs = []
+    for s in (one, many):
+        paths = [
+            _mixed_silver(s, STATIONS[0], STATIONS[2]),
+            _silver(s, STATIONS[1]),
+            _silver(s, STATIONS[2]),
+        ]
+        outs.append(build_gold(s, paths, RUN))
+    a, b = _tables(outs[0]), _tables(outs[1])
+    assert b["stations"]["station_id"].to_list() == sorted(STATIONS)  # no station twice
+    for name in a:  # the same rows; linked stations share a batch, so the order may differ
+        assert a[name].sort(pl.all()).equals(b[name].sort(pl.all())), name
+    # STATIONS[2]'s 4th day comes from STATIONS[0]'s file
+    days = b["daily"].filter(pl.col("station_id") == STATIONS[2])["lmst_date"]
+    assert days.len() == 4
+
+
+def test_a_station_in_gold_found_in_no_silver_file_stops_gold(
     settings: Settings, tmp_path: Path
 ) -> None:
     s = _with(settings, tmp_path / "n")
     right = _silver(s, STATIONS[0])
     wrong = right.with_name("NOT_A_STATION.parquet")
-    right.rename(wrong)  # the reports say STATIONS[0], the file name does not
-    with pytest.raises(aggregate.GoldCheckError, match="no silver file named after"):
+    # the reports say STATIONS[0]; neither the file name nor (without statistics) the footer does
+    pq.write_table(pq.read_table(right), wrong, write_statistics=False)
+    right.unlink()
+    with pytest.raises(aggregate.GoldCheckError, match="found in no silver file"):
         build_gold(s, [wrong], RUN)
 
 

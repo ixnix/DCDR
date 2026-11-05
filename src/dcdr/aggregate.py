@@ -48,6 +48,7 @@ import json
 import logging
 import shutil
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
@@ -403,11 +404,17 @@ class SilverCheck:
     carried: int  # files that count as their version through the ledger of carried files
     schemas: int  # distinct column layouts (names and types, in order)
     rows: list[int]  # reports per file, in the order of the paths (sizes the batches)
+    # (file station, other station): files that also hold reports of another station ID (some
+    # ISD files: a station renumbered within a year); such stations must share a batch
+    links: set[tuple[str, str]]
 
 
 def _check_silver(paths: list[Path], ledger: pl.DataFrame) -> SilverCheck:
     """Read every silver file's footer once: its version (for the guards in `build_gold`), its
-    column layout (to decide how DuckDB reads the files) and its number of reports (batches).
+    column layout (to decide how DuckDB reads the files), its number of reports (batches) and
+    the station IDs in it, from the min/max statistics of `station_id` (`links`). Min and max are
+    exact for files with at most two IDs, as every ISD file now; the `unique_station` check of
+    the station table catches any other ID.
 
     A file's version is `effective_version`: the one that built it, or the one it was carried to
     (process/migrations.py). Files are found in the ledger by their place in silver
@@ -417,6 +424,7 @@ def _check_silver(paths: list[Path], ledger: pl.DataFrame) -> SilverCheck:
     versions: set[tuple[str, str]] = set()
     layouts: set[tuple[tuple[str, str], ...]] = set()
     rows: list[int] = []
+    links: set[tuple[str, str]] = set()
     carried = 0
     for i, p in enumerate(paths, 1):
         footer = pq.read_metadata(p)  # the footer only, not the data
@@ -425,11 +433,17 @@ def _check_silver(paths: list[Path], ledger: pl.DataFrame) -> SilverCheck:
         version = effective_version(meta, row)
         carried += version != meta.get("method_version", "")
         versions.add((version, meta.get("config_hash", "")))
-        layouts.add(tuple((f.name, str(f.type)) for f in footer.schema.to_arrow_schema()))
+        schema = footer.schema.to_arrow_schema()
+        layouts.add(tuple((f.name, str(f.type)) for f in schema))
         rows.append(footer.num_rows)
+        j = schema.get_field_index("station_id")
+        for g in range(footer.num_row_groups if j >= 0 else 0):
+            stats = footer.row_group(g).column(j).statistics
+            if stats is not None and stats.has_min_max:
+                links.update((p.stem, sid) for sid in (stats.min, stats.max) if sid != p.stem)
         if i % PROGRESS_EVERY == 0:
             log.info("silver check: %d/%d files", i, len(paths))
-    return SilverCheck(versions, carried, len(layouts), rows)
+    return SilverCheck(versions, carried, len(layouts), rows, links)
 
 
 def _station_batches(
@@ -437,6 +451,7 @@ def _station_batches(
     rows: list[int],
     budget: int,
     order: list[tuple[str, int]] | None = None,
+    links: Iterable[tuple[str, str]] = (),
 ) -> list[list[Path]]:
     """Group silver files into batches of whole stations, each with at most `budget` reports.
 
@@ -446,38 +461,58 @@ def _station_batches(
     by station (a station larger than a batch is a batch of its own). Without `order`: every
     station in station-ID order, each its own cell.
 
+    `links` are (file station, other station) pairs: a file named after one station that also
+    holds reports of another (`SilverCheck.links`). Linked stations are one unit, batched together
+    where the first of them comes in `order`, so no station's reports are split over two batches.
+
     Every gold product is computed per station, so a batch can be built on its own; DuckDB's
     memory then grows with the batch, not with all of silver.
     """
     by_station: dict[str, list[tuple[Path, int]]] = {}
     for path, n in zip(paths, rows, strict=True):
         by_station.setdefault(path.stem, []).append((path, n))
+    parent: dict[str, str] = {}  # union-find: each station points towards its unit's first ID
+
+    def unit_of(station: str) -> str:
+        parent.setdefault(station, station)
+        while parent[station] != station:
+            station = parent[station]
+        return station
+
+    for a, b in links:
+        ua, ub = unit_of(a), unit_of(b)
+        if ua != ub:
+            parent[max(ua, ub)] = min(ua, ub)
+    unit_files: dict[str, list[tuple[Path, int]]] = {}
+    for station in sorted(by_station):
+        unit_files.setdefault(unit_of(station), []).extend(by_station[station])
     if order is None:
         order = [(s, i) for i, s in enumerate(sorted(by_station))]
-    size = {s: sum(n for _, n in files) for s, files in by_station.items()}
-    cells: list[list[str]] = []  # consecutive stations of one cell
-    order_cell: dict[str, int] = {}
+    size = {u: sum(n for _, n in files) for u, files in unit_files.items()}
+    cells: list[list[str]] = []  # consecutive units of one cell
+    unit_cell: dict[str, int] = {}
     for station, cell in order:
-        if station not in by_station:
+        unit = unit_of(station)
+        if unit not in unit_files or unit in unit_cell:  # no files, or already placed
             continue
-        if cells and order_cell.get(cells[-1][0]) == cell:
-            cells[-1].append(station)
+        if cells and unit_cell[cells[-1][0]] == cell:
+            cells[-1].append(unit)
         else:
-            cells.append([station])
-        order_cell[station] = cell
+            cells.append([unit])
+        unit_cell[unit] = cell
     batches: list[list[Path]] = []
     current: list[Path] = []
     current_n = 0
     for members in cells:
-        if current and current_n + sum(size[s] for s in members) > budget:
+        if current and current_n + sum(size[u] for u in members) > budget:
             batches.append(current)  # the whole cell does not fit: start a new batch
             current, current_n = [], 0
-        for station in members:
-            if current and current_n + size[station] > budget:  # only in a cell > a batch
+        for unit in members:
+            if current and current_n + size[unit] > budget:  # only in a cell > a batch
                 batches.append(current)
                 current, current_n = [], 0
-            current += [path for path, _ in by_station[station]]
-            current_n += size[station]
+            current += [path for path, _ in unit_files[unit]]
+            current_n += size[unit]
     if current:
         batches.append(current)
     return batches
@@ -657,24 +692,31 @@ def _build_batch(
 
 
 def _combine(
-    con: duckdb.DuckDBPyConnection, parts: list[Path], folder: Path, target_bytes: int
+    con: duckdb.DuckDBPyConnection,
+    parts: list[Path],
+    folder: Path,
+    target_bytes: int,
+    order_by: str = "",
 ) -> None:
     """Write a product's batch parts (in station order) as `folder/part-NNN.parquet` files of about
-    `target_bytes` each, keeping the row order, and check no row was lost or added."""
+    `target_bytes` each, keeping the row order, and check no row was lost or added. `order_by`
+    sorts each file instead (only for the small station table: linked stations, which share a
+    batch, put the batches slightly out of station-ID order)."""
     folder.mkdir(parents=True, exist_ok=True)
     before = sum(pq.read_metadata(p).num_rows for p in parts)
     groups = _size_groups([p.stat().st_size for p in parts], target_bytes)
     for j, group in enumerate(groups):
         out = folder / f"part-{j:03d}.parquet"
         files = [parts[i] for i in group]
-        if len(files) == 1:
+        if len(files) == 1 and not order_by:
             files[0].rename(out)  # nothing to combine: move it
             continue
         listed = ", ".join(f"'{_sql_path(f)}'" for f in files)
         # read_parquet keeps the files' order and DuckDB keeps insertion order, so the rows stay
         # sorted by station (and time) without a sort.
         con.execute(
-            f"COPY (SELECT * FROM read_parquet([{listed}])) TO '{_sql_path(out)}' "
+            f"COPY (SELECT * FROM read_parquet([{listed}]){' ORDER BY ' if order_by else ''}"
+            f"{order_by}) TO '{_sql_path(out)}' "
             "(FORMAT parquet, COMPRESSION zstd)"
         )
         for f in files:
@@ -747,13 +789,18 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     try:
         # Pass 1: the station table for every station (cheap: ~10 % of the build), in batches in
         # station-ID order; merged into one file, checked as a whole, and the review list.
-        first = _station_batches(silver_paths, check.rows, budget)
-        log.info("gold: %d reports; pass 1 (stations) in %d batches", sum(check.rows), len(first))
+        first = _station_batches(silver_paths, check.rows, budget, links=check.links)
+        log.info(
+            "gold: %d reports; %d files also hold another station's reports; "
+            "pass 1 (stations) in %d batches",
+            sum(check.rows),
+            len(check.links),
+            len(first),
+        )
         for k, batch in enumerate(first):
             _stations_batch(con, batch, staging, k, union)
-        _combine(
-            con, sorted((staging / "stations").glob("batch-*.parquet")), out_dir / "stations", 2**62
-        )
+        parts = sorted((staging / "stations").glob("batch-*.parquet"))
+        _combine(con, parts, out_dir / "stations", 2**62, order_by="station_id")
         stations_file = _sql_path(out_dir / "stations" / "part-000.parquet")
         con.read_parquet(stations_file).create_view("stations")
         _run_checks(con, PRODUCTS[0], " (all batches)")
@@ -763,15 +810,17 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
         # only when it alone is larger than a batch, so each cell lies in consecutive files.
         in_gold = pl.read_parquet(out_dir / "stations" / "part-000.parquet").filter("in_gold")
         order = _spatial_order(in_gold, settings.products.gold_grid_deg)
-        # Pass 2 finds a station's files by name (silver/year=YYYY/<station_id>.parquet); a
-        # station in gold without one would silently drop out, so stop instead.
-        unnamed = sorted({s for s, _ in order} - {p.stem for p in silver_paths})
-        if unnamed:
-            raise GoldCheckError(
-                f"stations in gold with no silver file named after them: {unnamed[:10]}"
-            )
+        # Pass 2 finds a station's files by name (silver/year=YYYY/<station_id>.parquet) or by the
+        # station IDs in their footers (links); a station in gold found in neither would silently
+        # drop out, so stop instead.
+        known = {p.stem for p in silver_paths} | {other for _, other in check.links}
+        unfound = sorted({s for s, _ in order} - known)
+        if unfound:
+            raise GoldCheckError(f"stations in gold found in no silver file: {unfound[:10]}")
         # With no station in gold, one batch still writes every product (empty).
-        batches = _station_batches(silver_paths, check.rows, budget, order) or [silver_paths[:1]]
+        batches = _station_batches(silver_paths, check.rows, budget, order, check.links) or [
+            silver_paths[:1]
+        ]
         log.info(
             "gold: pass 2 (products) for %d stations in gold in %d batches of at most %d reports",
             len(order),

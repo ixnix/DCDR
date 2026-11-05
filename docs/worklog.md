@@ -31,7 +31,7 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - [ ] Publish documentation (e.g. MkDocs) when stable.
 - [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
 - [ ] Whole-ISD gold under 2.1.0 (silver done and verified 2026-11-05; gold failed twice for
-      memory; batched gold ordered by place 2026-11-05: re-run, ~2.5-4 h), then the
+      memory, then on duplicate stations; fixed 2026-11-05: re-run, ~1.5-2 h), then the
       `stations_review.csv` review.
       Before a published release: a full rebuild (`--force`).
 - [ ] Gold is not bit-for-bit reproducible: DuckDB's parallel sums give 9 `daily` means
@@ -43,6 +43,31 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 ---
 
 ## 2026-11-05
+
+- **Whole-ISD gold stopped on 15 duplicate stations; linked stations now share a batch** (this
+  commit). Run `20261105T191607Z-59cfde` (commit 1998171) checked 704,777 silver footers in
+  30 min (one schema; 3,899,647,818 reports, less than the 9 billion extrapolated from 300
+  stations), built the station table in 400 batches, then stopped:
+  `GoldCheckError: stations (all batches): {'unique_station': 15}`. Nothing was published; the
+  previous gold stays current.
+  - Cause: batches group silver files by file name, but `station_id` is each report's `STATION`
+    field. A full scan of `station_id` against the file name (all 704,777 files) found 46
+    station-years whose file also holds reports of another station ID, 45 of which have files of
+    their own: mostly stations renumbered within a year (e.g. `72222013899` in 1985: 5,512
+    reports of `72222113899`; `99999903919` in 1955: all 8,759 reports of `72458613922`). Where
+    such a pair fell into two batches, the station appeared twice. The one-batch build merged
+    them silently, as the rule says (a report belongs to its `STATION`).
+  - Fix: the footer check also reads the IDs in each file from the min/max statistics of
+    `station_id` (no extra reads); linked stations form one unit that is batched together. The
+    46 footer links equal the 46 pairs of the full scan. The station table is sorted by station
+    ID when combined (linked units put batches slightly out of ID order). The guard "station in
+    gold with no silver file named after it" became "found in no silver file" (name or footer).
+    No result changes: METHOD_VERSION stays 2.1.0.
+  - Tests: a file holding a 4th day of another station; batched gold equals one-batch gold
+    (same rows), the station appears once and has all 4 days; links found from the footer;
+    linked stations share a batch in both passes. 406 tests pass.
+  - *Ruling:* keep the rule that a report belongs to its `STATION` field (not to the file it
+    came in); a rule for the 46 files can be added later if wanted (they can be listed again by scanning `station_id` against the file name).
 
 - **Gold ordered by place, in two passes** (this commit; user decision: organise the batches by
   closeness on lon/lat grid bins, with a future product that aggregates stations in uniform

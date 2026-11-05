@@ -546,8 +546,16 @@ no migration: it rebuilds in full. Before a published release, rebuild in full
    Checks: batched gold equals one-batch gold (60 real stations: same rows; floats within
    1e-12, the run-to-run noise of DuckDB's parallel sums); on 300 stations with 29 batches and
    8 MB files, every one of 99 cells lies in consecutive files and no two cells interleave.
-   Pass 2 finds a station's files by name (`silver/year=YYYY/<station_id>.parquet`); a station
-   in gold without one stops gold.
+   A batch must hold all of a station's reports. Silver files are named after the station
+   (`silver/year=YYYY/<station_id>.parquet`), but `station_id` comes from each report's
+   `STATION` field, and 46 ISD files (whole ISD, 2026-11-05) also hold reports of another
+   station ID, mostly a station renumbered within a year (e.g. `72222013899.csv` of 1985: 5,512
+   reports of `72222113899`). The footer check reads the IDs in each file from the min/max
+   statistics of `station_id` (exact for at most two IDs per file, as in every ISD file; the
+   footer links equal a full scan of the column), and linked stations form one unit, batched
+   together where the first of them comes (`SilverCheck.links`). The station table is sorted by
+   station ID when it is combined. A station in gold found in no file (by name or footer) stops
+   gold; `unique_station` catches a station split anyway.
 ## 10. Testing and quality checks
 
 ```bash
@@ -567,6 +575,7 @@ Tests use small synthetic ISD rows (`tests/fixtures/isd.py`) and an in-memory fa
 | Data written to `./data` instead of the SSD | `DCDR_DATA` not set in that shell | `export DCDR_DATA=...` (add to `~/.zshrc`) |
 | `StaleSilverError` from `aggregate` | silver built by other code/settings | `dcdr process --years ...` (or `--force`) |
 | `aggregate` disappears without a traceback, ~40 min in, swap grown | out of memory: before 2026-11-05 gold opened all silver files with `union_by_name` and built each product over all stations at once | fixed (one schema read as is; batches); if it recurs, lower `products.gold_batch_reports` (`--profile`) |
+| `GoldCheckError: stations (all batches): {'unique_station': N}` | a station's reports lie in two batches (before 2026-11-05: files holding another station's reports were batched by file name only) | fixed (linked stations share a batch); if it recurs, a file holds 3+ station IDs: find it with a scan of `station_id` against the file name |
 | Warning "silver: N files, K schemas" from `aggregate` | some silver files have other columns | find them and rebuild them (`dcdr process --force` for those stations); with many files the fallback (`union_by_name`) needs a lot of memory |
 | A long run stops when its terminal window closes | closing the window stops its processes (and `tee`, so no traceback is logged) | keep the window open, or start it with `nohup ... > log 2>&1 &` |
 | `MixedSilverVersionsError` from `aggregate` | some silver files not yet rebuilt or carried to the running version (e.g. a stopped `process`) | finish `dcdr process` over the same years and stations |
