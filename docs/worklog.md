@@ -30,11 +30,28 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - [ ] Later gold products: climatology, diurnal cycle, trends, code-06 diagnostic.
 - [ ] Publish documentation (e.g. MkDocs) when stable.
 - [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
-- [ ] Whole-ISD `dcdr process` under 2.1.0 (targeted: ~770 stations rebuilt, the rest carried),
-      `dcdr verify-silver --sample 1000`, then the whole-ISD gold and the `stations_review.csv`
-      review. Before a published release: a full rebuild (`--force`).
+- [ ] Whole-ISD gold under 2.1.0 (silver done and verified 2026-11-05), then the
+      `stations_review.csv` review. Before a published release: a full rebuild (`--force`).
 
 ---
+
+## 2026-11-05
+
+- **Whole-ISD silver under 2.1.0, targeted** (13dc8b1, run 20261105T014043Z-351acb, 6 workers,
+  20:40 to 00:34, 3 h 53 min; the station scan is nearly all of it, ~13-26 min per 2,000
+  stations, slowest in the dense US 72xxxx range). Result: 704,429 carried, 348 built,
+  6,634 no position (4,488 old files removed), 0 failed. Silver now holds 704,777 files
+  (709,265 - 4,488); the ledger `_state/silver_carried.parquet` has one row per carried file
+  (built 2.0.0, valid for 2.1.0).
+  - Check against the 2026-11-04 position census: 4,440 of the 4,488 removals are census
+    station-years (every report 0/0 or without latitude). The other 48 have latitude 0 and no
+    longitude in every report: a lone 0 with a missing partner counts as missing (rules.md 4.2),
+    which the census query did not count. The one census station-year not removed is Xuzhou
+    58028099999 1974, placed by isd-history and rebuilt.
+  - My pre-run expectation of "about 4,600 built" was wrong: most affected station-years are
+    removed, not built; and the run took longer than my 2.5-3.5 h estimate.
+  - `dcdr verify-silver --sample 1000` (run 20261105T121903Z-ec5cda): 1,000 carried files
+    re-processed with the 2.1.0 code, `different: []`.
 
 ## 2026-11-04
 
