@@ -34,6 +34,9 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
       memory, then on duplicate stations; fixed 2026-11-05: re-run, ~1.5-2 h), then the
       `stations_review.csv` review.
       Before a published release: a full rebuild (`--force`).
+- [ ] Same-station reports at the same time in two files (9,303 reports, 4 station-years,
+      2026-11-05): accept, or collapse across files in gold (a method change)? And whether to
+      join station records across ID changes (40 of the 46 mixed files are renumberings).
 - [ ] Gold is not bit-for-bit reproducible: DuckDB's parallel sums give 9 `daily` means
       (`wsd_mean, vis_hmean, t_mean, td_mean, rh_mean, slp_mean, dup6_mean, d_t_mean,
       d_slp_mean`) that differ between two builds of the same silver in the last bits (at most
@@ -68,6 +71,20 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
     linked stations share a batch in both passes. 406 tests pass.
   - *Ruling:* keep the rule that a report belongs to its `STATION` field (not to the file it
     came in); a rule for the 46 files can be added later if wanted (they can be listed again by scanning `station_id` against the file name).
+  - What the 46 are (finding, same day): 40 are one station whose ID changed within the year
+    (same place within 2 km, the reports switch in one block; e.g. US airports renumbered on
+    1985-06-01 and 1990-03-01, Canadian 72xxx -> 71xxx on 1977-07-01); 5 are different stations
+    (East Liverpool -> Findlay 258 km, Coalville -> Fairfield 84 km, Attu -> Shemya 64 km,
+    Beardmore Camp -> Little Jeana 232 km, Little Jeana -> Fletcher Ice Island T-3, no position),
+    whose foreign reports carry the other station's own position; 1 whole file
+    (`99999903919`, 1955) holds only reports of Salina Muni `72458613922` (1.9 km away). The
+    `STATION` label was right in every case, so the rule stands.
+  - Same station, same time, in two files: 9,303 reports in 4 station-years (Harrisburg 1985,
+    both files hold the whole year: 5,136 + 3,619; Laredo 1965: 178; Lackland 1973: 370). Same
+    time, temperature and wind (9,264), but other ISD source flag (3 vs 5) and some groups differ
+    (MW, gust, SLP), so `row_key` differs and neither copy is collapsed. In gold, a bin's state
+    takes one report, dust flags combine both, report counts double. Atlantic City Jan-Feb 1974
+    reports under two IDs (`72407093730`, `99999993730`), 218 at the same time.
 
 - **Gold ordered by place, in two passes** (this commit; user decision: organise the batches by
   closeness on lon/lat grid bins, with a future product that aggregates stations in uniform
