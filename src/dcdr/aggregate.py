@@ -10,8 +10,13 @@ products before it in the list as views.
 
 How gold is built
 -----------------
-1. Check that all silver files were built by the current code and settings (refuse otherwise).
+1. Check that all silver files were built by the current code and settings (refuse otherwise),
+   and count their column layouts (schemas), from each file's footer only.
 2. Open DuckDB (an in-process SQL engine, no server) and expose all silver files as one view.
+   With one schema (the normal case) DuckDB reads them as they are; with several it must line
+   them up by column name (`union_by_name`), which first reads every file's schema and needs
+   time and memory that grow faster than the number of files: the whole ISD (~700,000 files)
+   ran out of memory that way (2026-11-05).
 3. For each product: run its SQL file (src/dcdr/sql/<name>.sql), write the result to Parquet,
    then run the product's checks (each check is a query that must return 0).
 4. Only if everything passed: point `gold/CURRENT` at the new version, prune old versions.
@@ -30,6 +35,7 @@ separate .sql file can be read and tested on its own, also by people who don't r
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 from dataclasses import dataclass
 from importlib.resources import files
@@ -37,15 +43,20 @@ from pathlib import Path
 
 import duckdb
 import polars as pl
+import pyarrow.parquet as pq
 
 from dcdr.config import Settings, silver_config_hash
 from dcdr.process import METHOD_VERSION
 from dcdr.process.migrations import effective_version, ledger_path, read_ledger
-from dcdr.state import atomic_write_bytes, read_parquet_metadata, safe_listdir
+from dcdr.state import atomic_write_bytes, safe_listdir, schema_metadata
 from dcdr.stations import file_md5, load_isd_history, load_overrides
+
+log = logging.getLogger(__name__)
 
 # SQL files ship inside the package (src/dcdr/sql/), found the same way as default.yaml.
 SQL_DIR = files("dcdr") / "sql"
+# Files between progress lines of the silver check (the whole ISD takes ~40 min on the USB SSD).
+PROGRESS_EVERY = 50_000
 
 
 @dataclass(frozen=True)
@@ -373,23 +384,38 @@ class GoldCheckError(RuntimeError):
     """A gold product failed a validation check."""
 
 
-def _silver_versions(paths: list[Path], ledger: pl.DataFrame) -> tuple[set[tuple[str, str]], int]:
-    """The distinct (method version, config_hash) pairs of the silver files, and how many files
-    count as their version through the ledger of carried files (process/migrations.py).
+@dataclass
+class SilverCheck:
+    """What gold learns from the silver files' footers before building (`_check_silver`)."""
 
-    A file's version is `effective_version`: the one that built it, or the one it was carried to.
-    Files are found in the ledger by their place in silver (`year=YYYY/<station>.parquet`).
+    versions: set[tuple[str, str]]  # distinct (method version, config_hash) pairs
+    carried: int  # files that count as their version through the ledger of carried files
+    schemas: int  # distinct column layouts (names and types, in order)
+
+
+def _check_silver(paths: list[Path], ledger: pl.DataFrame) -> SilverCheck:
+    """Read every silver file's footer once: its version (for the guards in `build_gold`) and its
+    column layout (to decide how DuckDB reads the files).
+
+    A file's version is `effective_version`: the one that built it, or the one it was carried to
+    (process/migrations.py). Files are found in the ledger by their place in silver
+    (`year=YYYY/<station>.parquet`).
     """
     rows = {(r["station_id"], r["year"]): r for r in ledger.iter_rows(named=True)}
-    out: set[tuple[str, str]] = set()
+    versions: set[tuple[str, str]] = set()
+    layouts: set[tuple[tuple[str, str], ...]] = set()
     carried = 0
-    for p in paths:
-        meta = read_parquet_metadata(p)
+    for i, p in enumerate(paths, 1):
+        schema = pq.read_schema(p)  # the footer only, not the data
+        meta = schema_metadata(schema)
         row = rows.get((p.stem, int(p.parent.name.removeprefix("year="))))
         version = effective_version(meta, row)
         carried += version != meta.get("method_version", "")
-        out.add((version, meta.get("config_hash", "")))
-    return out, carried
+        versions.add((version, meta.get("config_hash", "")))
+        layouts.add(tuple((f.name, str(f.type)) for f in schema))
+        if i % PROGRESS_EVERY == 0:
+            log.info("silver check: %d/%d files", i, len(paths))
+    return SilverCheck(versions, carried, len(layouts))
 
 
 def _sql_path(path: Path) -> str:
@@ -443,9 +469,8 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     if not silver_paths:
         raise ValueError("no silver files to build gold from")
     # Guard 1: all silver files must come from the same code and settings ...
-    versions, n_carried = _silver_versions(
-        silver_paths, read_ledger(ledger_path(settings.data_root))
-    )
+    check = _check_silver(silver_paths, read_ledger(ledger_path(settings.data_root)))
+    versions, n_carried = check.versions, check.carried
     if len(versions) != 1:
         raise MixedSilverVersionsError(f"silver files have mixed versions: {sorted(versions)}")
     # Guard 2: ... and that must be the code and settings running now.
@@ -460,10 +485,21 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     isd_path, overrides_path = settings.isd_history_path, settings.position_overrides_path
     isd_history, overrides = load_isd_history(isd_path), load_overrides(overrides_path)
     con = duckdb.connect()  # in-memory database; reads the Parquet files directly from disk
-    # One view over all silver files. union_by_name: files may differ in optional columns.
-    # `silver_all` feeds the station table; the other products read `silver`, the same reports
-    # without the stations left out of gold (created right after `stations`).
-    con.read_parquet([_sql_path(p) for p in silver_paths], union_by_name=True).create_view(
+    # One view over all silver files. `silver_all` feeds the station table; the other products
+    # read `silver`, the same reports without the stations left out of gold (created right after
+    # `stations`). Files with one schema are read as they are; only mixed schemas need
+    # union_by_name, which is slow and memory-hungry for many files (module docstring).
+    union = check.schemas > 1
+    if union:
+        log.warning(
+            "silver: %d files, %d schemas: lining them up by column name (union_by_name), "
+            "slow and memory-hungry for many files",
+            len(silver_paths),
+            check.schemas,
+        )
+    else:
+        log.info("silver: %d files, 1 schema", len(silver_paths))
+    con.read_parquet([_sql_path(p) for p in silver_paths], union_by_name=union).create_view(
         "silver_all"
     )
     con.register("isd_history", isd_history)

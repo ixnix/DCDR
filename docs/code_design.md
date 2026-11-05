@@ -6,7 +6,7 @@ how they came about.
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-11-04 (method version 2.1.0).
+> Last updated: 2026-11-05 (method version 2.1.0).
 
 ---
 
@@ -245,7 +245,9 @@ local time, dust class and evidence, source group. Core columns come first:
 
 Meanings are in Part 2. The contract (`schemas.py`) is checked before every write: types,
 allowed values, unique `row_key`, and a source group exactly on the reports that are not
-summaries.
+summaries. The contract fixes only the core columns, but in practice every file has the same
+250 columns in the same order (19,472 files sampled across all 125 years, 2026-11-05); gold
+checks this on every build (section 9, decision 9).
 
 ### 7.3 Gold `daily`
 One row per station per local (LMST) day, built from the `three_hourly` bins of the same gold run
@@ -492,6 +494,14 @@ no migration: it rebuilds in full. Before a published release, rebuild in full
    paths resolve against the working directory; no code assumes the repository layout.
 8. **SQL for aggregation.** Gold logic is a readable `.sql` file run by DuckDB (in-process,
    no server).
+9. **Gold reads silver as it is when all files share one schema.** Gold already reads every
+   silver footer for the version check; it also counts the distinct column layouts. With one
+   layout DuckDB reads the files directly; with several it falls back to `union_by_name` (line
+   the columns up by name) and logs a warning. Why: `union_by_name` first reads every file's
+   schema and its time and memory grow faster than the number of files (120,000 files: 479 s
+   and 4.7 GB, against under a second and 182 MB without); over the whole ISD (704,777 files)
+   macOS killed the process for memory, twice (2026-11-05). Both readings give the same gold
+   (checked on 2,280 real files).
 
 ## 10. Testing and quality checks
 
@@ -511,6 +521,8 @@ Tests use small synthetic ISD rows (`tests/fixtures/isd.py`) and an in-memory fa
 | `FileNotFoundError` while pruning gold (before 2026-10-19) | macOS deletes `._x` together with `x` | Fixed (`aggregate._ignore_vanished`) |
 | Data written to `./data` instead of the SSD | `DCDR_DATA` not set in that shell | `export DCDR_DATA=...` (add to `~/.zshrc`) |
 | `StaleSilverError` from `aggregate` | silver built by other code/settings | `dcdr process --years ...` (or `--force`) |
+| `aggregate` disappears without a traceback, ~40 min in, swap grown | out of memory while opening all silver files with `union_by_name` (before 2026-11-05, or now after the warning "N schemas") | find the files with a different schema; rebuild them (`dcdr process --force` for those stations) |
+| A long run stops when its terminal window closes | closing the window stops its processes (and `tee`, so no traceback is logged) | keep the window open, or start it with `nohup ... > log 2>&1 &` |
 | `MixedSilverVersionsError` from `aggregate` | some silver files not yet rebuilt or carried to the running version (e.g. a stopped `process`) | finish `dcdr process` over the same years and stations |
 | `verify-silver` reports differences | a migration's `affects` misses a change | remove the migration from `MIGRATIONS` and rebuild (`dcdr process --force`); report it in the worklog |
 | A notebook shows as modified in git | JupyterLab re-saved it | `git restore <notebook>` if nothing changed |

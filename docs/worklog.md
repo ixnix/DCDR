@@ -30,12 +30,39 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - [ ] Later gold products: climatology, diurnal cycle, trends, code-06 diagnostic.
 - [ ] Publish documentation (e.g. MkDocs) when stable.
 - [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
-- [ ] Whole-ISD gold under 2.1.0 (silver done and verified 2026-11-05), then the
-      `stations_review.csv` review. Before a published release: a full rebuild (`--force`).
+- [ ] Whole-ISD gold under 2.1.0 (silver done and verified 2026-11-05; gold failed twice for
+      memory, fixed 2026-11-05: re-run), then the `stations_review.csv` review. Before a
+      published release: a full rebuild (`--force`).
+- [ ] Gold is not bit-for-bit reproducible: DuckDB's parallel sums give 9 `daily` means
+      (`wsd_mean, vis_hmean, t_mean, td_mean, rh_mean, slp_mean, dup6_mean, d_t_mean,
+      d_slp_mean`) that differ between two builds of the same silver in the last bits (at most
+      2e-12; 4-21 of 535,705 rows per column). Decide: ordered sums, rounding, or accept and
+      document.
 
 ---
 
 ## 2026-11-05
+
+- **Whole-ISD gold killed twice for memory; fixed** (this commit). Two `dcdr aggregate` runs
+  (1901-2025, all ISD stations, 704,777 silver files) died without a traceback, at 11:31 and
+  12:33, each about 40 s to 8 min after the ~40-min silver version check, before the gold
+  folder was created: in the step that opens all silver files as one DuckDB view with
+  `union_by_name`. Swap grew from 6 to 8 GB and free memory fell to 19 % during the second run;
+  no Jetsam report (the system log was not readable without admin rights), so a memory kill is
+  the best explanation, not proven. (An earlier run, 08:11, stopped because its terminal window
+  was closed.)
+  - Measured on real files: `union_by_name` 30,000 files 27 s / 4.5 GB, 120,000 files 479 s /
+    4.7 GB (time grows faster than the file count); without it under 1 s / 86-182 MB.
+  - 19,472 silver files sampled across all 125 years: one schema (250 columns, same order and
+    types), so the union is not needed.
+  - Change (*ruling*): gold's version check (`_check_silver`, which already reads every footer)
+    also counts the distinct column layouts; with one, the view is created without
+    `union_by_name`; with several, it falls back to it and logs a warning. A progress line every
+    50,000 files of the check. Gold results unchanged, no `METHOD_VERSION` bump.
+  - Check on 2,280 real silver files (60 random stations, all their years), in the scratchpad:
+    new reading against forced `union_by_name`: `stations, three_hourly, monthly, yearly,
+    decadal` identical; `daily` the same rows except the last bits of 9 means, which also
+    differ between two builds with the same reading (DuckDB's parallel float sums; open item).
 
 - **Whole-ISD silver under 2.1.0, targeted** (13dc8b1, run 20261105T014043Z-351acb, 6 workers,
   20:40 to 00:34, 3 h 53 min; the station scan is nearly all of it, ~13-26 min per 2,000

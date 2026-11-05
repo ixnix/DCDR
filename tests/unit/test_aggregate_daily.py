@@ -8,6 +8,7 @@ reports, evidence kept apart, which day a bin counts on, day-to-day changes, dai
 the CURRENT pointer with old-version pruning, and that gold refuses mixed or stale silver.
 """
 
+import logging
 import os
 from datetime import date
 from pathlib import Path
@@ -15,6 +16,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+from dcdr import aggregate
 from dcdr.aggregate import MixedSilverVersionsError, build_gold, current_gold_dir, prune_versions
 from dcdr.config import Settings, load_settings, silver_config_hash
 from dcdr.process.build import build_station_year, write_silver
@@ -112,6 +114,53 @@ def test_mixed_silver_versions_are_refused(settings: Settings) -> None:
     b = _silver(settings, _slots("2024-01-01"), name="B", cfg_hash="h2")
     with pytest.raises(MixedSilverVersionsError):
         build_gold(settings, [a, b], "20260101T000000Z-aaaaaa")
+
+
+STA, STB = "40582099999", "40582199999"  # two stations, one per silver file
+
+
+def _silver_extra_column(settings: Settings, rows: list[dict], name: str) -> Path:
+    """A valid silver file with one column more than `_silver` writes (a different schema)."""
+    df = build_station_year(bronze_frame(rows), None, 2024, settings)
+    df = df.with_columns(pl.lit(1).alias("extra_column"))
+    path = settings.data_root / "silver" / "year=2024" / f"{name}.parquet"
+    cfg = silver_config_hash(settings)
+    write_silver(df, path, run_id="r", config_hash=cfg, source_md5="m", prev_source_md5="")
+    return path
+
+
+def test_uniform_silver_schema_is_read_without_union(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    a = _silver(settings, _slots("2024-01-01", MW1="06,1", STATION=STA), name="A")
+    b = _silver(settings, _slots("2024-01-01", MW1="06,1", STATION=STB), name="B")
+    with caplog.at_level(logging.INFO, logger="dcdr.aggregate"):
+        d = _daily(settings, [a, b])
+    assert sorted(d["station_id"].unique().to_list()) == [STA, STB]
+    assert "2 files, 1 schema" in caplog.text
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_mixed_silver_schemas_fall_back_to_union_with_a_warning(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    a = _silver(settings, _slots("2024-01-01", MW1="06,1", STATION=STA), name="A")
+    b = _silver_extra_column(settings, _slots("2024-01-01", MW1="06,1", STATION=STB), name="B")
+    with caplog.at_level(logging.INFO, logger="dcdr.aggregate"):
+        d = _daily(settings, [a, b])
+    assert sorted(d["station_id"].unique().to_list()) == [STA, STB]
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and "2 schemas" in warnings[0]
+
+
+def test_silver_check_reports_progress(
+    settings: Settings, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(aggregate, "PROGRESS_EVERY", 2)
+    paths = [_silver(settings, _slots("2024-01-01"), name=n) for n in "ABC"]
+    with caplog.at_level(logging.INFO, logger="dcdr.aggregate"):
+        build_gold(settings, paths, "20260101T000000Z-aaaaaa")
+    assert "silver check: 2/3 files" in caplog.text
 
 
 def test_current_pointer_and_pruning(tmp_path: Path) -> None:

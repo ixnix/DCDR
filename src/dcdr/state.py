@@ -122,7 +122,12 @@ def atomic_write_parquet(
 
 def read_parquet_metadata(path: Path) -> dict[str, str]:
     """Our key-value metadata from a Parquet file's footer, without reading the data itself."""
-    meta = pq.read_schema(path).metadata or {}
+    return schema_metadata(pq.read_schema(path))
+
+
+def schema_metadata(schema: pa.Schema) -> dict[str, str]:
+    """Our key-value metadata from an already-read Parquet schema (see read_parquet_metadata)."""
+    meta = schema.metadata or {}
     # Skip Arrow's own internal entry ("ARROW:schema"); keep only the keys we wrote.
     return {k.decode(): v.decode() for k, v in meta.items() if not k.startswith(b"ARROW")}
 
