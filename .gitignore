@@ -54,3 +54,6 @@ notebooks/
 
 # Design spec and plans: kept locally, not published (user decision 2026-10-28)
 /docs/superpowers/
+
+# DuckDB spill files (default temp folder of an in-memory connection)
+.tmp/

@@ -156,7 +156,7 @@ All method choices live in `src/dcdr/default.yaml`, validated by Pydantic models
 | `qc` | QC code mapping, accepted flags, visibility cap, RH screen | yes |
 | `classify` | weather fields used, haze window, snow/sand temperatures, SYNOP iX rule, inferred nil (V3) and its guard, METAR rules (`metar_rules`, `metar_report_types`, `metar_nil_min_vis_m`), METAR inference and its guard (`metar_infer_nil`, `metar_nil_guard_*`), derived SYNOPs (`derived_*`) | yes |
 | `sources` | excluded report types (`exclude_types`: SOD, SOM), source groups (`groups`: SYNOP and METAR report types; every other type is "other") | yes |
-| `products` | valid-day threshold (`min_bins_per_day`), visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept (`gold_keep_versions`, 2); gold build size: reports per batch (`gold_batch_reports`, 10 million), DuckDB memory limit (`gold_memory_limit`, 4GB), target file size (`gold_file_mb`, 256) | no (gold only) |
+| `products` | valid-day threshold (`min_bins_per_day`), visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept (`gold_keep_versions`, 2); gold build size: reports per batch (`gold_batch_reports`, 10 million), DuckDB memory limit (`gold_memory_limit`, 4GB), target file size (`gold_file_mb`, 256), grid cell for ordering stations by place (`gold_grid_deg`, 10) | no (gold only) |
 | `stations` | default station list; station positions: the saved isd-history (`isd_history`, relative to the data root), the override file (`position_overrides`), the distance bands `agree_km` (10) and `conflict_km` (50); the dusty-station threshold `min_dusty_days` (10) and `min_dusty_years` (2) | no (gold only) |
 
 Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
@@ -230,11 +230,17 @@ folder name. Parquet files carry provenance in their footer metadata (section 7.
 
 Gold is organised by product, not by station-year: a version is rebuilt whole, so it has no
 incremental unit to keep, and per station-year it would be ~700,000 files per product (monthly
-would hold 12 rows a file). Each product is a few files of ~256 MB (`gold_file_mb`); stations
-are in order, so every file holds a contiguous range of station IDs, sorted by station and time.
-Read a product with the pattern `<product>/part-*.parquet` (never one file by name). Reading one
-station is fast: Parquet stores each row group's (~122,000 rows) minimum and maximum station ID,
-and DuckDB and Polars skip the row groups without it. Whole-ISD sizes (estimated from 300
+would hold 12 rows a file). Each product is a few files of ~256 MB (`gold_file_mb`). Stations
+are ordered by place: grid cells of `gold_grid_deg` (10 degrees) visited along a Hilbert curve
+(neighbouring cells next to each other), then each station's place inside its cell. Every cell
+lies in one run of consecutive files, so a product on a uniform lon/lat grid whose step divides
+10 degrees (0.25, 0.5, 1, 2, 2.5, 5, 10) can be built from consecutive files, cell by cell.
+Inside a file, rows are sorted by station ID and time within each batch of whole cells. The
+station table (`stations/part-000.parquet`, all stations, in gold or not) is one file sorted by
+station ID: the lookup from a station to its position and cell. Read a product with the pattern
+`<product>/part-*.parquet` (never one file by name). Reading one station is fast: Parquet stores
+each row group's (~122,000 rows) minimum and maximum station ID, and DuckDB and Polars skip the
+row groups without it. Whole-ISD sizes (estimated from 300
 stations, 2026-11-05): `three_hourly` ~37 GB (~145 files), `daily` ~8 GB (~32 files),
 `monthly`, `yearly`, `decadal`, `stations` one file each; ~45 GB a version.
 
@@ -515,24 +521,33 @@ no migration: it rebuilds in full. Before a published release, rebuild in full
    and 4.7 GB, against under a second and 182 MB without); over the whole ISD (704,777 files)
    macOS killed the process for memory, twice (2026-11-05). Both readings give the same gold
    (checked on 2,280 real files).
-10. **Gold is built in batches of stations, then combined into files of a set size.** Every
-   product except the station table is computed per station, so gold runs in batches of whole
-   stations (`gold_batch_reports`, 10 million silver reports), each written as one part per
-   product into `_batches/` and checked there (every check is per station, so checking each
-   batch checks the whole table); the station table is built per batch too and merged, and the
-   review list is written once at the end. Then consecutive parts are combined into files of
-   ~256 MB (`gold_file_mb`), keeping the row order; the row counts before and after must match.
-   DuckDB runs with a memory limit (`gold_memory_limit`) and spills to `gold/_spill_<run_id>/`.
-   Why: DuckDB holds every report of a build in memory (the `rep` step of `three_hourly` is read
-   twice, so it is materialised); 600 stations at once exhausted 16 GB of RAM and swap
-   (2026-11-05). Measured on 150 real stations: batches of 2, 5, 10 million reports peak at 1.7,
-   2.2, 2.6 GB and take the same time (reading dominates); 300 stations with the defaults: 9
-   batches, 78 s, 2.1 GB, so the whole ISD is ~900 batches and ~2-2.5 h after the ~40-min silver
-   check. The batch is the unit of memory, the file the unit of storage: without combining, the
-   whole ISD would leave ~900 files per product, most under 0.5 MB for the statistics. Batched
-   gold equals one-batch gold (60 real stations: same rows and order; floats within 1e-12, the
-   run-to-run noise of DuckDB's parallel sums).
-
+10. **Gold is built in two passes over batches of stations, ordered by place, then combined
+   into files of a set size.** Every product is computed per station, so gold runs in batches of
+   whole stations of at most `gold_batch_reports` (10 million) silver reports, each written as
+   one part per product into `_batches/` and checked there (every check is per station, so
+   checking each batch checks the whole table). Pass 1 builds the station table for all
+   stations (~10 % of the time) and writes the review list. Pass 2 reads only the stations in
+   gold (55 % of the reports in a 300-station sample), ordered by place, in batches of whole
+   grid cells (a cell is split only when it alone exceeds a batch). Then consecutive parts are
+   combined into files of ~256 MB (`gold_file_mb`), keeping the order; the row counts before
+   and after must match. DuckDB runs with a memory limit (`gold_memory_limit`, 4 GB) and spills
+   to `gold/_spill_<run_id>/`.
+   Why batches: DuckDB holds every report of a build in memory (the `rep` step of
+   `three_hourly` is read twice, so it is materialised); 600 stations at once exhausted 16 GB of
+   RAM and swap (2026-11-05). Peak memory with batches: 1.7-2.6 GB for 1 to 10 million reports
+   (150 and 300 real stations); time does not depend measurably on the batch size (identical
+   runs differ by +-30 % on this Mac). Why two sizes: the batch is the unit of memory, the
+   file the unit of storage; without combining, the whole ISD would leave ~900 files per
+   product, most under 0.5 MB for the statistics.
+   Why ordered by place (user decision 2026-11-05): a planned product aggregates stations in
+   uniform lon/lat bins; with every cell in consecutive files it can be built cell range by
+   cell range in bounded memory, without re-sorting the whole ISD. Batches of whole cells give
+   this without sorting rows (a re-sort of each product by place cost +20-35 % of the time).
+   Checks: batched gold equals one-batch gold (60 real stations: same rows; floats within
+   1e-12, the run-to-run noise of DuckDB's parallel sums); on 300 stations with 29 batches and
+   8 MB files, every one of 99 cells lies in consecutive files and no two cells interleave.
+   Pass 2 finds a station's files by name (`silver/year=YYYY/<station_id>.parquet`); a station
+   in gold without one stops gold.
 ## 10. Testing and quality checks
 
 ```bash

@@ -21,8 +21,9 @@ LON0 = {"LONGITUDE": "0.0"}  # LMST == UTC keeps expectations readable
 STATISTICS = ("monthly", "yearly", "decadal")
 
 
-def _silver(settings: Settings, rows: list[dict], year: int, name: str = "S") -> Path:
+def _silver(settings: Settings, rows: list[dict], year: int, name: str | None = None) -> Path:
     df = build_station_year(bronze_frame(rows), None, year, settings)
+    name = name or rows[0]["STATION"]  # file named after the station, as in real silver
     path = settings.data_root / "silver" / f"year={year}" / f"{name}.parquet"
     cfg_hash = silver_config_hash(settings)
     write_silver(df, path, run_id="r", config_hash=cfg_hash, source_md5="m", prev_source_md5="")

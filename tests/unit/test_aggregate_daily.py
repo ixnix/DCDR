@@ -28,7 +28,7 @@ LON0 = {"LONGITUDE": "0.0"}  # LMST == UTC keeps expectations readable
 def _silver(
     settings: Settings,
     rows: list[dict],
-    name: str = "S",
+    name: str | None = None,  # file name; default: the station, as in real silver
     cfg_hash: str | None = None,
     nil_guard: bool | None = None,
     year: int = 2024,
@@ -43,6 +43,7 @@ def _silver(
         settings,
         nil_guard=nil_guard,
     )
+    name = name or rows[0]["STATION"]
     path = settings.data_root / "silver" / f"year={year}" / f"{name}.parquet"
     write_silver(df, path, run_id="r", config_hash=cfg_hash, source_md5="m", prev_source_md5="")
     return path
@@ -132,8 +133,8 @@ def _silver_extra_column(settings: Settings, rows: list[dict], name: str) -> Pat
 def test_uniform_silver_schema_is_read_without_union(
     settings: Settings, caplog: pytest.LogCaptureFixture
 ) -> None:
-    a = _silver(settings, _slots("2024-01-01", MW1="06,1", STATION=STA), name="A")
-    b = _silver(settings, _slots("2024-01-01", MW1="06,1", STATION=STB), name="B")
+    a = _silver(settings, _slots("2024-01-01", MW1="06,1", STATION=STA))
+    b = _silver(settings, _slots("2024-01-01", MW1="06,1", STATION=STB))
     with caplog.at_level(logging.INFO, logger="dcdr.aggregate"):
         d = _daily(settings, [a, b])
     assert sorted(d["station_id"].unique().to_list()) == [STA, STB]
@@ -144,8 +145,8 @@ def test_uniform_silver_schema_is_read_without_union(
 def test_mixed_silver_schemas_fall_back_to_union_with_a_warning(
     settings: Settings, caplog: pytest.LogCaptureFixture
 ) -> None:
-    a = _silver(settings, _slots("2024-01-01", MW1="06,1", STATION=STA), name="A")
-    b = _silver_extra_column(settings, _slots("2024-01-01", MW1="06,1", STATION=STB), name="B")
+    a = _silver(settings, _slots("2024-01-01", MW1="06,1", STATION=STA))
+    b = _silver_extra_column(settings, _slots("2024-01-01", MW1="06,1", STATION=STB), name=STB)
     with caplog.at_level(logging.INFO, logger="dcdr.aggregate"):
         d = _daily(settings, [a, b])
     assert sorted(d["station_id"].unique().to_list()) == [STA, STB]
@@ -157,7 +158,7 @@ def test_silver_check_reports_progress(
     settings: Settings, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(aggregate, "PROGRESS_EVERY", 2)
-    paths = [_silver(settings, _slots("2024-01-01"), name=n) for n in "ABC"]
+    paths = [_silver(settings, _slots("2024-01-01", STATION=f"4058{i}099999")) for i in "012"]
     with caplog.at_level(logging.INFO, logger="dcdr.aggregate"):
         build_gold(settings, paths, "20260101T000000Z-aaaaaa")
     assert "silver check: 2/3 files" in caplog.text

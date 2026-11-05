@@ -23,7 +23,7 @@ LON0 = {"LONGITUDE": "0.0"}  # LMST == UTC keeps expectations readable
 def _silver(
     settings: Settings,
     rows: list[dict],
-    name: str = "S",
+    name: str | None = None,  # file name; default: the station, as in real silver
     year: int = 2024,
     previous: list[dict] | None = None,
     nil_guard: bool | None = None,
@@ -36,6 +36,7 @@ def _silver(
         settings,
         nil_guard=nil_guard,
     )
+    name = name or rows[0]["STATION"]
     path = settings.data_root / "silver" / f"year={year}" / f"{name}.parquet"
     cfg_hash = silver_config_hash(settings)
     write_silver(df, path, run_id="r", config_hash=cfg_hash, source_md5="m", prev_source_md5="")

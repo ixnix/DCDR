@@ -16,7 +16,14 @@ import polars as pl
 import pytest
 
 from dcdr import aggregate
-from dcdr.aggregate import PRODUCTS, _size_groups, _station_batches, build_gold
+from dcdr.aggregate import (
+    PRODUCTS,
+    _hilbert,
+    _size_groups,
+    _spatial_order,
+    _station_batches,
+    build_gold,
+)
 from dcdr.config import Settings, load_settings, silver_config_hash
 from dcdr.process.build import build_station_year, write_silver
 from tests.fixtures.isd import bronze_frame, isd_row, write_isd_history
@@ -25,13 +32,16 @@ RUN = "20260101T000000Z-aaaaaa"
 STATIONS = ["40582099999", "40582199999", "40582299999"]
 
 
-def _silver(settings: Settings, station: str, dusty: bool = True) -> Path:
+def _silver(
+    settings: Settings, station: str, dusty: bool = True, lat: str = "10.0", lon: str = "0.0"
+) -> Path:
     """One station-year of 8 reports a day for 3 days, dusty on the first day if `dusty`."""
     rows = [
         isd_row(
             f"2024-01-0{d}T{h:02d}:00:00",
             STATION=station,
-            LONGITUDE="0.0",
+            LATITUDE=lat,
+            LONGITUDE=lon,
             **({"MW1": "06,1"} if dusty and d == 1 else {}),
         )
         for d in (1, 2, 3)
@@ -69,6 +79,117 @@ def test_batches_keep_stations_whole_and_in_order() -> None:
     batches = _station_batches(paths, rows, budget=10)
     assert [sorted({p.stem for p in b}) for b in batches] == [["A", "B"], ["C"]]
     assert sorted(p for b in batches for p in b) == sorted(paths)
+
+
+def test_batches_follow_a_given_station_order() -> None:
+    paths = [Path(f"year=2001/{s}.parquet") for s in ("A", "B", "C")]
+    order = [("C", 0), ("A", 1), ("B", 2)]  # (station, grid cell)
+    batches = _station_batches(paths, [1, 1, 1], budget=2, order=order)
+    assert [[p.stem for p in b] for b in batches] == [["C", "A"], ["B"]]
+    # stations not in the order (left out of gold) are not batched
+    batches = _station_batches(paths, [1, 1, 1], budget=9, order=[("B", 0)])
+    assert [[p.stem for p in b] for b in batches] == [["B"]]
+
+
+def test_a_grid_cell_that_fits_is_never_split() -> None:
+    paths = [Path(f"year=2001/{s}.parquet") for s in ("A", "B", "C")]
+    order = [("A", 0), ("B", 1), ("C", 1)]
+    # A fits with B, but then cell 1 would be split: it starts a batch of its own
+    batches = _station_batches(paths, [1, 1, 1], budget=2, order=order)
+    assert [[p.stem for p in b] for b in batches] == [["A"], ["B", "C"]]
+
+
+def test_a_grid_cell_larger_than_a_batch_is_split_by_station() -> None:
+    paths = [Path(f"year=2001/{s}.parquet") for s in ("A", "B", "C", "D")]
+    order = [("A", 0), ("B", 1), ("C", 1), ("D", 1)]
+    batches = _station_batches(paths, [1, 1, 1, 1], budget=2, order=order)
+    assert [[p.stem for p in b] for b in batches] == [["A"], ["B", "C"], ["D"]]
+
+
+def test_hilbert_curve_steps_to_a_neighbouring_cell() -> None:
+    n = 8
+    cells = sorted(((x, y) for x in range(n) for y in range(n)), key=lambda c: _hilbert(n, *c))
+    assert sorted(_hilbert(n, x, y) for x, y in cells) == list(range(n * n))
+    for (x1, y1), (x2, y2) in zip(cells, cells[1:], strict=False):
+        assert abs(x1 - x2) + abs(y1 - y2) == 1
+
+
+def test_spatial_order_keeps_grid_cells_together() -> None:
+    stations = pl.DataFrame(
+        {
+            "station_id": ["A", "B", "C", "D", "E"],
+            "trusted_lat": [51.0, -33.0, 52.0, 51.5, None],
+            "trusted_lon": [1.0, 151.0, 4.0, 9.0, 5.0],
+        }
+    )
+    order = _spatial_order(stations, grid_deg=10.0)
+    ids = [s for s, _ in order]
+    assert sorted(ids) == ["A", "B", "C", "D", "E"]
+    cell = dict(order)
+    # A, C, D share the 10-degree cell 50-60N, 0-10E: one cell, consecutive; B another cell; a
+    # station without a position goes last, in a cell of its own
+    assert cell["A"] == cell["C"] == cell["D"] != cell["B"]
+    i = sorted(ids.index(s) for s in "ACD")
+    assert i == list(range(i[0], i[0] + 3))
+    assert ids[-1] == "E" and cell["E"] not in {cell[s] for s in "ABCD"}
+
+
+def test_gold_files_follow_the_spatial_order(settings: Settings, tmp_path: Path) -> None:
+    s = _with(settings, tmp_path / "o", gold_batch_reports=1)
+    # station IDs in one order, positions in another: 0 and 2 share a cell, 1 is far away
+    places = {
+        STATIONS[0]: ("51.0", "1.0"),
+        STATIONS[1]: ("-33.0", "151.0"),
+        STATIONS[2]: ("52.0", "4.0"),
+    }
+    paths = [_silver(s, st, lat=la, lon=lo) for st, (la, lo) in places.items()]
+    out = build_gold(s, paths, RUN)
+    seen = pl.read_parquet(out / "daily" / "part-*.parquet")["station_id"].unique(
+        maintain_order=True
+    )
+    assert abs(seen.to_list().index(STATIONS[0]) - seen.to_list().index(STATIONS[2])) == 1
+    stations = pl.read_parquet(out / "stations" / "part-*.parquet")["station_id"]
+    assert stations.to_list() == sorted(STATIONS)  # the station table stays a sorted lookup
+
+
+def test_second_pass_reads_only_stations_in_gold(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s = load_settings(
+        overrides={
+            "paths": {"data_root": str(tmp_path / "g")},
+            "stations": {**settings.stations.model_dump(), "min_dusty_days": 1},
+        }
+    )
+    write_isd_history(s)
+    paths = [_silver(s, STATIONS[0]), _silver(s, STATIONS[1], dusty=False)]
+    read: list[str] = []
+    real = aggregate._build_batch
+
+    def spy(con: duckdb.DuckDBPyConnection, batch: list[Path], *args: object) -> None:
+        read.extend(p.stem for p in batch)
+        real(con, batch, *args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(aggregate, "_build_batch", spy)
+    build_gold(s, paths, RUN)
+    assert read == [STATIONS[0]]
+
+
+def test_a_station_in_gold_without_a_file_named_after_it_stops_gold(
+    settings: Settings, tmp_path: Path
+) -> None:
+    s = _with(settings, tmp_path / "n")
+    right = _silver(s, STATIONS[0])
+    wrong = right.with_name("NOT_A_STATION.parquet")
+    right.rename(wrong)  # the reports say STATIONS[0], the file name does not
+    with pytest.raises(aggregate.GoldCheckError, match="no silver file named after"):
+        build_gold(s, [wrong], RUN)
+
+
+@pytest.mark.parametrize("deg", [0, -5, 7])
+def test_grid_must_divide_the_globe(deg: float) -> None:
+    with pytest.raises(ValueError, match="gold_grid_deg"):
+        load_settings(overrides={"products": {"gold_grid_deg": deg}})
 
 
 def test_a_station_larger_than_the_budget_is_a_batch_of_its_own() -> None:
@@ -154,6 +275,7 @@ def test_lineage_records_the_batches(settings: Settings, tmp_path: Path) -> None
     lineage = json.loads((out / "silver_version.json").read_text())
     assert lineage["gold_batches"] == 3
     assert lineage["gold_batch_reports"] == 1
+    assert lineage["gold_grid_deg"] == 10.0
 
 
 def test_duckdb_gets_the_memory_limit_and_a_spill_folder(

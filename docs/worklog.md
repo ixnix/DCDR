@@ -31,7 +31,8 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - [ ] Publish documentation (e.g. MkDocs) when stable.
 - [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
 - [ ] Whole-ISD gold under 2.1.0 (silver done and verified 2026-11-05; gold failed twice for
-      memory; batched gold 2026-11-05: re-run, ~3 h), then the `stations_review.csv` review.
+      memory; batched gold ordered by place 2026-11-05: re-run, ~2.5-4 h), then the
+      `stations_review.csv` review.
       Before a published release: a full rebuild (`--force`).
 - [ ] Gold is not bit-for-bit reproducible: DuckDB's parallel sums give 9 `daily` means
       (`wsd_mean, vis_hmean, t_mean, td_mean, rh_mean, slp_mean, dup6_mean, d_t_mean,
@@ -42,6 +43,39 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 ---
 
 ## 2026-11-05
+
+- **Gold ordered by place, in two passes** (this commit; user decision: organise the batches by
+  closeness on lon/lat grid bins, with a future product that aggregates stations in uniform
+  lon/lat bins in mind). The batches of the previous commit followed station IDs.
+  - Pass 1 builds the station table for every station (in station-ID order) and the review
+    list; pass 2 builds the other products for the stations in gold only, ordered by place:
+    10-degree cells (`products.gold_grid_deg`, must divide 180) along a Hilbert curve, then each
+    station's place in its cell (a finer Hilbert curve, 256 steps per side). Batches hold whole
+    cells; a cell is split only when it alone exceeds a batch. Every cell then lies in
+    consecutive files, so a product on a grid whose step divides 10 degrees can be built from
+    consecutive files. The station table stays one file sorted by station ID (the lookup).
+  - Measured on 300 real stations (scratchpad): only 161 stations, 55 % of the reports, are in
+    gold; the station table alone takes 7 s of a 78-111 s build. Every station in gold has a
+    trusted latitude and longitude.
+  - *Ruling:* batches of whole cells rather than re-sorting rows by place: re-sorting each
+    product cost +6 s per 10-million-report batch (+35 %; +20 % with the SQL's own sort removed);
+    whole cells give the same guarantee (each cell in consecutive files) at no cost. Rows inside
+    a batch keep the SQL's order (station ID, time).
+  - Guard: pass 2 finds a station's files by name (`silver/year=YYYY/<station_id>.parquet`); a
+    station in gold without one stops gold (it would silently drop out). Found because several
+    gold tests named their silver files `A`, `B` or `S`; the test helpers now name files after
+    the station, as real silver does.
+  - Checks: tests first (Hilbert curve steps to a neighbouring cell; cells kept together; a
+    fitting cell never split; a larger cell split by station; files follow the order; pass 2
+    reads only stations in gold; the file-name guard; the grid setting); 402 tests, ruff, mypy.
+    Real data: 60 stations batched vs one batch: same rows (floats within 1e-12); 300 stations
+    with 29 batches and 8 MB files: all 99 cells in consecutive files, no two interleaved.
+  - Timing: identical runs differ by +-30 % on this Mac (75, 103 and 120 s for the same
+    300-station build), so batch sizes cannot be ranked by time; peak memory 1.7-2.6 GB for
+    1-10 million reports. Kept 10 million. Whole ISD: ~2-3 h for the batches plus ~40 min of
+    footer checks (estimate with that spread).
+  - Also: a 21 GB `.tmp/` in the repository was DuckDB's spill from the stopped 600-station
+    test (an in-memory connection spills to `./.tmp` by default); deleted, and `.tmp/` ignored.
 
 - **Gold in batches of stations, combined into ~256 MB files** (this commit). The `union_by_name`
   fix below solved only the first wall: tested on real data, the gold build itself does not fit

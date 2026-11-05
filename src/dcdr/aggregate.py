@@ -12,21 +12,24 @@ How gold is built
 -----------------
 1. Check that all silver files were built by the current code and settings (refuse otherwise),
    and count their column layouts (schemas) and reports, from each file's footer only.
-2. Split the stations into batches of whole stations (`products.gold_batch_reports` reports
-   each). Every product except the station table is computed per station, so DuckDB's memory
-   grows with the batch, not with all of silver: built at once, 600 stations already exhausted
-   16 GB of RAM (2026-11-05). DuckDB also gets a memory limit and a spill folder on the data disk.
-3. For each batch: open DuckDB (an in-process SQL engine, no server) on its silver files as one
-   view, then for each product run its SQL file (src/dcdr/sql/<name>.sql), write the result as
-   one part file under `_batches/` and run the product's checks (each a query that must return
-   0; all are per station, so checking each batch checks the whole table). With one schema
-   (the normal case) DuckDB reads the files as they are; with several it must line them up by
-   column name (`union_by_name`), which reads every file's schema first and needs time and
-   memory that grow faster than the number of files (the whole ISD ran out of memory that way).
-4. Combine each product's batch parts, in order, into files of about `products.gold_file_mb`
-   (the station table: one file), checking the row counts; check the station table as a whole
-   and write the review list.
-5. Only if everything passed: point `gold/CURRENT` at the new version, prune old versions.
+2. Work in batches of whole stations (`products.gold_batch_reports` reports each): every product
+   is computed per station, so DuckDB's memory grows with the batch, not with all of silver
+   (built at once, 600 stations already exhausted 16 GB of RAM, 2026-11-05). DuckDB also gets a
+   memory limit and a spill folder on the data disk. Each batch opens its silver files as one
+   view: with one schema (the normal case) as they are; with several, lined up by column name
+   (`union_by_name`), which reads every file's schema first and needs time and memory that grow
+   faster than the number of files (the whole ISD ran out of memory that way).
+3. Pass 1: the station table for every station (in station-ID order; ~10 % of the build),
+   merged into one file, checked as a whole; the review list.
+4. Pass 2: only the stations in gold, ordered by place: grid cells of `products.gold_grid_deg`
+   along a Hilbert curve, then each station's place in its cell. Batches hold whole cells (a cell
+   is split only when it alone is larger than a batch). For each batch, every other product: its
+   SQL file (src/dcdr/sql/<name>.sql) written as one part under `_batches/`, then its checks
+   (each a query that must return 0; all per station, so checking each batch checks the table).
+5. Combine each product's batch parts, in order, into files of about `products.gold_file_mb`,
+   checking the row counts. Every grid cell then lies in consecutive files, so a later product
+   on a lon/lat grid can be built from consecutive files.
+6. Only if everything passed: point `gold/CURRENT` at the new version, prune old versions.
 
 Why versions + a CURRENT pointer
 --------------------------------
@@ -429,30 +432,103 @@ def _check_silver(paths: list[Path], ledger: pl.DataFrame) -> SilverCheck:
     return SilverCheck(versions, carried, len(layouts), rows)
 
 
-def _station_batches(paths: list[Path], rows: list[int], budget: int) -> list[list[Path]]:
-    """Group silver files into batches of whole stations, in station order, each with at most
-    `budget` reports; a station with more reports than that is a batch of its own.
+def _station_batches(
+    paths: list[Path],
+    rows: list[int],
+    budget: int,
+    order: list[tuple[str, int]] | None = None,
+) -> list[list[Path]]:
+    """Group silver files into batches of whole stations, each with at most `budget` reports.
 
-    Every gold product except the station table is computed per station, so a batch can be built
-    on its own; DuckDB's memory then grows with the batch, not with all of silver.
+    `order` lists (station, grid cell) in the order to follow; only those stations are batched.
+    A batch never splits a cell that fits into one: a cell that does not fit after the stations
+    already in the batch starts a new batch, and only a cell larger than a whole batch is split,
+    by station (a station larger than a batch is a batch of its own). Without `order`: every
+    station in station-ID order, each its own cell.
+
+    Every gold product is computed per station, so a batch can be built on its own; DuckDB's
+    memory then grows with the batch, not with all of silver.
     """
     by_station: dict[str, list[tuple[Path, int]]] = {}
     for path, n in zip(paths, rows, strict=True):
         by_station.setdefault(path.stem, []).append((path, n))
+    if order is None:
+        order = [(s, i) for i, s in enumerate(sorted(by_station))]
+    size = {s: sum(n for _, n in files) for s, files in by_station.items()}
+    cells: list[list[str]] = []  # consecutive stations of one cell
+    order_cell: dict[str, int] = {}
+    for station, cell in order:
+        if station not in by_station:
+            continue
+        if cells and order_cell.get(cells[-1][0]) == cell:
+            cells[-1].append(station)
+        else:
+            cells.append([station])
+        order_cell[station] = cell
     batches: list[list[Path]] = []
     current: list[Path] = []
     current_n = 0
-    for station in sorted(by_station):
-        files = by_station[station]
-        n = sum(r for _, r in files)
-        if current and current_n + n > budget:
-            batches.append(current)
+    for members in cells:
+        if current and current_n + sum(size[s] for s in members) > budget:
+            batches.append(current)  # the whole cell does not fit: start a new batch
             current, current_n = [], 0
-        current += [path for path, _ in files]
-        current_n += n
+        for station in members:
+            if current and current_n + size[station] > budget:  # only in a cell > a batch
+                batches.append(current)
+                current, current_n = [], 0
+            current += [path for path, _ in by_station[station]]
+            current_n += size[station]
     if current:
         batches.append(current)
     return batches
+
+
+# Sub-cells per side of a grid cell for ordering stations inside it (10-degree cells: ~0.04 deg).
+_FINE = 256
+
+
+def _hilbert(n: int, x: int, y: int) -> int:
+    """Position of cell (x, y) along a Hilbert curve over an n x n grid (n a power of 2). Cells
+    next to each other on the curve are next to each other on the grid, so sorting by it keeps
+    nearby places together (the standard algorithm: Wikipedia, "Hilbert curve", xy2d)."""
+    d = 0
+    s = n // 2
+    while s > 0:
+        rx = 1 if x & s else 0
+        ry = 1 if y & s else 0
+        d += s * s * ((3 * rx) ^ ry)
+        if ry == 0:  # rotate the quadrant so the curve stays continuous
+            if rx == 1:
+                x, y = n - 1 - x, n - 1 - y
+            x, y = y, x
+        s //= 2
+    return d
+
+
+def _spatial_order(stations: pl.DataFrame, grid_deg: float) -> list[tuple[str, int]]:
+    """(station, grid cell) ordered by place: cells of `grid_deg` degrees along a Hilbert curve
+    (the cell number is its place on the curve), then each station's place inside its cell (a
+    finer Hilbert curve), then the station ID. Stations of one cell are therefore consecutive.
+    Uses the trusted position (gold `stations`); stations without one go last, in a cell of
+    their own."""
+    cols, rows = round(360 / grid_deg), round(180 / grid_deg)
+    n = 1
+    while n < max(cols, rows):
+        n *= 2
+
+    def key(station: str, lat: float | None, lon: float | None) -> tuple[int, int, int, str]:
+        if lat is None or lon is None:
+            return (1, n * n, 0, station)  # after every real cell
+        fx, fy = (lon + 180) / grid_deg, (lat + 90) / grid_deg
+        cx, cy = min(int(fx), cols - 1), min(int(fy), rows - 1)
+        sx, sy = min(int((fx - cx) * _FINE), _FINE - 1), min(int((fy - cy) * _FINE), _FINE - 1)
+        return (0, _hilbert(n, cx, cy), _hilbert(_FINE, sx, sy), station)
+
+    keys = [
+        key(s, lat, lon)
+        for s, lat, lon in stations.select("station_id", "trusted_lat", "trusted_lon").iter_rows()
+    ]
+    return [(k[3], k[1]) for k in sorted(keys)]
 
 
 def _size_groups(sizes: list[int], target: int) -> list[list[int]]:
@@ -538,30 +614,45 @@ def _run_checks(con: duckdb.DuckDBPyConnection, product: Product, where: str) ->
         raise GoldCheckError(f"{product.name}{where}: {failures}")
 
 
+def _stations_batch(
+    con: duckdb.DuckDBPyConnection, paths: list[Path], staging: Path, k: int, union: bool
+) -> None:
+    """Pass 1 for one batch: the station table of its stations into
+    `<staging>/stations/batch-<k>.parquet`, checked. Files with one schema are read as they are;
+    only mixed schemas need union_by_name (module docstring)."""
+    con.read_parquet([_sql_path(p) for p in paths], union_by_name=union).create_view("silver_all")
+    product = PRODUCTS[0]
+    target = staging / product.name / f"batch-{k:05d}.parquet"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    sql = (SQL_DIR / product.sql_file).read_text()
+    # COPY (query) TO file: DuckDB streams the query result straight into Parquet.
+    con.execute(f"COPY ({sql}\n) TO '{_sql_path(target)}' (FORMAT parquet, COMPRESSION zstd)")
+    con.read_parquet(_sql_path(target)).create_view(product.name)
+    _run_checks(con, product, f" (batch {k})")
+
+
 def _build_batch(
     con: duckdb.DuckDBPyConnection, paths: list[Path], staging: Path, k: int, union: bool
 ) -> None:
-    """Build every product for one batch of stations into `<staging>/<product>/batch-<k>.parquet`,
-    checking each part. The checks are all per station (or per station and period), so checking
-    each batch checks the whole table."""
-    # `silver_all` feeds the station table; the other products read `silver`, the same reports
-    # without the stations left out of gold (created right after `stations`). Files with one
-    # schema are read as they are; only mixed schemas need union_by_name (module docstring).
+    """Pass 2 for one batch of stations in gold: every product after the station table into
+    `<staging>/<product>/batch-<k>.parquet` (rows by station, then time, as each SQL orders
+    them), each part checked. The checks are all per station (or per station and period), so
+    checking each batch checks the whole table. Expects the view `stations` (all stations)."""
     con.read_parquet([_sql_path(p) for p in paths], union_by_name=union).create_view("silver_all")
-    for product in PRODUCTS:
+    # Only the reports of stations in gold (a batch holds only those; this keeps it explicit).
+    con.execute(
+        "CREATE OR REPLACE VIEW silver AS SELECT * FROM silver_all "
+        "WHERE station_id IN (SELECT station_id FROM stations WHERE in_gold)"
+    )
+    for product in PRODUCTS[1:]:
         target = staging / product.name / f"batch-{k:05d}.parquet"
         target.parent.mkdir(parents=True, exist_ok=True)
         sql = (SQL_DIR / product.sql_file).read_text()
         # COPY (query) TO file: DuckDB streams the query result straight into Parquet.
-        con.execute(f"COPY ({sql}) TO '{_sql_path(target)}' (FORMAT parquet, COMPRESSION zstd)")
+        con.execute(f"COPY ({sql}\n) TO '{_sql_path(target)}' (FORMAT parquet, COMPRESSION zstd)")
         # Re-read the written file as a view so the checks test exactly what was saved; the
         # later products of this batch read it under the product's name.
         con.read_parquet(_sql_path(target)).create_view(product.name)
-        if product.name == "stations":
-            con.execute(
-                "CREATE OR REPLACE VIEW silver AS SELECT * FROM silver_all "
-                "WHERE station_id IN (SELECT station_id FROM stations WHERE in_gold)"
-            )
         _run_checks(con, product, f" (batch {k})")
 
 
@@ -631,14 +722,7 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     else:
         log.info("silver: %d files, 1 schema", len(silver_paths))
     budget = settings.products.gold_batch_reports
-    batches = _station_batches(silver_paths, check.rows, budget)
     reports = dict(zip(silver_paths, check.rows, strict=True))
-    log.info(
-        "gold: %d reports in %d batches of at most %d reports",
-        sum(check.rows),
-        len(batches),
-        budget,
-    )
     spill = gold_root / f"_spill_{run_id}"
     con = _connect(settings, spill)
     con.register("isd_history", isd_history)
@@ -658,7 +742,42 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     con.execute(
         f"SET VARIABLE min_valid_days_month = {int(settings.products.min_valid_days_month)}"
     )
+    staging = out_dir / "_batches"
+    target_bytes = int(settings.products.gold_file_mb * 2**20)
     try:
+        # Pass 1: the station table for every station (cheap: ~10 % of the build), in batches in
+        # station-ID order; merged into one file, checked as a whole, and the review list.
+        first = _station_batches(silver_paths, check.rows, budget)
+        log.info("gold: %d reports; pass 1 (stations) in %d batches", sum(check.rows), len(first))
+        for k, batch in enumerate(first):
+            _stations_batch(con, batch, staging, k, union)
+        _combine(
+            con, sorted((staging / "stations").glob("batch-*.parquet")), out_dir / "stations", 2**62
+        )
+        stations_file = _sql_path(out_dir / "stations" / "part-000.parquet")
+        con.read_parquet(stations_file).create_view("stations")
+        _run_checks(con, PRODUCTS[0], " (all batches)")
+        _write_review(con, out_dir / "stations_review.csv")
+        # Pass 2: only the stations in gold, ordered by place (gold_grid_deg cells along a Hilbert
+        # curve), in batches of whole cells; every other product, then combined. A cell is split
+        # only when it alone is larger than a batch, so each cell lies in consecutive files.
+        in_gold = pl.read_parquet(out_dir / "stations" / "part-000.parquet").filter("in_gold")
+        order = _spatial_order(in_gold, settings.products.gold_grid_deg)
+        # Pass 2 finds a station's files by name (silver/year=YYYY/<station_id>.parquet); a
+        # station in gold without one would silently drop out, so stop instead.
+        unnamed = sorted({s for s, _ in order} - {p.stem for p in silver_paths})
+        if unnamed:
+            raise GoldCheckError(
+                f"stations in gold with no silver file named after them: {unnamed[:10]}"
+            )
+        # With no station in gold, one batch still writes every product (empty).
+        batches = _station_batches(silver_paths, check.rows, budget, order) or [silver_paths[:1]]
+        log.info(
+            "gold: pass 2 (products) for %d stations in gold in %d batches of at most %d reports",
+            len(order),
+            len(batches),
+            budget,
+        )
         # Record which silver this gold version was built from (lineage), and how it was split.
         lineage = {
             "silver_method_version": expected[0],
@@ -668,9 +787,9 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
             **inputs_md5,  # the station-position inputs (isd-history, overrides)
             "gold_batches": len(batches),
             "gold_batch_reports": budget,
+            "gold_grid_deg": settings.products.gold_grid_deg,
         }
         atomic_write_bytes(out_dir / "silver_version.json", json.dumps(lineage, indent=2).encode())
-        staging = out_dir / "_batches"
         for k, batch in enumerate(batches):
             started = time.monotonic()
             _build_batch(con, batch, staging, k, union)
@@ -682,20 +801,12 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
                 sum(reports[p] for p in batch),
                 time.monotonic() - started,
             )
-        # Combine the batch parts into files of about gold_file_mb (the station table: one file).
-        target_bytes = int(settings.products.gold_file_mb * 2**20)
-        for product in PRODUCTS:
+        # Combine the batch parts into files of about gold_file_mb, keeping the order.
+        for product in PRODUCTS[1:]:
             parts = sorted((staging / product.name).glob("batch-*.parquet"))
-            size = 2**62 if product.name == "stations" else target_bytes
-            _combine(con, parts, out_dir / product.name, size)
+            _combine(con, parts, out_dir / product.name, target_bytes)
             log.info("gold: %s combined", product.name)
         shutil.rmtree(staging)
-        # The station table as a whole: its checks again, and the review list (needs all stations).
-        con.read_parquet(_sql_path(out_dir / "stations" / "part-000.parquet")).create_view(
-            "stations"
-        )
-        _run_checks(con, PRODUCTS[0], " (all batches)")
-        _write_review(con, out_dir / "stations_review.csv")
     except Exception:
         shutil.rmtree(out_dir, ignore_errors=True)  # discard the unfinished version
         raise

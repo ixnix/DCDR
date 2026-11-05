@@ -141,6 +141,9 @@ class ProductsCfg(_Section):
     # After all batches, consecutive batch parts are combined into files of about this size (MB);
     # a part already larger stays a file of its own.
     gold_file_mb: float
+    # Stations in gold are ordered by place: cells of this many degrees, visited along a Hilbert
+    # curve; every gold file holds whole cells in order (for products on a lon/lat grid).
+    gold_grid_deg: float
 
     @model_validator(mode="after")
     def _gold_limits_valid(self) -> ProductsCfg:
@@ -148,6 +151,11 @@ class ProductsCfg(_Section):
             raise ValueError("products.gold_batch_reports must be at least 1")
         if self.gold_file_mb <= 0:
             raise ValueError("products.gold_file_mb must be positive")
+        cells = 180 / self.gold_grid_deg if self.gold_grid_deg > 0 else 0.5
+        if cells != int(cells):
+            raise ValueError(
+                f"products.gold_grid_deg must divide 180 (e.g. 5, 10, 15), got {self.gold_grid_deg}"
+            )
         if not re.fullmatch(r"\d+(\.\d+)?\s*(MB|GB|MiB|GiB)", self.gold_memory_limit):
             raise ValueError(
                 f"products.gold_memory_limit must look like 4GB or 512MB, got "

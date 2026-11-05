@@ -104,6 +104,12 @@ products:
   # The unit of storage: after all batches, consecutive batch parts are combined into files of
   # about this size (MB); small products (monthly, yearly, decadal) become one file each.
   gold_file_mb: 256
+  # Gold stations are ordered by place (user decision 2026-11-05): grid cells of this size,
+  # visited along a Hilbert curve (neighbouring cells next to each other), then each station's
+  # place within its cell. Every gold file holds whole cells in this order, so a product on a
+  # uniform lon/lat grid whose step divides it (0.25, 0.5, 1, 2, 2.5, 5, 10) can be built from
+  # consecutive files. Must divide 180.
+  gold_grid_deg: 10
 
 stations:
   station_list: config/stations/pilot_100.csv  # default for --stations (relative to working dir)
