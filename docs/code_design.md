@@ -64,7 +64,8 @@ DCDR/
 │   │   ├── sources.py          source group of each report (SYNOP / METAR / other)
 │   │   ├── guard.py            station guards for inferred "nothing significant" (V3; METAR)
 │   │   ├── derived.py          are a station-year's SYNOPs copies of its METARs?
-│   │   └── build.py            runs the above for one station-year, writes silver
+│   │   ├── build.py            runs the above for one station-year, writes silver
+│   │   └── migrations.py       targeted rebuild: carry files across a method change
 │   ├── aggregate.py            silver -> gold (versioned, checked, CURRENT pointer)
 │   ├── stations.py             station-position inputs: isd-history and the override file
 │   ├── sql/daily.sql           the gold `daily` table, in SQL (run by DuckDB)
@@ -96,7 +97,8 @@ environment). Every pipeline command records a run (section 7.6).
 | Command | What it does | Main options |
 |---|---|---|
 | `dcdr ingest` | List NOAA's S3 files for the years; download new or changed station-years into bronze; saves the download record and logs progress every 500 files, so a stopped run resumes where it left off; re-downloads recorded files missing from disk | `--years`, `--stations` |
-| `dcdr process` | Build silver for station-years that are missing or out of date; logs progress every 500 stations | `--years`, `--stations`, `--force`, `--workers` |
+| `dcdr process` | Build silver for station-years that are missing or out of date; after a method change with a migration, carry forward the files it cannot affect (targeted rebuild); logs progress every 500 stations | `--years`, `--stations`, `--force`, `--workers` |
+| `dcdr verify-silver` | Re-process a random sample of carried silver files with the running code and compare them with the files; exits with an error if any differ | `--sample` (default 1000), `--seed` |
 | `dcdr aggregate` | Build a new gold version from silver, check it, activate it; prints the gold folder, the stations per position status and those left out as not dusty (e.g. `{'agree': 96, 'override': 1, 'not_dusty': 3}`); the stations needing a decision are in its `stations_review.csv` | `--years`, `--stations` |
 | `dcdr run` | `ingest`, then `process`, then `aggregate` | as above |
 | `dcdr status` | Download status counts and the five latest runs (read-only) | |
@@ -163,8 +165,9 @@ Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
 - `config_hash`: SHA-256 (16 hex) of all resolved settings; stored in every run record.
 - `silver_config_hash`: hash of the silver sections only; stored in every silver file. If it
   changes, silver is rebuilt.
-- `METHOD_VERSION` (`src/dcdr/process/__init__.py`, currently **1.8.0**): bumped whenever
-  processing logic changes; stored in every silver file. If it changes, silver is rebuilt.
+- `METHOD_VERSION` (`src/dcdr/process/__init__.py`, currently **2.1.0**): bumped whenever
+  processing logic changes; stored in every silver file. If it changes, silver is rebuilt,
+  except where the change declares a migration (8, "After a method change").
 
 ## 6. Inputs
 
@@ -193,6 +196,8 @@ NOAA's `isd-history.csv` (one row per station: USAF, WBAN, name, country, positi
 read from `<data root>/catalog/isd-history.csv` (config `stations.isd_history`); the pipeline
 never downloads it. `stations.load_isd_history` keys it by `station_id` = USAF + WBAN, treats an
 empty position or 0/0 as "no position", and stops on a station listed twice or a missing file.
+Silver uses its longitude for reports without a position (rules.md 4.2; without the file,
+`process` warns and fills from the station-year median), gold for the position check (4.3).
 
 ## 7. Outputs
 
@@ -350,7 +355,13 @@ also check that they hold only stations in gold (`stations_in_gold`).
 ### 7.6 Provenance
 - Bronze metadata: `dcdr_layer, source_md5, source_key, run_id`.
 - Silver metadata: `dcdr_layer, method_version, config_hash, run_id, source_md5,
-  prev_source_md5, nil_guard, metar_guard` (`1` pass, `0` fail, empty = no decision).
+  prev_source_md5, nil_guard, metar_guard` (`1` pass, `0` fail, empty = no decision),
+  `lon_fill` (the isd-history longitude that reports without a position took; `none` = the
+  year median; empty = no report needed one, absent in files before 2.1.0).
+- Carried silver files (`_state/silver_carried.parquet`): `station_id, year, built_version,
+  built_run_id, valid_for, migration, carried_run_id`; a row counts only while the file's own
+  `method_version` and `run_id` match it.
+- Gold lineage (`silver_version.json`) also records `silver_files` and `silver_carried`.
 - Gold lineage (`silver_version.json`): `silver_method_version, silver_config_hash,
   isd_history_md5, overrides_md5` (empty when there is no override file).
 - Run log: `run_id, command, started_at, finished_at, status, git_commit, git_dirty,
@@ -438,6 +449,27 @@ help; each worker needs about 0.2 GB of memory. Station-years without a position
 not as `failed`; a silver file from an earlier method for such a year is deleted (`removed`, with
 a warning line). `failed` is left for real errors.
 
+### After a method change: targeted rebuild
+When `METHOD_VERSION` moves on and the change can only affect some stations, declare it in
+`src/dcdr/process/migrations.py` (with a test of `affects`, as for 2.1.0):
+
+```python
+MIGRATIONS["2.2.0"] = Migration("2.1.0", "2.2.0", "what changed", affects_function)
+```
+
+`affects(raw)` gets one bronze station-year and must return True if the change can alter the
+station's silver in any way (when in doubt, True). Then:
+
+```bash
+caffeinate -ims uv run dcdr process --years 1901-2025 --stations config/stations/all_isd.csv --workers 6 2>&1 | tee -a ~/dcdr_process.log
+uv run dcdr verify-silver --sample 1000      # re-process 1000 carried files and compare
+```
+The process summary counts `built`, `carried`, `skipped`, `no_position` and `removed`. Every
+station's bronze is still read once (guards and `affects`), about an hour for the whole ISD;
+only affected stations are built. A change that can affect every station (QC, common codes) gets
+no migration: it rebuilds in full. Before a published release, rebuild in full
+(`dcdr process --force`) rather than relying on carried files.
+
 ## 9. Design decisions (engineering)
 
 1. **Bronze keeps everything.** Ingest stores the whole CSV, as text. Choosing columns happens in
@@ -445,7 +477,11 @@ a warning line). `failed` is left for real errors.
    column (raw SYNOP text) later provided the SYNOP iX indicator.
 2. **Incremental, reproducible runs.** Downloads are skipped when the S3 ETag/size is unchanged
    (manifest). Silver is skipped when its inputs, method version and settings are unchanged
-   (file metadata). A changed source file rebuilds only what it affects.
+   (file metadata). A changed source file rebuilds only what it affects. A method change
+   rebuilds everything unless it declares a migration: then files it cannot affect are carried
+   forward (ledger) and checked by sample (`verify-silver`). Why: 2.1.0 changes 0.65 % of
+   station-years, and a full rebuild takes 13-16 hours (2026-11-04). The ledger keeps files
+   untouched: rewriting their metadata would mean rewriting every file.
 3. **Atomic writes.** Write `name.tmp`, then rename: a crash never leaves a half-written file.
 4. **Versioned gold with a pointer.** Each build goes to a new folder; `CURRENT` moves only after
    all checks pass; the last 3 versions are kept (rollback = edit `CURRENT`).
@@ -475,6 +511,8 @@ Tests use small synthetic ISD rows (`tests/fixtures/isd.py`) and an in-memory fa
 | `FileNotFoundError` while pruning gold (before 2026-10-19) | macOS deletes `._x` together with `x` | Fixed (`aggregate._ignore_vanished`) |
 | Data written to `./data` instead of the SSD | `DCDR_DATA` not set in that shell | `export DCDR_DATA=...` (add to `~/.zshrc`) |
 | `StaleSilverError` from `aggregate` | silver built by other code/settings | `dcdr process --years ...` (or `--force`) |
+| `MixedSilverVersionsError` from `aggregate` | some silver files not yet rebuilt or carried to the running version (e.g. a stopped `process`) | finish `dcdr process` over the same years and stations |
+| `verify-silver` reports differences | a migration's `affects` misses a change | remove the migration from `MIGRATIONS` and rebuild (`dcdr process --force`); report it in the worklog |
 | A notebook shows as modified in git | JupyterLab re-saved it | `git restore <notebook>` if nothing changed |
 | `No magic bytes found at end of file '…/._x.parquet'` in a query | a glob `*.parquet` matched macOS `._` files on exFAT | use `[0-9A-Z]*.parquet` (station IDs start with a digit or a capital letter) |
 

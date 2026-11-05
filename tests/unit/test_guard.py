@@ -118,6 +118,8 @@ def test_station_guards_ignore_years_without_a_position(settings: Settings, tmp_
         paths.append(p)
     assert station_guards(paths, settings) == (None, None)  # 30 reports, not 60: too few
     assert station_guard(paths, settings) is None
+    # placed by isd-history, the year is built, so it is evidence again
+    assert station_guards(paths, settings, isd_lon=10.0) == (True, None)
 
 
 def test_guard_counts_match_classifying_every_row(settings: Settings) -> None:

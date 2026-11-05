@@ -36,9 +36,11 @@ from importlib.resources import files
 from pathlib import Path
 
 import duckdb
+import polars as pl
 
 from dcdr.config import Settings, silver_config_hash
 from dcdr.process import METHOD_VERSION
+from dcdr.process.migrations import effective_version, ledger_path, read_ledger
 from dcdr.state import atomic_write_bytes, read_parquet_metadata, safe_listdir
 from dcdr.stations import file_md5, load_isd_history, load_overrides
 
@@ -371,13 +373,23 @@ class GoldCheckError(RuntimeError):
     """A gold product failed a validation check."""
 
 
-def _silver_versions(paths: list[Path]) -> set[tuple[str, str]]:
-    """The distinct (method_version, config_hash) pairs found in the silver files' metadata."""
+def _silver_versions(paths: list[Path], ledger: pl.DataFrame) -> tuple[set[tuple[str, str]], int]:
+    """The distinct (method version, config_hash) pairs of the silver files, and how many files
+    count as their version through the ledger of carried files (process/migrations.py).
+
+    A file's version is `effective_version`: the one that built it, or the one it was carried to.
+    Files are found in the ledger by their place in silver (`year=YYYY/<station>.parquet`).
+    """
+    rows = {(r["station_id"], r["year"]): r for r in ledger.iter_rows(named=True)}
     out: set[tuple[str, str]] = set()
+    carried = 0
     for p in paths:
         meta = read_parquet_metadata(p)
-        out.add((meta.get("method_version", ""), meta.get("config_hash", "")))
-    return out
+        row = rows.get((p.stem, int(p.parent.name.removeprefix("year="))))
+        version = effective_version(meta, row)
+        carried += version != meta.get("method_version", "")
+        out.add((version, meta.get("config_hash", "")))
+    return out, carried
 
 
 def _sql_path(path: Path) -> str:
@@ -431,7 +443,9 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     if not silver_paths:
         raise ValueError("no silver files to build gold from")
     # Guard 1: all silver files must come from the same code and settings ...
-    versions = _silver_versions(silver_paths)
+    versions, n_carried = _silver_versions(
+        silver_paths, read_ledger(ledger_path(settings.data_root))
+    )
     if len(versions) != 1:
         raise MixedSilverVersionsError(f"silver files have mixed versions: {sorted(versions)}")
     # Guard 2: ... and that must be the code and settings running now.
@@ -474,6 +488,8 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
         lineage = {
             "silver_method_version": expected[0],
             "silver_config_hash": expected[1],
+            "silver_files": len(silver_paths),
+            "silver_carried": n_carried,  # files built by an earlier method, carried forward
             **inputs_md5,  # the station-position inputs (isd-history, overrides)
         }
         atomic_write_bytes(out_dir / "silver_version.json", json.dumps(lineage, indent=2).encode())

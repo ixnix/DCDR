@@ -305,11 +305,12 @@ def lmst_shift(lon: pl.Expr) -> pl.Expr:
     return pl.duration(milliseconds=(lon * 240_000).round().cast(pl.Int64))
 
 
-def add_time_columns(df: pl.DataFrame) -> pl.DataFrame:
+def add_time_columns(df: pl.DataFrame, isd_lon: float | None = None) -> pl.DataFrame:
     """Local mean solar time = UTC + lon/15 h, using each report's own longitude.
 
-    Out-of-range coordinates (ISD missing code +999999 reads as 999.999) and 0/0 become null; a
-    missing longitude falls back to the station-year median. Daily-summary (SOD) rows are stamped 23:59
+    Out-of-range coordinates (ISD missing code +999999 reads as 999.999) and 0/0 become null. A
+    report without a longitude takes `isd_lon` (the station's isd-history longitude), else the
+    station-year median (user decision 2026-11-04); `lat`/`lon` keep the files' own values. Daily-summary (SOD) rows are stamped 23:59
     local STANDARD time, which can land just after LMST midnight, so their summarised day is
     date(time_lmst - 12 h).
 
@@ -322,7 +323,8 @@ def add_time_columns(df: pl.DataFrame) -> pl.DataFrame:
         lat=pl.when(ok | ((pl.col("lat") != 0) & pl.col("lat").is_between(-90, 90))).then("lat"),
         lon=pl.when(ok | ((pl.col("lon") != 0) & pl.col("lon").is_between(-180, 180))).then("lon"),
     )  # out of range or 0/0 -> null; so is a lone 0 whose partner is missing (ISD: 0.0, 999.999)
-    df = df.with_columns(lon_used=pl.col("lon").fill_null(pl.col("lon").median()))
+    fill = pl.lit(isd_lon, dtype=pl.Float64) if isd_lon is not None else pl.col("lon").median()
+    df = df.with_columns(lon_used=pl.col("lon").fill_null(fill))
     if df.height and df["lon_used"].null_count():
         raise NoPositionError("no valid position in this station-year (ISD missing or 0/0)")
     df = df.with_columns(time_lmst=pl.col("time_utc") + lmst_shift(pl.col("lon_used")))

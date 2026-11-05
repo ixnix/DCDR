@@ -151,6 +151,7 @@ def build_station_year(
     *,
     nil_guard: bool | None = None,
     metar_guard: bool | None = None,
+    isd_lon: float | None = None,
 ) -> pl.DataFrame:
     """Turn one station-year of bronze into silver (in memory; `write_silver` saves it).
 
@@ -163,17 +164,21 @@ def build_station_year(
                      full text (process/guard.py)
     The `*` makes the guards keyword-only, so call sites must spell out their names.
 
+    isd_lon          the station's isd-history longitude (None if it has none): a report without
+                     a position takes it, and a station-year without any position is placed by it
+
     Raises NoPositionError when no report of `year` has a usable position (latitude and
-    longitude, not 0/0; user decision 2026-11-04): such a station-year is not built. The previous
-    year's rows cannot supply one. A header-only file (no reports) still gives an empty silver file.
+    longitude, not 0/0) and isd-history has none either (user decision 2026-11-04): such a
+    station-year is not built. The previous year's rows cannot supply one. A header-only file
+    (no reports) still gives an empty silver file.
     """
-    if current.height and not has_position(current):
+    if current.height and isd_lon is None and not has_position(current):
         raise NoPositionError("no valid position in this station-year (ISD missing or 0/0)")
     frames = [current] if previous is None else [previous_year_tail(previous, year), current]
     # "diagonal_relaxed": the two years may have different column sets (ISD adds fields over
     # time); missing columns are filled with nulls instead of raising an error.
     raw = dedupe(pl.concat(frames, how="diagonal_relaxed"))
-    df = add_time_columns(parse_reports(raw))
+    df = add_time_columns(parse_reports(raw), isd_lon)
     bad = df.filter(pl.col("time_utc").is_null()).height
     if bad:
         log.warning("dropping %d rows with unparseable DATE", bad)
@@ -202,6 +207,17 @@ def build_station_year(
     return df.select(CORE_COLUMNS + rest)
 
 
+def fill_key(df: pl.DataFrame, isd_lon: float | None) -> str:
+    """What the filled longitudes of a built station-year depend on, for the "is it current" check.
+
+    "" when no report needed a fill (isd-history does not matter), else the isd-history longitude
+    used (as text) or "none" (no isd-history position: the year median was used).
+    """
+    if df["lon"].null_count() == 0:
+        return ""
+    return "none" if isd_lon is None else str(isd_lon)
+
+
 def write_silver(
     df: pl.DataFrame,
     path: Path,
@@ -212,6 +228,7 @@ def write_silver(
     prev_source_md5: str,
     nil_guard: bool | None = None,
     metar_guard: bool | None = None,
+    lon_fill: str = "",
 ) -> None:
     """Validate one silver station-year against the contract, then write it with provenance.
 
@@ -231,5 +248,6 @@ def write_silver(
             "prev_source_md5": prev_source_md5,
             "nil_guard": {True: "1", False: "0", None: ""}[nil_guard],  # station guard (rule V3)
             "metar_guard": {True: "1", False: "0", None: ""}[metar_guard],  # METAR inference guard
+            "lon_fill": lon_fill,  # fill_key: the isd-history longitude missing positions took
         },
     )

@@ -126,6 +126,7 @@ def process(
         )
         return {
             "built": s.built,
+            "carried": s.carried,
             "skipped": s.skipped,
             "missing_bronze": s.missing_bronze,
             "no_position": s.no_position,
@@ -135,6 +136,31 @@ def process(
         }
 
     _execute("process", config, profile, body)
+
+
+@app.command("verify-silver")
+def verify_silver(
+    sample: int = typer.Option(
+        1000, "--sample", min=1, help="Carried files to rebuild and compare."
+    ),
+    seed: int = typer.Option(
+        0, "--seed", help="Random seed of the sample (same seed, same files)."
+    ),
+    config: Path = ConfigOpt,
+    profile: Path | None = ProfileOpt,
+) -> None:
+    """Re-process a random sample of carried silver files and check they are unchanged."""
+    result: dict[str, Any] = {}
+
+    def body(ctx: pipeline.RunContext) -> dict[str, Any]:
+        v = pipeline.run_verify_silver(ctx, sample, seed)
+        result.update(carried=v.carried, checked=v.checked, different=v.different)
+        return result
+
+    _execute("verify-silver", config, profile, body)
+    if result["different"]:
+        typer.echo(f"{len(result['different'])} carried files differ from a rebuild", err=True)
+        raise typer.Exit(1)
 
 
 @app.command()

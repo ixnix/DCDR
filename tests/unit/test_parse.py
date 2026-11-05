@@ -100,6 +100,21 @@ def test_zero_zero_position_is_missing() -> None:
     assert df["lon_used"].to_list() == [-57.5, -115.0, 0.0]  # missing: the station-year median
 
 
+def test_missing_longitude_comes_from_isd_history_before_the_year_median() -> None:
+    """User decision 2026-11-04: a report without a position takes the station's isd-history
+    longitude; the station-year median only when isd-history has none."""
+    raw = bronze_frame(
+        [
+            isd_row("2024-01-01T01:00:00", LONGITUDE="-115.0"),
+            isd_row("2024-01-01T04:00:00", LONGITUDE="999.999"),
+            isd_row("2024-01-01T07:00:00", LATITUDE="0.0", LONGITUDE="0.0"),
+        ]
+    )
+    df = add_time_columns(parse_reports(raw), isd_lon=-110.0)
+    assert df["lon"].to_list() == [-115.0, None, None]  # the files' own values stay
+    assert df["lon_used"].to_list() == [-115.0, -110.0, -110.0]
+
+
 def test_daily_and_past_weather_fields() -> None:
     # Layouts per ISD format document and real SOD rows ("AU,16,RA  ,5"; "08,6,24,6").
     r = _one(REPORT_TYPE="SOD  ", AT1="AU,07,DU  ,5", AX1="07,5,24,5", AZ1="2,1,06,1")

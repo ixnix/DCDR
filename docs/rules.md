@@ -96,22 +96,32 @@ gets a content fingerprint `row_key` (SHA-1) so results never depend on file row
 
 ### 4.2 Local mean solar time (LMST)
 `time_lmst = time_utc + longitude / 15 h` (4 min per degree), using each report's longitude
-(station-year median if missing). A coordinate outside ±90/±180 (ISD's missing codes 99.999 and
-999.999) is missing; so are both coordinates of a report at **0/0**, and a single 0 whose partner
-is missing (ISD writes `0.0, 999.999`). A single 0 with a valid partner is real and kept (Tema,
-Ghana, lon 0; Pontianak, lat 0; the South Pole, -90/0).
+(`lon_used`). A coordinate outside ±90/±180 (ISD's missing codes 99.999 and 999.999) is missing;
+so are both coordinates of a report at **0/0**, and a single 0 whose partner is missing (ISD
+writes `0.0, 999.999`). A single 0 with a valid partner is real and kept (Tema, Ghana, lon 0;
+Pontianak, lat 0; the South Pole, -90/0). A report without a longitude takes, in this order:
+the station's **isd-history** longitude, else the median of the station-year's own reports
+(user decision 2026-11-04: "these rows can still be fixed based on isd-history"). `lat` and `lon`
+keep the files' own values (null when missing), so the position check (4.3) never compares
+isd-history with itself; the silver metadata `lon_fill` records the isd-history longitude used.
 
-**No position, no silver** (method 2.1.0, user decision 2026-11-04: "do not need any station-years
-with missing geolocations, or lat/lon being 0"). A station-year in which no report has a usable
-position (latitude and longitude, not 0/0) is **not built**, and a silver file left by an earlier
-method is deleted, so gold cannot read it. The previous year's 31 December rows cannot supply a
-position. Such years give no evidence to the station guards (5.1, 5.2) either. A file with a
+**No position, no silver** (method 2.1.0, user decisions 2026-11-04: "do not need any station-years
+with missing geolocations, or lat/lon being 0"; "only exclude station years when there is
+absolutely no way to find the geolocations"). A station-year in which no report has a usable
+position (latitude and longitude, not 0/0) **and** whose station has no isd-history position is
+**not built**, and a silver file left by an earlier method is deleted, so gold cannot read it.
+With an isd-history position it is built, every report taking that longitude. The previous
+year's 31 December rows cannot supply a position. Such years give no evidence to the station guards (5.1, 5.2) either. A file with a
 header and no reports still gives an empty silver file. Whole-silver census of 2.0.0
 (2026-11-04): 4,406 of 709,264 station-years (0.6 %) in 755 stations, 1.2 million of 3.9 billion
 reports; 4,362 are 0/0 in every report, 44 have no latitude at all; 738 of the 739 all-0/0
 stations have no position in isd-history either (118 are ISD placeholders named "BOGUS ...");
 the exception is Xuzhou airport, 1974. Most are 1970-2009 (4,301). In 88 more station-years only
-some reports are 0/0: those reports now use the station-year median longitude instead of 0.
+some reports are 0/0: those reports now use the isd-history or median longitude instead of 0.
+isd-history places only 1 of the 6,552 station-years without a position (the 4,406 above and
+2,146 that failed for a missing longitude): Xuzhou 1974. Of the 113 built station-years with
+some reports without a position, 112 have no isd-history position; at the other, isd-history and
+the year median agree within 0.25°.
 
 *Why:* dust has a strong daily cycle (afternoon winds), so a "day" should be the local day.
 Solar time depends only on longitude: the same rule everywhere, unlike time zones and daylight

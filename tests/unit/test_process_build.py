@@ -78,6 +78,7 @@ def test_write_silver_records_metadata(settings: Settings, tmp_path: Path) -> No
         "prev_source_md5": "m0",
         "nil_guard": "",
         "metar_guard": "",
+        "lon_fill": "",
     }
 
 
@@ -147,6 +148,27 @@ def test_station_year_without_a_position_is_not_built(
     rows = [isd_row("2024-03-01T00:00:00", **fields), isd_row("2024-03-01T03:00:00", **fields)]
     with pytest.raises(NoPositionError):
         build_station_year(bronze_frame(rows), None, 2024, settings)
+
+
+def test_isd_history_places_a_station_year_without_a_position(settings: Settings) -> None:
+    """Excluded only when there is no way to place it (user clarification 2026-11-04)."""
+    rows = [isd_row("2024-03-01T00:00:00", LATITUDE="0.0", LONGITUDE="0.0")]
+    out = build_station_year(bronze_frame(rows), None, 2024, settings, isd_lon=117.556)
+    assert out["lon_used"].to_list() == [117.556]
+    assert out["lat"].to_list() == [None] and out["lon"].to_list() == [None]
+
+
+def test_fill_key_records_which_isd_history_longitude_a_year_relied_on(settings: Settings) -> None:
+    from dcdr.process.build import fill_key
+
+    full = build_station_year(bronze_frame([isd_row("2024-03-01T00:00:00")]), None, 2024, settings)
+    gap = bronze_frame(
+        [isd_row("2024-03-01T00:00:00"), isd_row("2024-03-01T03:00:00", LONGITUDE="")]
+    )
+    holed = build_station_year(gap, None, 2024, settings, isd_lon=48.0)
+    assert fill_key(full, 48.0) == ""  # no report needed a fill: isd-history does not matter
+    assert fill_key(holed, 48.0) == "48.0"
+    assert fill_key(holed, None) == "none"  # filled from the year median
 
 
 def test_previous_year_position_does_not_rescue_a_year_without_one(settings: Settings) -> None:

@@ -16,7 +16,8 @@ detects that habit from the station's own reports that DO carry iX (in ISD: abou
 
 It uses all bronze years of the station that are on disk, so older years without iX are judged by
 the station's recent practice (an assumption, see docs/rules.md section 5.1). Years without a
-usable position are left out: they are not built, so they are not evidence either (2.1.0).
+position that isd-history cannot supply either are left out: they are not built, so they are not
+evidence either (2.1.0).
 Validated in notebooks/02_validate_inferred_nil.ipynb (precision 0.9998, recall 0.84).
 
 The METAR guard (user decision 2026-10-28; notebooks/06) does the same for METARs without full
@@ -31,6 +32,7 @@ significant" only where the station's METARs WITH full text show that such repor
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import polars as pl
@@ -101,18 +103,38 @@ def metar_guard(evidence: int, not_obs: int, cfg: ClassifyCfg) -> bool | None:
     return not_obs / evidence < cfg.metar_nil_guard_max_share
 
 
-def station_guards(bronze_paths: list[Path], settings: Settings) -> tuple[bool | None, bool | None]:
-    """(V3 guard, METAR guard) for one station from all its bronze files, reading each once."""
+def station_scan(
+    bronze_paths: list[Path],
+    settings: Settings,
+    isd_lon: float | None = None,
+    affects: Callable[[pl.DataFrame], bool] | None = None,
+) -> tuple[bool | None, bool | None, bool]:
+    """(V3 guard, METAR guard, affected) for one station from all its bronze files, read once.
+
+    `isd_lon`: the station's isd-history longitude; with one, every year can be placed and built.
+    `affects`: a migration's test (process/migrations.py); `affected` is True if any year passes.
+    """
     syn_e = syn_n = met_e = met_n = 0
+    affected = False
     for path in bronze_paths:
         raw = pl.read_parquet(path)
-        if not has_position(raw):  # a year that is not built gives no evidence either
+        affected = affected or (affects is not None and affects(raw))
+        if isd_lon is None and not has_position(raw):  # not built, so no evidence either
             continue
         e, n = guard_counts(raw, settings)
         syn_e, syn_n = syn_e + e, syn_n + n
         e, n = metar_guard_counts(raw, settings)
         met_e, met_n = met_e + e, met_n + n
-    return nil_guard(syn_e, syn_n, settings.classify), metar_guard(met_e, met_n, settings.classify)
+    cfg = settings.classify
+    return nil_guard(syn_e, syn_n, cfg), metar_guard(met_e, met_n, cfg), affected
+
+
+def station_guards(
+    bronze_paths: list[Path], settings: Settings, isd_lon: float | None = None
+) -> tuple[bool | None, bool | None]:
+    """(V3 guard, METAR guard) for one station from all its bronze files (`station_scan`)."""
+    guard, metar, _ = station_scan(bronze_paths, settings, isd_lon)
+    return guard, metar
 
 
 def station_guard(bronze_paths: list[Path], settings: Settings) -> bool | None:

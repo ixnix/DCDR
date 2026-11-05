@@ -30,8 +30,9 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - [ ] Later gold products: climatology, diurnal cycle, trends, code-06 diagnostic.
 - [ ] Publish documentation (e.g. MkDocs) when stable.
 - [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
-- [ ] Rebuild silver for the whole ISD under method 2.1.0 (every file is stale), then the
-      whole-ISD gold and the `stations_review.csv` review.
+- [ ] Whole-ISD `dcdr process` under 2.1.0 (targeted: ~770 stations rebuilt, the rest carried),
+      `dcdr verify-silver --sample 1000`, then the whole-ISD gold and the `stations_review.csv`
+      review. Before a published release: a full rebuild (`--force`).
 
 ---
 
@@ -85,6 +86,21 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   Pontianak, the South Pole); counted `no_position`, not `failed` (closes the open item on
   logging); the guards skip such years; no position is borrowed from other years (not
   verifiable). Needs a full silver rebuild (open item).
+- **User clarification of the rule**: exclude a station-year only when there is no way to place
+  it; isd-history places station-years and reports without a position (rules.md 4.2). Data:
+  isd-history places 1 of 6,552 such station-years (Xuzhou 1974); 112 of the 113 built years
+  with some reports without a position have no isd-history position. *Ruling:* isd-history
+  before the year median; `lat`/`lon` stay as in the files. Kept as 2.1.0 (nothing built yet).
+- **Targeted rebuild** (user decision: option B, instead of a 13-16 h full rebuild):
+  `process/migrations.py` declares that 2.1.0 cannot affect stations whose reports all have a
+  full in-file position; their 2.0.0 files are carried forward (ledger
+  `_state/silver_carried.parquet`, files untouched), gold counts them as 2.1.0 through the
+  ledger, and `dcdr verify-silver` re-processes a sample and compares. Census: 769 stations
+  (4,625 station-years) affected. Checks in scratch copies: benchmark sample 425 of 425 carried
+  and identical on re-processing (12 s instead of 37 s); Xuzhou, a BOGUS station and Tema behave
+  as designed. *Rulings:* the whole station is rebuilt when any of its years is affected (the
+  guards use all years); a ledger row counts only while the file's own version and run ID match
+  it; without isd-history on disk, `process` warns and fills from the year median.
 
 ## 2026-11-03
 

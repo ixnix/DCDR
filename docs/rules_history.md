@@ -31,7 +31,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | 2.0.0 | 2026-11-03 | all-reports 3-hour bins replace slot sampling; source groups SYNOP / METAR / other, each judged alone | user + rulings | 9313d86, 6ef64dc, 0239af7, a910c1d, b04ace6, b747481 |
 | (no change) | 2026-11-03 | station positions: four-way rule, 949999 southern-hemisphere gate, overrides; gold uses the trusted longitude | user + rulings | c82178f, 756b678, a1af02d, 7dde73e, d6a1a89 |
 | (no change) | 2026-11-03 | dusty-station threshold: >= 10 dusty days in >= 2 years to enter gold | user + rulings | 51e44dd |
-| 2.1.0 | 2026-11-04 | no station-year without a position (missing, or 0/0); 0/0 reports have no position | user + rulings | (this commit) |
+| 2.1.0 | 2026-11-04 | no station-year without a position (missing, or 0/0) unless isd-history places it; 0/0 reports have no position; missing longitudes from isd-history first | user + rulings | 27e9999, (this commit) |
 
 ---
 
@@ -482,6 +482,25 @@ is real: Tema, Pontianak, the South Pole); a single 0 whose partner is missing i
 station-year needs one report with both coordinates; no-position years are counted
 `no_position`, not `failed`; header-only files still give empty silver files; the guards skip
 no-position years. *Cost:* a full silver rebuild (every file carries the method version).
+
+*Revised before any 2.1.0 build* (user clarification 2026-11-04: "only exclude station years when
+there is absolutely no way to find the geolocations ... if a station year has no geolocation but
+can be located from isd-history, it can then be fixed"): a station-year without an in-file
+position is built when isd-history has the station's position, and a report without a longitude
+takes the isd-history longitude before the station-year median. *Evidence:* isd-history places 1
+of the 6,552 station-years without a position (Xuzhou 1974); of 113 built station-years with some
+reports without a position, 112 have no isd-history position. *Rulings:* isd-history before the
+year median (the order the user gave; they never differ in the data); `lat`/`lon` keep the files'
+values so the position check stays honest; `lon_fill` metadata makes a year that relied on
+isd-history rebuild when isd-history changes. Kept as 2.1.0 because no file had been built with
+the first version.
+
+*Rebuilt by migration* (targeted rebuild, user decision 2026-11-04): files built by 2.0.0 at
+stations whose bronze has no report without a full in-file position are carried forward
+instead of rebuilt (code_design.md 8). *Check:* the 24-station benchmark sample (425 station-years
+built by 2.0.0): all 425 carried and all 425 identical to a re-process with 2.1.0; real affected
+stations in a scratch copy: Xuzhou rebuilt (1974 placed by isd-history), the 0/0 years of
+15091099999 removed, Tema (lon 0) carried and identical.
 
 ## Resolved questions
 
