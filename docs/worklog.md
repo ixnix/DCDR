@@ -31,8 +31,8 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - [ ] Publish documentation (e.g. MkDocs) when stable.
 - [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
 - [ ] Whole-ISD gold under 2.1.0 (silver done and verified 2026-11-05; gold failed twice for
-      memory, fixed 2026-11-05: re-run), then the `stations_review.csv` review. Before a
-      published release: a full rebuild (`--force`).
+      memory; batched gold 2026-11-05: re-run, ~3 h), then the `stations_review.csv` review.
+      Before a published release: a full rebuild (`--force`).
 - [ ] Gold is not bit-for-bit reproducible: DuckDB's parallel sums give 9 `daily` means
       (`wsd_mean, vis_hmean, t_mean, td_mean, rh_mean, slp_mean, dup6_mean, d_t_mean,
       d_slp_mean`) that differ between two builds of the same silver in the last bits (at most
@@ -42,6 +42,46 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 ---
 
 ## 2026-11-05
+
+- **Gold in batches of stations, combined into ~256 MB files** (this commit). The `union_by_name`
+  fix below solved only the first wall: tested on real data, the gold build itself does not fit
+  either. 60 random whole stations at once: 12 s, peak 2.1 GB; 600 at once: still on
+  `three_hourly` after 10 min with swap at 14.8 of 16 GB (stopped). DuckDB's plan shows why: it
+  reads only the 27 columns gold needs (so trimming columns would not help), but it materialises
+  the `rep` step of `three_hourly` (read by both the ranking and the grouping), holding every
+  report of the build in memory. The whole ISD has never been built as gold before: the largest
+  gold so far was 98 stations (3 November).
+  - Change (user decisions 2026-11-05: batches; gold organised by product, not station-year;
+    keep 2 versions): stations are split into batches of whole stations of at most
+    `products.gold_batch_reports` silver reports; each batch writes one part per product into
+    `_batches/` and is checked there (all checks are per station); the station table is merged
+    into one file and the review list is written at the end; then consecutive parts are
+    combined into files of ~`products.gold_file_mb` with a row-count check. DuckDB gets a memory
+    limit (`products.gold_memory_limit`) and a spill folder `gold/_spill_<run_id>/`.
+    `gold_keep_versions` 3 -> 2 (a whole-ISD version is ~45 GB). Gold results unchanged, no
+    `METHOD_VERSION` bump; the lineage adds `gold_batches` and `gold_batch_reports`.
+  - Batch size (*ruling*, measured on real silver in the scratchpad, 150 random stations,
+    ~45 million reports): batches of 2, 5 and 10 million reports peak at 1.7, 2.2 and 2.6 GB
+    and take 47, 42 and 45 s (reading dominates, not the batch size). Chosen: 10 million, with
+    a 4 GB limit for DuckDB. 300 stations (~85 million reports) with the defaults: 9 batches,
+    78 s, peak 2.1 GB. Whole ISD (~100x): ~900 batches, ~2-2.5 h after the ~40-min silver check.
+    The sample comes from stations active in 2015, so it is likely denser than the average
+    ISD station: an upper estimate.
+  - File size (*ruling*): the batch is the unit of memory, the file the unit of storage.
+    Without combining, ~900 parts per product, the statistics' under 0.5 MB each. 256 MB files:
+    `three_hourly` ~37 GB in ~145 files, `daily` ~8 GB in ~32, the statistics and `stations` one
+    file each (estimates from the 300 stations: 362 MB, 80 MB, 1.7 MB monthly). DuckDB's default
+    row groups (~122,000 rows) kept: a station touches 1-3 of the 108 row groups of a
+    `three_hourly` file, and reading one station takes milliseconds.
+  - Checks: tests first (batching, file grouping, batched = one batch, an empty batch, the
+    combining check catching a lost row, memory limit and spill folder, lineage); 391 tests,
+    ruff, mypy. Real data: 60 random stations as one batch and one file against 19 batches and
+    8 MB files (9 `three_hourly` files): `stations, three_hourly, yearly, decadal` and the review
+    list identical; `daily` and `monthly` the same rows and order, floats within 1e-12 (the
+    run-to-run noise, open item).
+  - Correction: notebooks 04, 05 and 07 and a code_design example read `part-000.parquet` by
+    name, not `part-*.parquet` as I had said; changed to `part-*.parquet` (the notebooks are
+    local, git-ignored). The previous entry's "fixed" covered only the first wall.
 
 - **Whole-ISD gold killed twice for memory; fixed** (this commit). Two `dcdr aggregate` runs
   (1901-2025, all ISD stations, 704,777 silver files) died without a traceback, at 11:31 and

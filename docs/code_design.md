@@ -156,7 +156,7 @@ All method choices live in `src/dcdr/default.yaml`, validated by Pydantic models
 | `qc` | QC code mapping, accepted flags, visibility cap, RH screen | yes |
 | `classify` | weather fields used, haze window, snow/sand temperatures, SYNOP iX rule, inferred nil (V3) and its guard, METAR rules (`metar_rules`, `metar_report_types`, `metar_nil_min_vis_m`), METAR inference and its guard (`metar_infer_nil`, `metar_nil_guard_*`), derived SYNOPs (`derived_*`) | yes |
 | `sources` | excluded report types (`exclude_types`: SOD, SOM), source groups (`groups`: SYNOP and METAR report types; every other type is "other") | yes |
-| `products` | valid-day threshold (`min_bins_per_day`), visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept | no (gold only) |
+| `products` | valid-day threshold (`min_bins_per_day`), visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept (`gold_keep_versions`, 2); gold build size: reports per batch (`gold_batch_reports`, 10 million), DuckDB memory limit (`gold_memory_limit`, 4GB), target file size (`gold_file_mb`, 256) | no (gold only) |
 | `stations` | default station list; station positions: the saved isd-history (`isd_history`, relative to the data root), the override file (`position_overrides`), the distance bands `agree_km` (10) and `conflict_km` (50); the dusty-station threshold `min_dusty_days` (10) and `min_dusty_years` (2) | no (gold only) |
 
 Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
@@ -209,13 +209,16 @@ Everything goes under the data root:
 ├── silver/year=YYYY/<station_id>.parquet
 ├── gold/
 │   ├── CURRENT                          text file: run ID of the active version
+│   ├── _spill_<run_id>/                 only during a build: DuckDB's overflow to disk
 │   └── versions/<run_id>/
-│       ├── silver_version.json          which silver (method version, config hash) and which
-│       │                                station inputs (isd-history and override md5s) built it
+│       ├── silver_version.json          which silver (method version, config hash), which
+│       │                                station inputs (isd-history and override md5s), and how
+│       │                                many batches (gold_batches, gold_batch_reports) built it
 │       ├── stations/part-000.parquet    station positions: status, trusted position, evidence
 │       ├── stations_review.csv          stations needing a hand decision, most dusty first
-│       ├── daily/part-000.parquet
-│       └── three_hourly/part-000.parquet
+│       ├── three_hourly/part-000.parquet, part-001.parquet, ...   files of ~256 MB
+│       ├── daily/part-000.parquet, ...  (likewise monthly, yearly, decadal)
+│       └── _batches/                    only during a build: one part per product and batch
 └── _state/
     ├── sources.parquet                  download manifest (one row per S3 file)
     ├── runs.parquet                     run log (one row per command run)
@@ -224,6 +227,16 @@ Everything goes under the data root:
 
 `year=YYYY` folders are "Hive-style" partitions: DuckDB and Polars can filter by year from the
 folder name. Parquet files carry provenance in their footer metadata (section 7.6).
+
+Gold is organised by product, not by station-year: a version is rebuilt whole, so it has no
+incremental unit to keep, and per station-year it would be ~700,000 files per product (monthly
+would hold 12 rows a file). Each product is a few files of ~256 MB (`gold_file_mb`); stations
+are in order, so every file holds a contiguous range of station IDs, sorted by station and time.
+Read a product with the pattern `<product>/part-*.parquet` (never one file by name). Reading one
+station is fast: Parquet stores each row group's (~122,000 rows) minimum and maximum station ID,
+and DuckDB and Polars skip the row groups without it. Whole-ISD sizes (estimated from 300
+stations, 2026-11-05): `three_hourly` ~37 GB (~145 files), `daily` ~8 GB (~32 files),
+`monthly`, `yearly`, `decadal`, `stations` one file each; ~45 GB a version.
 
 ### 7.1 Bronze
 All columns of the NOAA CSV, **as text**, unchanged, plus `source_key`, `source_md5`,
@@ -382,7 +395,7 @@ Interactive: `uv run jupyter lab`; VS Code "Data Wrangler"; `duckdb -ui` (DuckDB
 
 **Use the active gold version**
 ```bash
-uv run python -c "import duckdb; g='$DCDR_DATA/gold/versions/'+open('$DCDR_DATA/gold/CURRENT').read().strip()+'/daily/part-000.parquet'; print(duckdb.sql(f\"SELECT station_id, count(*) FILTER (WHERE valid_day) AS valid_days FROM '{g}' GROUP BY 1\"))"
+uv run python -c "import duckdb; g='$DCDR_DATA/gold/versions/'+open('$DCDR_DATA/gold/CURRENT').read().strip()+'/daily/part-*.parquet'; print(duckdb.sql(f\"SELECT station_id, count(*) FILTER (WHERE valid_day) AS valid_days FROM '{g}' GROUP BY 1\"))"
 ```
 
 **Compare raw text with decoded values** (checks the decoding)
@@ -502,6 +515,23 @@ no migration: it rebuilds in full. Before a published release, rebuild in full
    and 4.7 GB, against under a second and 182 MB without); over the whole ISD (704,777 files)
    macOS killed the process for memory, twice (2026-11-05). Both readings give the same gold
    (checked on 2,280 real files).
+10. **Gold is built in batches of stations, then combined into files of a set size.** Every
+   product except the station table is computed per station, so gold runs in batches of whole
+   stations (`gold_batch_reports`, 10 million silver reports), each written as one part per
+   product into `_batches/` and checked there (every check is per station, so checking each
+   batch checks the whole table); the station table is built per batch too and merged, and the
+   review list is written once at the end. Then consecutive parts are combined into files of
+   ~256 MB (`gold_file_mb`), keeping the row order; the row counts before and after must match.
+   DuckDB runs with a memory limit (`gold_memory_limit`) and spills to `gold/_spill_<run_id>/`.
+   Why: DuckDB holds every report of a build in memory (the `rep` step of `three_hourly` is read
+   twice, so it is materialised); 600 stations at once exhausted 16 GB of RAM and swap
+   (2026-11-05). Measured on 150 real stations: batches of 2, 5, 10 million reports peak at 1.7,
+   2.2, 2.6 GB and take the same time (reading dominates); 300 stations with the defaults: 9
+   batches, 78 s, 2.1 GB, so the whole ISD is ~900 batches and ~2-2.5 h after the ~40-min silver
+   check. The batch is the unit of memory, the file the unit of storage: without combining, the
+   whole ISD would leave ~900 files per product, most under 0.5 MB for the statistics. Batched
+   gold equals one-batch gold (60 real stations: same rows and order; floats within 1e-12, the
+   run-to-run noise of DuckDB's parallel sums).
 
 ## 10. Testing and quality checks
 
@@ -521,7 +551,8 @@ Tests use small synthetic ISD rows (`tests/fixtures/isd.py`) and an in-memory fa
 | `FileNotFoundError` while pruning gold (before 2026-10-19) | macOS deletes `._x` together with `x` | Fixed (`aggregate._ignore_vanished`) |
 | Data written to `./data` instead of the SSD | `DCDR_DATA` not set in that shell | `export DCDR_DATA=...` (add to `~/.zshrc`) |
 | `StaleSilverError` from `aggregate` | silver built by other code/settings | `dcdr process --years ...` (or `--force`) |
-| `aggregate` disappears without a traceback, ~40 min in, swap grown | out of memory while opening all silver files with `union_by_name` (before 2026-11-05, or now after the warning "N schemas") | find the files with a different schema; rebuild them (`dcdr process --force` for those stations) |
+| `aggregate` disappears without a traceback, ~40 min in, swap grown | out of memory: before 2026-11-05 gold opened all silver files with `union_by_name` and built each product over all stations at once | fixed (one schema read as is; batches); if it recurs, lower `products.gold_batch_reports` (`--profile`) |
+| Warning "silver: N files, K schemas" from `aggregate` | some silver files have other columns | find them and rebuild them (`dcdr process --force` for those stations); with many files the fallback (`union_by_name`) needs a lot of memory |
 | A long run stops when its terminal window closes | closing the window stops its processes (and `tee`, so no traceback is logged) | keep the window open, or start it with `nohup ... > log 2>&1 &` |
 | `MixedSilverVersionsError` from `aggregate` | some silver files not yet rebuilt or carried to the running version (e.g. a stopped `process`) | finish `dcdr process` over the same years and stations |
 | `verify-silver` reports differences | a migration's `affects` misses a change | remove the migration from `MIGRATIONS` and rebuild (`dcdr process --force`); report it in the worklog |

@@ -28,6 +28,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import os
+import re
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -133,6 +134,26 @@ class ProductsCfg(_Section):
     vis5_max_m: float  # dusty_day_vis5: dust counts only with visibility at or below this
     gold_keep_versions: int  # how many old gold versions to keep on disk
     min_valid_days_month: int  # yearly n_months_covered: months with at least this many valid days
+    # Gold is built in batches of whole stations (aggregate.py): at most this many silver
+    # reports per batch (a larger station is a batch of its own). Sets peak memory and part size.
+    gold_batch_reports: int
+    gold_memory_limit: str  # DuckDB's memory limit, e.g. "4GB"; beyond it DuckDB spills to disk
+    # After all batches, consecutive batch parts are combined into files of about this size (MB);
+    # a part already larger stays a file of its own.
+    gold_file_mb: float
+
+    @model_validator(mode="after")
+    def _gold_limits_valid(self) -> ProductsCfg:
+        if self.gold_batch_reports < 1:
+            raise ValueError("products.gold_batch_reports must be at least 1")
+        if self.gold_file_mb <= 0:
+            raise ValueError("products.gold_file_mb must be positive")
+        if not re.fullmatch(r"\d+(\.\d+)?\s*(MB|GB|MiB|GiB)", self.gold_memory_limit):
+            raise ValueError(
+                f"products.gold_memory_limit must look like 4GB or 512MB, got "
+                f"{self.gold_memory_limit!r}"
+            )
+        return self
 
 
 class StationsCfg(_Section):

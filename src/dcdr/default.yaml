@@ -89,10 +89,21 @@ products:
   # dusty_day_vis5: dust that reduced visibility to <= 5 km (the METAR limit, WMO FM 15.8.12),
   # caught equally by SYNOP and METAR; used to compare stations and years with mixed reports.
   vis5_max_m: 5000
-  gold_keep_versions: 3  # old gold versions kept on disk (for rollback)
+  # Gold versions kept on disk: the active one plus one for rollback (a whole-ISD version is
+  # ~50 GB; user decision 2026-11-05).
+  gold_keep_versions: 2
   # yearly n_months_covered: months with at least this many valid days (a coverage count only;
   # no row is dropped)
   min_valid_days_month: 10
+  # Gold is built in batches of whole stations, at most this many silver reports each (a larger
+  # station is a batch of its own): the unit of memory. 10 million: peak ~2.6 GB, ~900 batches
+  # for the whole ISD; time does not depend on it (measured 2026-11-05, docs/code_design.md 9).
+  gold_batch_reports: 10000000
+  # DuckDB's memory limit while building gold; beyond it DuckDB spills to a folder on the data disk.
+  gold_memory_limit: 4GB
+  # The unit of storage: after all batches, consecutive batch parts are combined into files of
+  # about this size (MB); small products (monthly, yearly, decadal) become one file each.
+  gold_file_mb: 256
 
 stations:
   station_list: config/stations/pilot_100.csv  # default for --stations (relative to working dir)

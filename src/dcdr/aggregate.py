@@ -11,15 +11,22 @@ products before it in the list as views.
 How gold is built
 -----------------
 1. Check that all silver files were built by the current code and settings (refuse otherwise),
-   and count their column layouts (schemas), from each file's footer only.
-2. Open DuckDB (an in-process SQL engine, no server) and expose all silver files as one view.
-   With one schema (the normal case) DuckDB reads them as they are; with several it must line
-   them up by column name (`union_by_name`), which first reads every file's schema and needs
-   time and memory that grow faster than the number of files: the whole ISD (~700,000 files)
-   ran out of memory that way (2026-11-05).
-3. For each product: run its SQL file (src/dcdr/sql/<name>.sql), write the result to Parquet,
-   then run the product's checks (each check is a query that must return 0).
-4. Only if everything passed: point `gold/CURRENT` at the new version, prune old versions.
+   and count their column layouts (schemas) and reports, from each file's footer only.
+2. Split the stations into batches of whole stations (`products.gold_batch_reports` reports
+   each). Every product except the station table is computed per station, so DuckDB's memory
+   grows with the batch, not with all of silver: built at once, 600 stations already exhausted
+   16 GB of RAM (2026-11-05). DuckDB also gets a memory limit and a spill folder on the data disk.
+3. For each batch: open DuckDB (an in-process SQL engine, no server) on its silver files as one
+   view, then for each product run its SQL file (src/dcdr/sql/<name>.sql), write the result as
+   one part file under `_batches/` and run the product's checks (each a query that must return
+   0; all are per station, so checking each batch checks the whole table). With one schema
+   (the normal case) DuckDB reads the files as they are; with several it must line them up by
+   column name (`union_by_name`), which reads every file's schema first and needs time and
+   memory that grow faster than the number of files (the whole ISD ran out of memory that way).
+4. Combine each product's batch parts, in order, into files of about `products.gold_file_mb`
+   (the station table: one file), checking the row counts; check the station table as a whole
+   and write the review list.
+5. Only if everything passed: point `gold/CURRENT` at the new version, prune old versions.
 
 Why versions + a CURRENT pointer
 --------------------------------
@@ -37,6 +44,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import time
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
@@ -48,7 +56,7 @@ import pyarrow.parquet as pq
 from dcdr.config import Settings, silver_config_hash
 from dcdr.process import METHOD_VERSION
 from dcdr.process.migrations import effective_version, ledger_path, read_ledger
-from dcdr.state import atomic_write_bytes, safe_listdir, schema_metadata
+from dcdr.state import atomic_write_bytes, footer_metadata, safe_listdir
 from dcdr.stations import file_md5, load_isd_history, load_overrides
 
 log = logging.getLogger(__name__)
@@ -391,31 +399,89 @@ class SilverCheck:
     versions: set[tuple[str, str]]  # distinct (method version, config_hash) pairs
     carried: int  # files that count as their version through the ledger of carried files
     schemas: int  # distinct column layouts (names and types, in order)
+    rows: list[int]  # reports per file, in the order of the paths (sizes the batches)
 
 
 def _check_silver(paths: list[Path], ledger: pl.DataFrame) -> SilverCheck:
-    """Read every silver file's footer once: its version (for the guards in `build_gold`) and its
-    column layout (to decide how DuckDB reads the files).
+    """Read every silver file's footer once: its version (for the guards in `build_gold`), its
+    column layout (to decide how DuckDB reads the files) and its number of reports (batches).
 
     A file's version is `effective_version`: the one that built it, or the one it was carried to
     (process/migrations.py). Files are found in the ledger by their place in silver
     (`year=YYYY/<station>.parquet`).
     """
-    rows = {(r["station_id"], r["year"]): r for r in ledger.iter_rows(named=True)}
+    ledger_rows = {(r["station_id"], r["year"]): r for r in ledger.iter_rows(named=True)}
     versions: set[tuple[str, str]] = set()
     layouts: set[tuple[tuple[str, str], ...]] = set()
+    rows: list[int] = []
     carried = 0
     for i, p in enumerate(paths, 1):
-        schema = pq.read_schema(p)  # the footer only, not the data
-        meta = schema_metadata(schema)
-        row = rows.get((p.stem, int(p.parent.name.removeprefix("year="))))
+        footer = pq.read_metadata(p)  # the footer only, not the data
+        meta = footer_metadata(footer.metadata)
+        row = ledger_rows.get((p.stem, int(p.parent.name.removeprefix("year="))))
         version = effective_version(meta, row)
         carried += version != meta.get("method_version", "")
         versions.add((version, meta.get("config_hash", "")))
-        layouts.add(tuple((f.name, str(f.type)) for f in schema))
+        layouts.add(tuple((f.name, str(f.type)) for f in footer.schema.to_arrow_schema()))
+        rows.append(footer.num_rows)
         if i % PROGRESS_EVERY == 0:
             log.info("silver check: %d/%d files", i, len(paths))
-    return SilverCheck(versions, carried, len(layouts))
+    return SilverCheck(versions, carried, len(layouts), rows)
+
+
+def _station_batches(paths: list[Path], rows: list[int], budget: int) -> list[list[Path]]:
+    """Group silver files into batches of whole stations, in station order, each with at most
+    `budget` reports; a station with more reports than that is a batch of its own.
+
+    Every gold product except the station table is computed per station, so a batch can be built
+    on its own; DuckDB's memory then grows with the batch, not with all of silver.
+    """
+    by_station: dict[str, list[tuple[Path, int]]] = {}
+    for path, n in zip(paths, rows, strict=True):
+        by_station.setdefault(path.stem, []).append((path, n))
+    batches: list[list[Path]] = []
+    current: list[Path] = []
+    current_n = 0
+    for station in sorted(by_station):
+        files = by_station[station]
+        n = sum(r for _, r in files)
+        if current and current_n + n > budget:
+            batches.append(current)
+            current, current_n = [], 0
+        current += [path for path, _ in files]
+        current_n += n
+    if current:
+        batches.append(current)
+    return batches
+
+
+def _size_groups(sizes: list[int], target: int) -> list[list[int]]:
+    """Group consecutive items (by index) so each group's total size stays within `target`; an
+    item larger than `target` is a group of its own. Used to combine batch parts into files."""
+    groups: list[list[int]] = []
+    current: list[int] = []
+    total = 0
+    for i, size in enumerate(sizes):
+        if current and total + size > target:
+            groups.append(current)
+            current, total = [], 0
+        current.append(i)
+        total += size
+    if current:
+        groups.append(current)
+    return groups
+
+
+def _connect(settings: Settings, spill: Path) -> duckdb.DuckDBPyConnection:
+    """An in-memory DuckDB connection limited to `products.gold_memory_limit`; what does not fit
+    goes to `spill`, a folder on the data disk (removed after the build)."""
+    spill.mkdir(parents=True, exist_ok=True)
+    return duckdb.connect(
+        config={
+            "memory_limit": settings.products.gold_memory_limit,
+            "temp_directory": str(spill),
+        }
+    )
 
 
 def _sql_path(path: Path) -> str:
@@ -460,11 +526,81 @@ def _write_review(con: duckdb.DuckDBPyConnection, path: Path) -> None:
     """)
 
 
+def _run_checks(con: duckdb.DuckDBPyConnection, product: Product, where: str) -> None:
+    """Run a product's checks against its view; raise GoldCheckError naming `where` if any fail."""
+    failures = {}
+    for name, query in product.checks.items():
+        row = con.execute(query).fetchone()
+        count = row[0] if row else 0
+        if count:
+            failures[name] = count
+    if failures:
+        raise GoldCheckError(f"{product.name}{where}: {failures}")
+
+
+def _build_batch(
+    con: duckdb.DuckDBPyConnection, paths: list[Path], staging: Path, k: int, union: bool
+) -> None:
+    """Build every product for one batch of stations into `<staging>/<product>/batch-<k>.parquet`,
+    checking each part. The checks are all per station (or per station and period), so checking
+    each batch checks the whole table."""
+    # `silver_all` feeds the station table; the other products read `silver`, the same reports
+    # without the stations left out of gold (created right after `stations`). Files with one
+    # schema are read as they are; only mixed schemas need union_by_name (module docstring).
+    con.read_parquet([_sql_path(p) for p in paths], union_by_name=union).create_view("silver_all")
+    for product in PRODUCTS:
+        target = staging / product.name / f"batch-{k:05d}.parquet"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        sql = (SQL_DIR / product.sql_file).read_text()
+        # COPY (query) TO file: DuckDB streams the query result straight into Parquet.
+        con.execute(f"COPY ({sql}) TO '{_sql_path(target)}' (FORMAT parquet, COMPRESSION zstd)")
+        # Re-read the written file as a view so the checks test exactly what was saved; the
+        # later products of this batch read it under the product's name.
+        con.read_parquet(_sql_path(target)).create_view(product.name)
+        if product.name == "stations":
+            con.execute(
+                "CREATE OR REPLACE VIEW silver AS SELECT * FROM silver_all "
+                "WHERE station_id IN (SELECT station_id FROM stations WHERE in_gold)"
+            )
+        _run_checks(con, product, f" (batch {k})")
+
+
+def _combine(
+    con: duckdb.DuckDBPyConnection, parts: list[Path], folder: Path, target_bytes: int
+) -> None:
+    """Write a product's batch parts (in station order) as `folder/part-NNN.parquet` files of about
+    `target_bytes` each, keeping the row order, and check no row was lost or added."""
+    folder.mkdir(parents=True, exist_ok=True)
+    before = sum(pq.read_metadata(p).num_rows for p in parts)
+    groups = _size_groups([p.stat().st_size for p in parts], target_bytes)
+    for j, group in enumerate(groups):
+        out = folder / f"part-{j:03d}.parquet"
+        files = [parts[i] for i in group]
+        if len(files) == 1:
+            files[0].rename(out)  # nothing to combine: move it
+            continue
+        listed = ", ".join(f"'{_sql_path(f)}'" for f in files)
+        # read_parquet keeps the files' order and DuckDB keeps insertion order, so the rows stay
+        # sorted by station (and time) without a sort.
+        con.execute(
+            f"COPY (SELECT * FROM read_parquet([{listed}])) TO '{_sql_path(out)}' "
+            "(FORMAT parquet, COMPRESSION zstd)"
+        )
+        for f in files:
+            f.unlink()
+    after = sum(pq.read_metadata(p).num_rows for p in folder.glob("part-*.parquet"))
+    if after != before:
+        raise GoldCheckError(f"{folder.name}: {before} rows in the batch parts, {after} combined")
+
+
 def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Path:
     """Build every gold product into gold/versions/<run_id>/, check it, then activate it.
 
-    Raises (and leaves the previous gold version active) if the silver inputs are mixed or
-    stale, or if any product check fails. Returns the new version's folder.
+    Gold is built in batches of whole stations (`products.gold_batch_reports` silver reports
+    each): every product except the station table is written as one part file per batch; the
+    station table is merged into one file. Raises (and leaves the previous gold version active)
+    if the silver inputs are mixed or stale, or if any product check fails. Returns the new
+    version's folder.
     """
     if not silver_paths:
         raise ValueError("no silver files to build gold from")
@@ -484,11 +620,6 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     # Station-position inputs (stations.py), validated before anything is built.
     isd_path, overrides_path = settings.isd_history_path, settings.position_overrides_path
     isd_history, overrides = load_isd_history(isd_path), load_overrides(overrides_path)
-    con = duckdb.connect()  # in-memory database; reads the Parquet files directly from disk
-    # One view over all silver files. `silver_all` feeds the station table; the other products
-    # read `silver`, the same reports without the stations left out of gold (created right after
-    # `stations`). Files with one schema are read as they are; only mixed schemas need
-    # union_by_name, which is slow and memory-hungry for many files (module docstring).
     union = check.schemas > 1
     if union:
         log.warning(
@@ -499,9 +630,17 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
         )
     else:
         log.info("silver: %d files, 1 schema", len(silver_paths))
-    con.read_parquet([_sql_path(p) for p in silver_paths], union_by_name=union).create_view(
-        "silver_all"
+    budget = settings.products.gold_batch_reports
+    batches = _station_batches(silver_paths, check.rows, budget)
+    reports = dict(zip(silver_paths, check.rows, strict=True))
+    log.info(
+        "gold: %d reports in %d batches of at most %d reports",
+        sum(check.rows),
+        len(batches),
+        budget,
     )
+    spill = gold_root / f"_spill_{run_id}"
+    con = _connect(settings, spill)
     con.register("isd_history", isd_history)
     con.register("overrides", overrides)
     inputs_md5 = {"isd_history_md5": file_md5(isd_path), "overrides_md5": file_md5(overrides_path)}
@@ -520,42 +659,49 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
         f"SET VARIABLE min_valid_days_month = {int(settings.products.min_valid_days_month)}"
     )
     try:
-        # Record which silver this gold version was built from (lineage).
+        # Record which silver this gold version was built from (lineage), and how it was split.
         lineage = {
             "silver_method_version": expected[0],
             "silver_config_hash": expected[1],
             "silver_files": len(silver_paths),
             "silver_carried": n_carried,  # files built by an earlier method, carried forward
             **inputs_md5,  # the station-position inputs (isd-history, overrides)
+            "gold_batches": len(batches),
+            "gold_batch_reports": budget,
         }
         atomic_write_bytes(out_dir / "silver_version.json", json.dumps(lineage, indent=2).encode())
+        staging = out_dir / "_batches"
+        for k, batch in enumerate(batches):
+            started = time.monotonic()
+            _build_batch(con, batch, staging, k, union)
+            log.info(
+                "gold: batch %d/%d done (%d stations, %d reports) in %.0f s",
+                k + 1,
+                len(batches),
+                len({p.stem for p in batch}),
+                sum(reports[p] for p in batch),
+                time.monotonic() - started,
+            )
+        # Combine the batch parts into files of about gold_file_mb (the station table: one file).
+        target_bytes = int(settings.products.gold_file_mb * 2**20)
         for product in PRODUCTS:
-            target = out_dir / product.name / "part-000.parquet"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            sql = (SQL_DIR / product.sql_file).read_text()
-            # COPY (query) TO file: DuckDB streams the query result straight into Parquet.
-            con.execute(f"COPY ({sql}) TO '{_sql_path(target)}' (FORMAT parquet, COMPRESSION zstd)")
-            # Re-read the written file as a view so the checks test exactly what was saved.
-            con.read_parquet(_sql_path(target)).create_view(product.name)
-            if product.name == "stations":
-                con.execute(
-                    "CREATE VIEW silver AS SELECT * FROM silver_all "
-                    "WHERE station_id IN (SELECT station_id FROM stations WHERE in_gold)"
-                )
-                _write_review(con, out_dir / "stations_review.csv")
-            failures = {}
-            for name, query in product.checks.items():
-                row = con.execute(query).fetchone()
-                count = row[0] if row else 0
-                if count:
-                    failures[name] = count
-            if failures:
-                raise GoldCheckError(f"{product.name}: {failures}")
+            parts = sorted((staging / product.name).glob("batch-*.parquet"))
+            size = 2**62 if product.name == "stations" else target_bytes
+            _combine(con, parts, out_dir / product.name, size)
+            log.info("gold: %s combined", product.name)
+        shutil.rmtree(staging)
+        # The station table as a whole: its checks again, and the review list (needs all stations).
+        con.read_parquet(_sql_path(out_dir / "stations" / "part-000.parquet")).create_view(
+            "stations"
+        )
+        _run_checks(con, PRODUCTS[0], " (all batches)")
+        _write_review(con, out_dir / "stations_review.csv")
     except Exception:
         shutil.rmtree(out_dir, ignore_errors=True)  # discard the unfinished version
         raise
     finally:
         con.close()
+        shutil.rmtree(spill, ignore_errors=True)
     # Everything passed: switch readers to the new version, then delete old ones.
     atomic_write_bytes(gold_root / "CURRENT", run_id.encode())
     prune_versions(gold_root, settings.products.gold_keep_versions)
