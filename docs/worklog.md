@@ -85,6 +85,12 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
     (MW, gust, SLP), so `row_key` differs and neither copy is collapsed. In gold, a bin's state
     takes one report, dust flags combine both, report counts double. Atlantic City Jan-Feb 1974
     reports under two IDs (`72407093730`, `99999993730`), 218 at the same time.
+  - Silver builds each file with its file station's settings, so the other station's reports
+    took that station's guards and isd-history longitude: guards differ in 26 of the 46 files,
+    but none of those reports was inferred "nothing significant" (0 of them), so at most an
+    inference was missed (they stay "not observed"); 207 Pensacola reports (same place) and the
+    807 Fletcher Ice Island T-3 reports (no position of their own) took the file's longitude
+    for local time.
 
 - **Gold ordered by place, in two passes** (this commit; user decision: organise the batches by
   closeness on lon/lat grid bins, with a future product that aggregates stations in uniform
