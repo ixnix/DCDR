@@ -7,8 +7,9 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] Rebuild gold with the archive end (2026-11-06, code ready): `dcdr aggregate` (author's run);
-      then check `monthly` ends with July 2025, `yearly` with 2024, `decadal` with 2011-2020.
+- [ ] Rebuild the statistics with the archive end (2026-11-06, code ready):
+      `uv run dcdr aggregate --statistics-only` (author's run, minutes); then check `monthly` ends
+      with July 2025, `yearly` with 2024, `decadal` with 2011-2020.
 - [ ] ISD stores VIS 0 m (QC passed) for some METARs that say 10 SM, when a stray letter precedes
       the visibility (`S 10SM CLR`; 5 days at KDVT and KFAT in 2015-2020, 2026-11-06). Census over
       all METARs, then decide: reject VIS 0 when the METAR text disagrees (a method change)?
@@ -54,6 +55,20 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## 2026-11-06
 
+- **Statistics-only rebuild** (user decision: option B; this commit). `dcdr aggregate
+  --statistics-only` makes a new gold version from the active one: `stations`, `daily`,
+  `three_hourly` and the review list copied, `monthly`, `yearly`, `decadal` recomputed from that
+  `daily` with the same SQL files and checks, one daily file at a time, in the full build's row
+  order. *Why:* the archive end changed only the statistics, and a full build takes ~3.5 h
+  (08:32-11:59 on 2026-11-06, 79 min of it DuckDB closing). *Rulings:* it refuses (active version
+  kept) when that gold rests on other silver than the code expects, when the period-note file
+  changed (decadal reads it, daily holds the old notes) or when daily has days after the archive
+  end; `--years` is now needed only for a full build; the lineage keeps the source's fields plus
+  `statistics_rebuilt_from` and the new `archive_end`. Tests first (8): the rebuilt tables equal a
+  full build row for row (one station per batch, so spatial order differs from ID order; the test
+  fails when the rows are sorted by ID instead), lineage, the four refusals, the command. 430
+  tests, ruff, mypy pass. `build_gold` now shares `_register_notes` and `_set_product_variables`.
+
 - **Archive end in gold** (user decision: "put it in gold"; rules.md 11, rules_history.md).
   `monthly`, `yearly` and `decadal` keep only periods whose last day is before the new setting
   `products.archive_end` (2025-08-28); `daily` and `three_hourly` unchanged. Gold stops
@@ -68,8 +83,8 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   2025 stay in `monthly`; no METHOD_VERSION bump (gold only); tests use no archive end unless
   they test it (conftest, as for the dusty-station threshold). Tests first: 5 new (cut periods
   left out, the day-before edge, the default date, the checks catch a cut period, the guard);
-  the three cross-table checks compare only complete periods. 422 tests, ruff, mypy pass. Gold
-  not rebuilt yet (open item).
+  the three cross-table checks compare only complete periods. 422 tests, ruff, mypy pass
+  (67e0162). Gold not rebuilt yet (open item).
 
 - **Website map redesigned on the full gold** (design work, local mockup `map-v3.html`; details in
   `docs/superpowers/mockups/DESIGN-NOTES.md`). *User decisions:* stations without a 2011-20 value

@@ -696,6 +696,30 @@ def _run_checks(con: duckdb.DuckDBPyConnection, product: Product, where: str) ->
         raise GoldCheckError(f"{product.name}{where}: {failures}")
 
 
+def _register_notes(con: duckdb.DuckDBPyConnection, period_notes: pl.DataFrame) -> None:
+    """Period notes (stations.py): the text each gold table copies into its `note` column."""
+    note_years, note_decades, note_stations = note_texts(period_notes)
+    con.register("period_notes", period_notes)
+    con.register("note_years", note_years)
+    con.register("note_decades", note_decades)
+    con.register("note_stations", note_stations)
+
+
+def _set_product_variables(con: duckdb.DuckDBPyConnection, settings: Settings) -> None:
+    """The `products` settings the product SQL reads with getvariable(...)."""
+    p = settings.products
+    # the valid-day threshold, getvariable('min_bins') ...
+    con.execute(f"SET VARIABLE min_bins = {int(p.min_bins_per_day)}")
+    # ... the visibility limit of dusty_day_vis5, getvariable('vis5_max_m') ...
+    con.execute(f"SET VARIABLE vis5_max_m = {float(p.vis5_max_m)}")
+    # ... the coverage threshold of a month in the yearly table ...
+    con.execute(f"SET VARIABLE min_valid_days_month = {int(p.min_valid_days_month)}")
+    # ... and the archive end: monthly, yearly and decadal keep periods ending before it (a far
+    # date when there is none, so the SQL needs no NULL case). A date: safe to inline.
+    end_sql = (p.archive_end or date(9999, 12, 31)).isoformat()
+    con.execute(f"SET VARIABLE archive_end = DATE '{end_sql}'")
+
+
 def _stations_batch(
     con: duckdb.DuckDBPyConnection, paths: list[Path], staging: Path, k: int, union: bool
 ) -> None:
@@ -810,7 +834,6 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     isd_history, overrides = load_isd_history(isd_path), load_overrides(overrides_path)
     notes_path = settings.period_notes_path
     period_notes = load_period_notes(notes_path)
-    note_years, note_decades, note_stations = note_texts(period_notes)
     union = check.schemas > 1
     if union:
         log.warning(
@@ -827,11 +850,7 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     con = _connect(settings, spill)
     con.register("isd_history", isd_history)
     con.register("overrides", overrides)
-    # Period notes (stations.py): the text each gold table copies into its `note` column.
-    con.register("period_notes", period_notes)
-    con.register("note_years", note_years)
-    con.register("note_decades", note_decades)
-    con.register("note_stations", note_stations)
+    _register_notes(con, period_notes)
     inputs_md5 = {
         "isd_history_md5": file_md5(isd_path),
         "overrides_md5": file_md5(overrides_path),
@@ -843,18 +862,7 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     con.execute(f"SET VARIABLE min_dusty_years = {int(settings.stations.min_dusty_years)}")
     for key, md5 in inputs_md5.items():
         con.execute(f"SET VARIABLE {key} = '{md5}'")  # hex digits only: safe to inline
-    # Make the valid-day threshold available to the SQL as getvariable('min_bins').
-    con.execute(f"SET VARIABLE min_bins = {int(settings.products.min_bins_per_day)}")
-    # ... and the visibility limit of dusty_day_vis5 as getvariable('vis5_max_m').
-    con.execute(f"SET VARIABLE vis5_max_m = {float(settings.products.vis5_max_m)}")
-    # ... and the coverage threshold of a month in the yearly table.
-    con.execute(
-        f"SET VARIABLE min_valid_days_month = {int(settings.products.min_valid_days_month)}"
-    )
-    # ... and the archive end: monthly, yearly and decadal keep periods ending before it (a far
-    # date when there is none, so the SQL needs no NULL case). A date: safe to inline.
-    end_sql = (archive_end or date(9999, 12, 31)).isoformat()
-    con.execute(f"SET VARIABLE archive_end = DATE '{end_sql}'")
+    _set_product_variables(con, settings)
     staging = out_dir / "_batches"
     target_bytes = int(settings.products.gold_file_mb * 2**20)
     try:
@@ -936,6 +944,117 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
         con.close()
         shutil.rmtree(spill, ignore_errors=True)
     # Everything passed: switch readers to the new version, then delete old ones.
+    atomic_write_bytes(gold_root / "CURRENT", run_id.encode())
+    prune_versions(gold_root, settings.products.gold_keep_versions)
+    return out_dir
+
+
+STATISTICS = ("monthly", "yearly", "decadal")
+COPIED = ("stations", "daily", "three_hourly")  # copied unchanged by rebuild_statistics
+# Each statistics table's key after `station_id` (the order its SQL writes within a station).
+_STAT_KEYS = {"monthly": "s.year, s.month", "yearly": "s.year", "decadal": "s.decade, s.period"}
+
+
+def rebuild_statistics(settings: Settings, run_id: str) -> Path:
+    """A new gold version from the active one with only `monthly`, `yearly` and `decadal`
+    recomputed (`dcdr aggregate --statistics-only`; user decision 2026-11-06): for a change that
+    touches only the statistics rules or their settings, in minutes instead of a full rebuild.
+
+    The other tables (`stations`, `daily`, `three_hourly`, the review list) are copied unchanged;
+    the statistics are computed from that `daily` with the same SQL files and checks as
+    `build_gold`, one `daily` file at a time (each holds whole stations), in the stations' order
+    in `daily`, so the tables equal a full build's row for row. Refuses (leaving the active
+    version) when the active gold was built from other silver than the code expects, when the
+    period notes changed (decadal reads them, daily holds the old ones), or when `daily` holds
+    days after `products.archive_end`. A change to silver, `daily`, `three_hourly` or the
+    station table needs a full `build_gold`. Returns the new version's folder."""
+    src = current_gold_dir(settings)
+    if src is None or not (src / "silver_version.json").exists():
+        raise GoldCheckError("no gold version to rebuild the statistics from: build gold in full")
+    lineage = json.loads((src / "silver_version.json").read_text())
+    expected = [METHOD_VERSION, silver_config_hash(settings)]
+    built = [lineage.get("silver_method_version"), lineage.get("silver_config_hash")]
+    if built != expected:
+        raise GoldCheckError(
+            f"gold {src.name} was built from silver {built}, the code expects {expected}: "
+            "build gold in full"
+        )
+    notes_path = settings.period_notes_path
+    period_notes = load_period_notes(notes_path)
+    if file_md5(notes_path) != lineage.get("period_notes_md5", ""):
+        raise GoldCheckError(
+            f"the period notes changed since gold {src.name} (daily holds the old ones): "
+            "build gold in full"
+        )
+    daily_parts = sorted((src / "daily").glob("part-*.parquet"))
+    if not daily_parts:
+        raise GoldCheckError(f"gold {src.name} has no daily table: build gold in full")
+    archive_end = settings.products.archive_end
+    if archive_end:
+        listed = ", ".join(f"'{_sql_path(p)}'" for p in daily_parts)
+        last = duckdb.sql(f"SELECT max(lmst_date) FROM read_parquet([{listed}])").fetchone()
+        if last and last[0] and last[0] > archive_end:
+            raise ArchiveEndError(
+                f"gold {src.name} has days up to {last[0]}, after products.archive_end "
+                f"{archive_end}: set it to the archive's last day"
+            )
+    gold_root = settings.data_root / "gold"
+    out_dir = gold_root / "versions" / run_id
+    spill = gold_root / f"_spill_{run_id}"
+    con = _connect(settings, spill)
+    _register_notes(con, period_notes)
+    _set_product_variables(con, settings)
+    staging = out_dir / "_batches"
+    try:
+        out_dir.mkdir(parents=True)
+        # Copy everything but the statistics and the lineage (rewritten below). `._*` files are
+        # macOS's AppleDouble files on a non-Mac disk, not data (safe_listdir skips them too).
+        for entry in safe_listdir(src):
+            if entry.name in STATISTICS or entry.name == "silver_version.json":
+                continue
+            if entry.is_dir():
+                shutil.copytree(entry, out_dir / entry.name, ignore=shutil.ignore_patterns("._*"))
+            else:
+                shutil.copy2(entry, out_dir / entry.name)
+        log.info("gold: %s copied from %s; statistics from its daily", ", ".join(COPIED), src.name)
+        lineage.update(archive_end=archive_end.isoformat() if archive_end else None)
+        lineage["statistics_rebuilt_from"] = src.name
+        atomic_write_bytes(out_dir / "silver_version.json", json.dumps(lineage, indent=2).encode())
+        products = [p for p in PRODUCTS if p.name in STATISTICS]
+        for k, part in enumerate(sorted((out_dir / "daily").glob("part-*.parquet"))):
+            con.read_parquet(_sql_path(part), file_row_number=True).create_view("daily_rows")
+            con.execute(
+                "CREATE OR REPLACE VIEW daily AS SELECT * EXCLUDE (file_row_number) FROM daily_rows"
+            )
+            # each station's place in this daily file: full builds write the statistics in
+            # the stations' daily order (batches in spatial order, station ID within a batch)
+            con.execute(
+                "CREATE OR REPLACE TABLE station_order AS SELECT station_id, "
+                "min(file_row_number) AS k FROM daily_rows GROUP BY station_id"
+            )
+            for product in products:
+                target = staging / product.name / f"batch-{k:05d}.parquet"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                sql = (SQL_DIR / product.sql_file).read_text()
+                con.execute(
+                    f"COPY (SELECT s.* FROM ({sql}\n) s JOIN station_order o USING (station_id) "
+                    f"ORDER BY o.k, {_STAT_KEYS[product.name]}) "
+                    f"TO '{_sql_path(target)}' (FORMAT parquet, COMPRESSION zstd)"
+                )
+                con.read_parquet(_sql_path(target)).create_view(product.name)
+                _run_checks(con, product, f" ({part.name})")
+            log.info("gold: statistics of %s done", part.name)
+        target_bytes = int(settings.products.gold_file_mb * 2**20)
+        for name in STATISTICS:
+            parts = sorted((staging / name).glob("batch-*.parquet"))
+            _combine(con, parts, out_dir / name, target_bytes)
+        shutil.rmtree(staging)
+    except Exception:
+        shutil.rmtree(out_dir, ignore_errors=True)  # discard the unfinished version
+        raise
+    finally:
+        con.close()
+        shutil.rmtree(spill, ignore_errors=True)
     atomic_write_bytes(gold_root / "CURRENT", run_id.encode())
     prune_versions(gold_root, settings.products.gold_keep_versions)
     return out_dir

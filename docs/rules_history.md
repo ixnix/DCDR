@@ -33,7 +33,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | (no change) | 2026-11-03 | dusty-station threshold: >= 10 dusty days in >= 2 years to enter gold | user + rulings | 51e44dd |
 | 2.1.0 | 2026-11-04 | no station-year without a position (missing, or 0/0) unless isd-history places it; 0/0 reports have no position; missing longitudes from isd-history first | user + rulings | 27e9999, (this commit) |
 | (no change) | 2026-11-06 | period notes: years from another place under the same station ID marked in a `note` column; 12 position overrides from the review of the whole-ISD gold | user + rulings | daae86c |
-| (no change) | 2026-11-06 | archive end: `monthly`, `yearly`, `decadal` keep only periods ending before `products.archive_end` (2025-08-28) | user + rulings | (this commit) |
+| (no change) | 2026-11-06 | archive end: `monthly`, `yearly`, `decadal` keep only periods ending before `products.archive_end` (2025-08-28) | user + rulings | 67e0162 |
 
 ---
 

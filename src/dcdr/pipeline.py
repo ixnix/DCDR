@@ -7,6 +7,7 @@ Where this fits
     run_ingest    -> ingest.py               NOAA S3 -> bronze
     run_process   -> process/build.py        bronze  -> silver   (station by station, or in parallel)
     run_aggregate -> aggregate.py            silver  -> gold     (all stations at once)
+    run_rebuild_statistics -> aggregate.py   gold    -> gold     (monthly, yearly, decadal only)
 
 and `start_run` / `finish_run` wrap every command with a run ID and a run-log entry.
 
@@ -41,7 +42,7 @@ from typing import Any
 import polars as pl
 
 from dcdr import __version__
-from dcdr.aggregate import build_gold
+from dcdr.aggregate import build_gold, rebuild_statistics
 from dcdr.config import Settings, canonical_yaml, config_hash, silver_config_hash
 from dcdr.ingest import IngestSummary, bronze_path, ingest, make_store
 from dcdr.process import METHOD_VERSION
@@ -464,6 +465,11 @@ def all_silver_paths(root: Path, stations: list[str], years: list[int]) -> list[
 def run_aggregate(ctx: RunContext, stations: list[str], years: list[int]) -> Path:
     """Build a new gold version from the current silver files; returns its folder."""
     return build_gold(ctx.settings, all_silver_paths(ctx.root, stations, years), ctx.run_id)
+
+
+def run_rebuild_statistics(ctx: RunContext) -> Path:
+    """A new gold version with only the statistics recomputed (aggregate.rebuild_statistics)."""
+    return rebuild_statistics(ctx.settings, ctx.run_id)
 
 
 @dataclass

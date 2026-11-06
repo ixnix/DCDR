@@ -99,7 +99,7 @@ environment). Every pipeline command records a run (section 7.6).
 | `dcdr ingest` | List NOAA's S3 files for the years; download new or changed station-years into bronze; saves the download record and logs progress every 500 files, so a stopped run resumes where it left off; re-downloads recorded files missing from disk | `--years`, `--stations` |
 | `dcdr process` | Build silver for station-years that are missing or out of date; after a method change with a migration, carry forward the files it cannot affect (targeted rebuild); logs progress every 500 stations | `--years`, `--stations`, `--force`, `--workers` |
 | `dcdr verify-silver` | Re-process a random sample of carried silver files with the running code and compare them with the files; exits with an error if any differ | `--sample` (default 1000), `--seed` |
-| `dcdr aggregate` | Build a new gold version from silver, check it, activate it; prints the gold folder, the stations per position status and those left out as not dusty (e.g. `{'agree': 96, 'override': 1, 'not_dusty': 3}`); the stations needing a decision are in its `stations_review.csv` | `--years`, `--stations` |
+| `dcdr aggregate` | Build a new gold version from silver, check it, activate it; prints the gold folder, the stations per position status and those left out as not dusty (e.g. `{'agree': 96, 'override': 1, 'not_dusty': 3}`); the stations needing a decision are in its `stations_review.csv`. With `--statistics-only`: a new version from the active one, `stations`, `daily`, `three_hourly` copied and only `monthly`, `yearly`, `decadal` recomputed from its `daily` (minutes; section 7.5) | `--years` (a full build), `--stations`, `--statistics-only` |
 | `dcdr run` | `ingest`, then `process`, then `aggregate` | as above |
 | `dcdr status` | Download status counts and the five latest runs (read-only) | |
 | `dcdr --version` | Package version | |
@@ -371,6 +371,23 @@ the `yearly` sums over the decade, and the 12 months and the 4 seasons each add 
 dust years ≤ valid years ≤ observed years ≤ 10 and dust years ≤ dust years at any coverage;
 `dusty_days_mean` is null exactly when `dusty_freq` is.
 
+**Statistics-only rebuild** (`aggregate.rebuild_statistics`, `dcdr aggregate --statistics-only`;
+user decision 2026-11-06). A full build takes ~3.5 h for the whole ISD; the three statistics
+tables are ~140 MB built from `daily`. The rebuild makes a new version from the active one: every
+entry but the statistics and `silver_version.json` is copied (`._*` AppleDouble files skipped);
+then, one `daily` file at a time (each holds whole stations, as the batches did), the same SQL
+files run with the same checks, and `_combine` writes the parts. Rows are ordered by each
+station's first row in `daily` (`read_parquet(..., file_row_number = true)`), then the table's
+key: the order a full build writes (batches in spatial order, station ID within a batch), so the
+tables equal a full build's row for row (tested with one station per batch, where spatial and ID
+order differ). The lineage is the source version's, with the new `archive_end` and
+`statistics_rebuilt_from` (its run ID). Guards, all before anything is written: the source must
+rest on the silver the code expects (`silver_method_version`, `silver_config_hash`), the
+period-note file must be the one it was built with (`period_notes_md5`; `decadal` reads it,
+`daily` holds the old notes), and `daily`'s last day must not be after `archive_end`. The
+variables come from `_set_product_variables` and the notes from `_register_notes`, shared with
+`build_gold`.
+
 ### 7.5a Gold `stations`
 One row per station in silver, built **first** in every gold run from the view `silver_all` (all
 silver files), the saved isd-history, the override file and the period notes (`stations.py`,
@@ -517,6 +534,17 @@ nohup caffeinate -ims uv run dcdr aggregate --years 1901-2025 --stations config/
 ```
 Then check the new version's `stations_review.csv` (`note_unused` and `override_unused` rows mean
 a station ID in the hand-edited files that gold does not have).
+
+**Rebuild only the statistics** after a change to the `monthly`, `yearly` or `decadal` SQL or to
+their settings (`products.min_valid_days_month`, `products.archive_end`): a new version from the
+active one, the other tables copied (~20 GB on the SSD), the statistics recomputed from its
+`daily`. It refuses, leaving the active version, when that gold rests on other silver than the
+code expects, when the period-note file changed, or when `daily` holds days after the archive
+end; any other change (silver, `daily.sql`, `three_hourly.sql`, `stations.sql`, positions) needs
+the full build above.
+```bash
+uv run dcdr aggregate --statistics-only
+```
 
 ## 9. Design decisions (engineering)
 

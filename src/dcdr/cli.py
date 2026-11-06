@@ -22,6 +22,7 @@ tests (and notebooks) can call directly, without going through the command line.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import asdict
@@ -165,16 +166,34 @@ def verify_silver(
 
 @app.command()
 def aggregate(
-    years: str = YearsOpt,
+    years: str | None = typer.Option(
+        None, "--years", help="Years, e.g. 2024, 2022-2024 or 2020,2022 (a full build)."
+    ),
     stations: Path | None = StationsOpt,
+    statistics_only: bool = typer.Option(
+        False,
+        "--statistics-only",
+        help="Copy the active gold version and recompute only monthly, yearly and decadal from "
+        "its daily (minutes; for changes to the statistics rules or settings only).",
+    ),
     config: Path = ConfigOpt,
     profile: Path | None = ProfileOpt,
 ) -> None:
     """Aggregate silver into gold products in a new version, check them and activate it."""
+    if not statistics_only and years is None:
+        typer.echo("a full build needs --years (or use --statistics-only)")
+        raise typer.Exit(2)
 
     def body(ctx: pipeline.RunContext) -> dict[str, Any]:
+        if statistics_only:
+            gold = pipeline.run_rebuild_statistics(ctx)
+            lineage = json.loads((gold / "silver_version.json").read_text())
+            return {
+                "gold": str(gold),
+                "statistics_rebuilt_from": lineage["statistics_rebuilt_from"],
+            }
         ids = _station_ids(ctx.settings, stations)
-        gold = pipeline.run_aggregate(ctx, ids, pipeline.parse_years(years))
+        gold = pipeline.run_aggregate(ctx, ids, pipeline.parse_years(years or ""))
         # stations per position status; the ones needing a decision are in stations_review.csv
         return {"gold": str(gold), "stations": station_status_counts(gold)}
 
