@@ -46,6 +46,17 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ---
 
+## 2026-11-06
+
+- **CI actions moved to Node 24** (this commit). The CI run of c7f8bba passed but warned that
+  `actions/checkout@v4` and `astral-sh/setup-uv@v6` target the deprecated Node 20. Now
+  `actions/checkout@v7` and `astral-sh/setup-uv@v10.3.3` (both `using: node24` in their
+  `action.yml`). setup-uv has published no major tags (`@v10`) since v8.0.0, so it is pinned to
+  the exact release. Its breaking changes since v6 (custom manifest format, `prune-cache`
+  default, the cache off by default for some events) do not touch this workflow, which sets
+  none of them. The `ubuntu-latest` move to Ubuntu 26 needs nothing unless a run breaks.
+- Merged `fix/gold-uniform-schema` into `main` (fast-forward to c7f8bba) and pushed; CI passed.
+
 ## 2026-11-05
 
 - **Whole-ISD gold under 2.1.0 done** (run `20261105T214257Z-79ec25`, commit d8cedd6, 16:42 to
