@@ -240,9 +240,10 @@ station table (`stations/part-000.parquet`, all stations, in gold or not) is one
 station ID: the lookup from a station to its position and cell. Read a product with the pattern
 `<product>/part-*.parquet` (never one file by name). Reading one station is fast: Parquet stores
 each row group's (~122,000 rows) minimum and maximum station ID, and DuckDB and Polars skip the
-row groups without it. Whole-ISD sizes (estimated from 300
-stations, 2026-11-05): `three_hourly` ~37 GB (~145 files), `daily` ~8 GB (~32 files),
-`monthly`, `yearly`, `decadal`, `stations` one file each; ~45 GB a version.
+row groups without it. Whole-ISD sizes (measured, version `20261105T214257Z-79ec25`, 10,836
+stations in gold): `three_hourly` 16 GB (78 files), `daily` 3.8 GB (16 files), `monthly`,
+`yearly`, `decadal`, `stations` one file each; ~20 GB a version. The build took 2 h 48 min,
+including ~30 min of footer checks and ~34 min for DuckDB to close.
 
 ### 7.1 Bronze
 All columns of the NOAA CSV, **as text**, unchanged, plus `source_key`, `source_md5`,

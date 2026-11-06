@@ -30,13 +30,14 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 - [ ] Later gold products: climatology, diurnal cycle, trends, code-06 diagnostic.
 - [ ] Publish documentation (e.g. MkDocs) when stable.
 - [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
-- [ ] Whole-ISD gold under 2.1.0 (silver done and verified 2026-11-05; gold failed twice for
-      memory, then on duplicate stations; fixed 2026-11-05: re-run, ~1.5-2 h), then the
-      `stations_review.csv` review.
-      Before a published release: a full rebuild (`--force`).
+- [ ] Before a published release: a full rebuild (`--force`).
 - [ ] Same-station reports at the same time in two files (9,303 reports, 4 station-years,
-      2026-11-05): accept, or collapse across files in gold (a method change)? And whether to
-      join station records across ID changes (40 of the 46 mixed files are renumberings).
+      2026-11-05; in gold only Laredo 1965 and Lackland 1973, no dusty bin): accept, or collapse
+      across files in gold (a method change)? And whether to join station records across ID
+      changes (40 of the 46 mixed files are renumberings; 6 such pairs have both IDs in gold).
+- [ ] Optional: DuckDB took 34 min to close after the whole-ISD gold (freeing its blocks one by
+      one, with swap nearly full); try a spill folder on the internal disk or a smaller memory
+      limit before the next full run.
 - [ ] Gold is not bit-for-bit reproducible: DuckDB's parallel sums give 9 `daily` means
       (`wsd_mean, vis_hmean, t_mean, td_mean, rh_mean, slp_mean, dup6_mean, d_t_mean,
       d_slp_mean`) that differ between two builds of the same silver in the last bits (at most
@@ -46,6 +47,37 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 ---
 
 ## 2026-11-05
+
+- **Whole-ISD gold under 2.1.0 done** (run `20261105T214257Z-79ec25`, commit d8cedd6, 16:42 to
+  19:30 local, 2 h 48 min; `gold/CURRENT` now points at it, the previous version
+  `20261103T165713Z-6b353c` is kept). Footer check ~30 min; pass 1 (station table) done at 17:22
+  with all checks passed, including `unique_station`; pass 2, 236 batches, done by ~18:50;
+  combining done at 18:56; then 34 min in DuckDB's `close()` (a stack sample showed it freeing
+  its temporary blocks one by one while the memory came back from a nearly full swap) before
+  `CURRENT` was switched.
+  - Result: station table 29,335 stations (one row each), 10,836 in gold, the same 10,836 in
+    every product. Rows: `three_hourly` 878,958,724 (78 files, 16 GB), `daily` 143,361,333
+    (16 files, 3.8 GB), `monthly` 5,078,300 (86 MB), `yearly` 456,975 (13 MB), `decadal`
+    1,044,158 (36 MB); ~20 GB in all, under the ~45 GB estimated from 300 denser stations.
+  - The log file stayed empty: the run was started without `2>&1`, so the log (stderr) went to
+    the terminal only. Command for the next runs:
+    `nohup caffeinate -ims uv run dcdr aggregate ... > ~/dcdr_aggregate.log 2>&1 &`.
+  - The 46 mixed files in gold (scratchpad check against the new station table): of the 81
+    station IDs involved, 23 are in gold. 17 of the 46 files touch a station in gold; in 7 of
+    them both IDs are in gold: 6 renumberings (Yuma MCAS `72280503145` -> `69960403145`, Laredo,
+    Del Rio, Miles City -> Frank Wiley Field, Langara, Cape St James) and the 1955 Salina file,
+    so each part of a renumbered record is a separate station in gold. In the other 10, one ID
+    is in gold and gets its own reports from either file. The only different-station case touching gold is Attu
+    `99999945709` (1958): its file holds 748 reports of Shemya `99999945714`, which is not in
+    gold, so Attu's gold has Attu's reports only.
+  - The 9,303 same-time duplicates in gold: Harrisburg (both IDs) and Atlantic City are not in
+    gold. Laredo Intl `72252012920`, 1-15 March 1965: 178 reports twice, 114 bins, no dusty
+    bin; in 142 of them the copy in the other file carries an explicit MW1 `00` and the own copy
+    no weather group, so the bin counts as observed with no dust (an explicit code, not an
+    inference). Lackland `72253512909`, December 1973: 370 reports twice, 242 bins, no dusty bin
+    (one `haze` report in both copies). In both, `n_reports` counts each report twice. Dust
+    statistics are unchanged by the duplicates; valid days may gain from the explicit MW
+    copies at Laredo.
 
 - **Whole-ISD gold stopped on 15 duplicate stations; linked stations now share a batch** (this
   commit). Run `20261105T191607Z-59cfde` (commit 1998171) checked 704,777 silver footers in
