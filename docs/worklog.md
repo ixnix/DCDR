@@ -7,8 +7,6 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] Rebuild the whole-ISD gold with the 12 overrides and the period notes (2026-11-06; gold only,
-      ~2.8 h; command in code_design.md 8), then check its `stations_review.csv`.
 - [ ] Optional: the daily-temperature longitude test (found `41680099999`'s sign error) as an
       automatic check over every station in gold, not only the review list.
 - [ ] Re-run notebook 07 (Australia) and look at the first `three_hourly` table (e.g. one outbreak
@@ -37,9 +35,9 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
       2026-11-05; in gold only Laredo 1965 and Lackland 1973, no dusty bin): accept, or collapse
       across files in gold (a method change)? And whether to join station records across ID
       changes (40 of the 46 mixed files are renumberings; 6 such pairs have both IDs in gold).
-- [ ] Optional: DuckDB took 34 min to close after the whole-ISD gold (freeing its blocks one by
-      one, with swap nearly full); try a spill folder on the internal disk or a smaller memory
-      limit before the next full run.
+- [ ] Optional: DuckDB took 34 min (2026-11-05) and then 79 min (2026-11-06) to close after the
+      whole-ISD gold (freeing its blocks one by one, with swap nearly full); try a spill folder on
+      the internal disk or a smaller memory limit before the next full run.
 - [ ] Gold is not bit-for-bit reproducible: DuckDB's parallel sums give 9 `daily` means
       (`wsd_mean, vis_hmean, t_mean, td_mean, rh_mean, slp_mean, dup6_mean, d_t_mean,
       d_slp_mean`) that differ between two builds of the same silver in the last bits (at most
@@ -50,6 +48,22 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## 2026-11-06
 
+- **Whole-ISD gold rebuilt with the 12 overrides and the period notes**: run
+  `20261106T133205Z-0f4d8a` (commit daae86c; logged `dirty=True` only because of the untracked
+  `.claude/` and `config/stations/all_isd.csv`), 08:32-11:59, of which 79 min was DuckDB closing
+  after the last table was combined (34 min on 2026-11-05). `CURRENT` points to it.
+  - `stations_review.csv`: 43 `moved`, 47 `unverified`, no `conflict` (10 before; 41680 left
+    `unverified`), no `override_unused` or `note_unused`. Status counts: 27,415 agree, 268
+    resolved by isd-history, 75 moved, 1,538 unverified, 12 override, 27 conflict (none of them
+    dusty, so none in gold), 18,489 not dusty.
+  - The 11 reviewed stations are at their override positions; the 10 former conflicts are now in
+    gold. Row increases against `20261105T214257Z-79ec25` equal the rows of those 10 stations
+    exactly (three_hourly +660,856, decadal +909); daily, monthly and yearly differ by one row,
+    from 41680: with 73 E instead of 73 W its local solar time moved ~9.7 h, so its first reports
+    (UTC, 1944-01-01) now fall on 1944 local days instead of 1943-12-31 (yearly 1943-1948 -> 1944-1948).
+  - Notes: only on 47106099999 and 35687099999, on exactly the named years (yearly: 46 rows;
+    three_hourly 67,211, daily 12,948, monthly 499, decadal 134); lineage `period_notes_md5`
+    5a8db7d0... in `silver_version.json` and the station table.
 - **CI actions moved to Node 24** (this commit). The CI run of c7f8bba passed but warned that
   `actions/checkout@v4` and `astral-sh/setup-uv@v6` target the deprecated Node 20. Now
   `actions/checkout@v7` and `astral-sh/setup-uv@v10.3.3` (both `using: node24` in their
