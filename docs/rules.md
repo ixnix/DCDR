@@ -697,6 +697,14 @@ is dropped for low coverage, so any filter can be applied later (user decision 2
 period has a row only if it has at least one `daily` row; periods follow the LMST day. No weather
 variables except visibility, and visibility only in `monthly` (user decisions 2026-10-31).
 
+**Archive end** (user decision 2026-11-06): a month, year or decade has a row only if its last
+day is before `products.archive_end`, the UTC day of the download's last reports (2025-08-28; the
+latest silver report is 04:00 UTC that day). The download ends in late August 2025 for every
+station, so `monthly` ends with July 2025, `yearly` with 2024 and `decadal` with 2011-2020;
+`daily` and `three_hourly` keep every day. This is the archive's end, not low coverage: a station's
+own first and last periods stay, however short. Gold stops if silver holds reports after the
+archive end (a newer download: move the setting first), and `silver_version.json` records it.
+
 Two questions, two kinds of count (accepted 2026-10-31):
 - *Has dust been reported?* Any day with a dusty observed bin, whatever its coverage
   (`n_dusty_days_obs`): a dust report is verified on its own.
@@ -768,9 +776,9 @@ means):
 | `DJF`, `MAM`, `JJA`, `SON` | the season's months; DJF pools December, January and February of the decade's years (December 2000 is in 1991-2000), not winters spanning two years |
 
 Columns: every `n_` count of `monthly` summed over the period's months (no visibility);
-`n_calendar_days` = the full calendar length of those months over the 10 years, also for the
-partial decade 2021-2030 (e.g. DJF 1991-2000 = 903 days); the three rates (11.4) from the summed
-counts; and:
+`n_calendar_days` = the full calendar length of those months over the 10 years, also for a
+station's partial first or last decade (e.g. DJF 1991-2000 = 903 days); the three rates (11.4)
+from the summed counts; and:
 
 | Column | Definition | Why |
 |---|---|---|
@@ -779,8 +787,8 @@ counts; and:
 | `n_dust_years`, `n_dust_years_obs` | years with a dusty valid day / a dusty day at any coverage in the period | how regular dust is |
 
 `dusty_days_mean` is frequency-scaled (*ruling*): with every day valid it equals the decade's dusty
-days / 10; with gaps, and in the partial decade 2021-2030, missing days are not counted as
-dust-free. So the `annual` mean need not equal the sum of the month-wise means when coverage
+days / 10; with gaps, and in a station's partial first or last decade, missing days are not
+counted as dust-free. So the `annual` mean need not equal the sum of the month-wise means when coverage
 differs between months; the counts are exact and add up (months and seasons sum to `annual`).
 Being built on `dusty_freq`, the mean inherits its bias where validity depends on the weather: it
 reaches 365.3 at Tidjikja 2011-2020 (`validity_ratio` 0; section 11.4).
@@ -855,7 +863,8 @@ be set for the published products, from the station catalog.
 
 ## 13. Open questions
 
-1. NOAA's ISD files end on 2025-08-27: is ISD still updated?
+1. NOAA's ISD download ends on 2025-08-28 (the latest report, 04:00 UTC; `products.archive_end`):
+   is ISD still updated?
 2. Coverage criteria for the published products (valid days per year and decade).
 3. Which stations go forward after silver ("dusty stations": the threshold of dust reports), and
    the station positions (isd-history.csv vs in-file coordinates), before the whole-ISD build.

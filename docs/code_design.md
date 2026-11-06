@@ -156,7 +156,7 @@ All method choices live in `src/dcdr/default.yaml`, validated by Pydantic models
 | `qc` | QC code mapping, accepted flags, visibility cap, RH screen | yes |
 | `classify` | weather fields used, haze window, snow/sand temperatures, SYNOP iX rule, inferred nil (V3) and its guard, METAR rules (`metar_rules`, `metar_report_types`, `metar_nil_min_vis_m`), METAR inference and its guard (`metar_infer_nil`, `metar_nil_guard_*`), derived SYNOPs (`derived_*`) | yes |
 | `sources` | excluded report types (`exclude_types`: SOD, SOM), source groups (`groups`: SYNOP and METAR report types; every other type is "other") | yes |
-| `products` | valid-day threshold (`min_bins_per_day`), visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept (`gold_keep_versions`, 2); gold build size: reports per batch (`gold_batch_reports`, 10 million), DuckDB memory limit (`gold_memory_limit`, 4GB), target file size (`gold_file_mb`, 256), grid cell for ordering stations by place (`gold_grid_deg`, 10) | no (gold only) |
+| `products` | valid-day threshold (`min_bins_per_day`), visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept (`gold_keep_versions`, 2); the archive end (`archive_end`, 2025-08-28: statistics keep only periods ending before it); gold build size: reports per batch (`gold_batch_reports`, 10 million), DuckDB memory limit (`gold_memory_limit`, 4GB), target file size (`gold_file_mb`, 256), grid cell for ordering stations by place (`gold_grid_deg`, 10) | no (gold only) |
 | `stations` | default station list; station positions: the saved isd-history (`isd_history`, relative to the data root), the override file (`position_overrides`), the period-note file (`period_notes`), the distance bands `agree_km` (10) and `conflict_km` (50); the dusty-station threshold `min_dusty_days` (10) and `min_dusty_years` (2) | no (gold only) |
 
 Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
@@ -213,8 +213,9 @@ Everything goes under the data root:
 │   ├── _spill_<run_id>/                 only during a build: DuckDB's overflow to disk
 │   └── versions/<run_id>/
 │       ├── silver_version.json          which silver (method version, config hash), which
-│       │                                station inputs (isd-history and override md5s), and how
-│       │                                many batches (gold_batches, gold_batch_reports) built it
+│       │                                station inputs (isd-history and override md5s), how
+│       │                                many batches (gold_batches, gold_batch_reports) built it,
+│       │                                and the archive end (archive_end)
 │       ├── stations/part-000.parquet    station positions: status, trusted position, evidence
 │       ├── stations_review.csv          stations needing a hand decision, most dusty first
 │       ├── three_hourly/part-000.parquet, part-001.parquet, ...   files of ~256 MB
@@ -343,10 +344,19 @@ period; a `calendar` CTE gives each period's days over the decade's 10 years, an
 explicit sums in `yearly.sql` and `decadal.sql` (a column made by `COLUMNS(...)` cannot be referred
 to by name in the same SELECT). All three tables are written sorted by
 their key (as `daily` and `three_hourly`), so the same input gives the same file. The coverage threshold
-`products.min_valid_days_month` reaches the SQL as the variable `min_valid_days_month`.
+`products.min_valid_days_month` reaches the SQL as the variable `min_valid_days_month`, and
+`products.archive_end` as the DATE variable `archive_end` (9999-12-31 when it is not set): each
+statistics SQL keeps only periods whose last day is before it (`monthly` filters the `daily`
+days by `last_day(lmst_date)`, `yearly` and `decadal` the `monthly` rows by the year's or the
+decade's 31 December), and the checks that compare a table with the one it is built from compare
+only those periods (`aggregate._MONTH_DONE`, `_YEAR_DONE`, `_DECADE_DONE`). Before building,
+`_check_silver` takes the latest `time_utc` from the silver footers' statistics (no data read);
+later than the archive end, the build stops (`ArchiveEndError`), so a newer download is never cut
+silently.
 
 Checks run before activation (each must return 0 rows): one row per station and month; days,
-valid days and dusty days recomputed from `daily` match; for each dusty-day definition
+valid days and dusty days recomputed from `daily` match; no month, year or decade reaches the
+archive end (`before_archive_end`, in each table); for each dusty-day definition
 (`aggregate.STAT_VARIANTS`) dusty valid days ≤ valid days ≤ observed days ≤ days ≤ calendar days
 and dusty valid days ≤ dusty days at any coverage; `dusty_freq` is null exactly when there is no
 valid day, `dusty_freq_obs` exactly when there is no observed day (and lies in 0-1),
@@ -388,7 +398,8 @@ also check that they hold only stations in gold (`stations_in_gold`).
   `method_version` and `run_id` match it.
 - Gold lineage (`silver_version.json`) also records `silver_files` and `silver_carried`.
 - Gold lineage (`silver_version.json`): `silver_method_version, silver_config_hash,
-  isd_history_md5, overrides_md5, period_notes_md5` (empty when there is no such file).
+  isd_history_md5, overrides_md5, period_notes_md5` (empty when there is no such file),
+  `archive_end` (null when not set).
 - Run log: `run_id, command, started_at, finished_at, status, git_commit, git_dirty,
   dcdr_version, config_hash, summary` (JSON with counts and failures).
 

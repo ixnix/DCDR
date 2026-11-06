@@ -6,13 +6,15 @@ data root, and checks the counts: valid days and frequency, presence on any day,
 sub-periods, calendar lengths, and the decadal periods.
 """
 
+import json
+from datetime import date
 from pathlib import Path
 
 import duckdb
 import polars as pl
 import pytest
 
-from dcdr.aggregate import _count_order_checks, build_gold
+from dcdr.aggregate import PRODUCTS, ArchiveEndError, _count_order_checks, build_gold
 from dcdr.config import Settings, load_settings, silver_config_hash
 from dcdr.process.build import build_station_year, write_silver
 from tests.fixtures.isd import bronze_frame, isd_row
@@ -296,6 +298,75 @@ def test_statistics_counts_are_int64(settings: Settings) -> None:
     for name, df in t.items():
         bad = [c for c, dt in df.schema.items() if c.startswith("n_") and dt != pl.Int64]
         assert bad == [], name
+
+
+# --- the archive end (user decision 2026-11-06) ------------------------------------------------
+
+
+def _with_archive_end(settings: Settings, day: str | None) -> Settings:
+    """The fixture's settings with `products.archive_end` set (the fixture itself has none)."""
+    return load_settings(
+        overrides={
+            "paths": {"data_root": str(settings.data_root)},
+            "products": {"archive_end": day},
+            "stations": settings.stations.model_dump(mode="json"),
+        }
+    )
+
+
+def test_default_archive_end_is_the_isd_download() -> None:
+    # the latest report of the ISD download: 2025-08-28 04:00 UTC (docs/rules.md section 11)
+    assert load_settings().products.archive_end == date(2025, 8, 28)
+
+
+def test_periods_cut_by_the_archive_end_are_left_out(settings: Settings) -> None:
+    # The archive ends on 2024-03-15: March 2024, the year 2024 and the decade 2021-2030 are cut
+    # by it and left out; complete periods before it stay. Daily keeps every day.
+    s = _with_archive_end(settings, "2024-03-15")
+    paths = [
+        _silver(s, _day("2011-05-01", {3: "06,1"}), 2011),
+        _silver(s, _day("2024-01-10") + _day("2024-02-10") + _day("2024-03-10"), 2024),
+    ]
+    out = build_gold(s, paths, "20260101T000000Z-aaaaaa")
+    t = {name: pl.read_parquet(out / name / "part-*.parquet") for name in (*STATISTICS, "daily")}
+    assert t["monthly"].select("year", "month").rows() == [(2011, 5), (2024, 1), (2024, 2)]
+    assert t["yearly"]["year"].to_list() == [2011]
+    assert set(t["decadal"]["decade"]) == {2011}
+    assert date(2024, 3, 10) in t["daily"]["lmst_date"].to_list()
+    lineage = json.loads((out / "silver_version.json").read_text())
+    assert lineage["archive_end"] == "2024-03-15"
+
+
+def test_a_period_ending_the_day_before_the_archive_end_stays(settings: Settings) -> None:
+    s = _with_archive_end(settings, "2024-03-01")  # February 2024 ends on the 29th
+    t = _tables(s, [_silver(s, _day("2024-02-10"), 2024)])
+    assert t["monthly"].select("year", "month").rows() == [(2024, 2)]
+    assert t["yearly"].height == 0 and t["decadal"].height == 0
+
+
+def test_archive_end_checks_catch_a_cut_period() -> None:
+    # Each table's `before_archive_end` check fails on a row that reaches the archive end.
+    checks = {p.name: p.checks["before_archive_end"] for p in PRODUCTS if p.name in STATISTICS}
+    con = duckdb.connect()
+    con.execute("SET VARIABLE archive_end = DATE '2024-03-15'")
+    con.execute(
+        "CREATE TABLE monthly AS SELECT * FROM (VALUES (2024, 2), (2024, 3)) t(year, month)"
+    )
+    con.execute("CREATE TABLE yearly AS SELECT * FROM (VALUES (2023), (2024)) t(year)")
+    con.execute("CREATE TABLE decadal AS SELECT * FROM (VALUES (2011), (2021)) t(decade)")
+    assert {name: con.sql(sql).fetchone()[0] for name, sql in checks.items()} == {
+        "monthly": 1,  # March 2024
+        "yearly": 1,  # 2024
+        "decadal": 1,  # 2021-2030
+    }
+
+
+def test_silver_after_the_archive_end_stops_the_build(settings: Settings) -> None:
+    # A newer download must not be cut silently: the setting has to be moved first.
+    s = _with_archive_end(settings, "2024-01-05")
+    with pytest.raises(ArchiveEndError, match="2024-01-10"):
+        build_gold(s, [_silver(s, _day("2024-01-10"), 2024)], "20260101T000000Z-aaaaaa")
+    assert not (s.data_root / "gold" / "CURRENT").exists()
 
 
 # --- each source judged alone (method 2.0.0) ---------------------------------------------------

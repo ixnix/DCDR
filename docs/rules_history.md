@@ -32,7 +32,8 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | (no change) | 2026-11-03 | station positions: four-way rule, 949999 southern-hemisphere gate, overrides; gold uses the trusted longitude | user + rulings | c82178f, 756b678, a1af02d, 7dde73e, d6a1a89 |
 | (no change) | 2026-11-03 | dusty-station threshold: >= 10 dusty days in >= 2 years to enter gold | user + rulings | 51e44dd |
 | 2.1.0 | 2026-11-04 | no station-year without a position (missing, or 0/0) unless isd-history places it; 0/0 reports have no position; missing longitudes from isd-history first | user + rulings | 27e9999, (this commit) |
-| (no change) | 2026-11-06 | period notes: years from another place under the same station ID marked in a `note` column; 12 position overrides from the review of the whole-ISD gold | user + rulings | (this commit) |
+| (no change) | 2026-11-06 | period notes: years from another place under the same station ID marked in a `note` column; 12 position overrides from the review of the whole-ISD gold | user + rulings | daae86c |
+| (no change) | 2026-11-06 | archive end: `monthly`, `yearly`, `decadal` keep only periods ending before `products.archive_end` (2025-08-28) | user + rulings | (this commit) |
 
 ---
 
@@ -526,6 +527,25 @@ no notes for the metadata-only cases after the evidence). *Rulings:* no `METHOD_
 (it versions silver; gold-only rules have been "no change", as above); a note must not contain
 `;` (the separator); `monthly` and `yearly` take the note of their year (`any_value`, exact
 because notes are per year); a decade gets every note that overlaps it.
+
+## Archive end (2026-11-06, no method version change)
+
+*What:* `monthly`, `yearly` and `decadal` keep only periods whose last day is before
+`products.archive_end` (2025-08-28, the UTC day of the download's last reports); `daily` and
+`three_hourly` keep every day. Gold stops (`ArchiveEndError`) if silver holds reports after that
+day, and records it in `silver_version.json` (rules.md 11). *Why:* the download ends in late
+August 2025 for every station (last local days 21-26 August), so 2025 was a "year" of eight
+months for 6,399 stations, August 2025 a part month for 6,074, and 2021-2030 a half decade. The
+long-term page of the website showed 2025 as a poorly sampled year, blaming the station for the
+end of the download. *Superseded:* every period with a `daily` row had a row ("no row is dropped
+for low coverage", 2026-10-31; that rule stands: this cut is the archive's end, not coverage).
+*Decision:* user, 2026-11-06 ("put it in gold"; complete periods only). *Rulings:* the date is a
+setting, not taken from the data, so test data in any year and a station that closed early keep
+their last periods; the guard stops a newer download from being cut silently; the date is
+2025-08-28, not the 2025-08-27 noted earlier (rules.md 13): 156 silver files have reports on
+28 August up to 04:00 UTC; a period ending on the day before the archive end stays (its local days
+end at most 12 h into that day); January-July 2025 stay in `monthly` (complete months); no
+`METHOD_VERSION` bump (gold only).
 
 ## Resolved questions
 

@@ -29,6 +29,7 @@ import copy
 import hashlib
 import os
 import re
+from datetime import date
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -134,6 +135,9 @@ class ProductsCfg(_Section):
     vis5_max_m: float  # dusty_day_vis5: dust counts only with visibility at or below this
     gold_keep_versions: int  # how many old gold versions to keep on disk
     min_valid_days_month: int  # yearly n_months_covered: months with at least this many valid days
+    # The UTC day of the archive's last reports (the ISD download): monthly, yearly and decadal
+    # keep only periods whose last day is before it (docs/rules.md 11). None: no cut (tests).
+    archive_end: date | None
     # Gold is built in batches of whole stations (aggregate.py): at most this many silver
     # reports per batch (a larger station is a batch of its own). Sets peak memory and part size.
     gold_batch_reports: int

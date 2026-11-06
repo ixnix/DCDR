@@ -7,6 +7,11 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
+- [ ] Rebuild gold with the archive end (2026-11-06, code ready): `dcdr aggregate` (author's run);
+      then check `monthly` ends with July 2025, `yearly` with 2024, `decadal` with 2011-2020.
+- [ ] ISD stores VIS 0 m (QC passed) for some METARs that say 10 SM, when a stray letter precedes
+      the visibility (`S 10SM CLR`; 5 days at KDVT and KFAT in 2015-2020, 2026-11-06). Census over
+      all METARs, then decide: reject VIS 0 when the METAR text disagrees (a method change)?
 - [ ] Optional: the daily-temperature longitude test (found `41680099999`'s sign error) as an
       automatic check over every station in gold, not only the review list.
 - [ ] Re-run notebook 07 (Australia) and look at the first `three_hourly` table (e.g. one outbreak
@@ -15,6 +20,8 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
       window 1991-2020), then wind histograms and Uth for source stations (decisions 2026-10-31).
 - [ ] Papunya is dusty on 43 % of its valid days in the 1.10.1 gold (1,489 of 3,449; other
       Australian stations 8-11 %): real (central desert) or a station habit?
+- [ ] Jan Mayen (01001099999, Arctic island): 5.5 dusty days a year in 2011-20, 223 on record.
+      Which codes? Real (e.g. volcanic or blowing sand) or a coding habit?
 - [ ] Check Niamey (Diori Hamani) before ~1975 (almost no dust, then >= 150 days a year) and the
       fall at Ciudad Constitucion (2000-2023): reporting changes or real?
 - [ ] Distribution (B) and website (C), designed together on the pilot dataset (user decision
@@ -47,6 +54,60 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## 2026-11-06
 
+- **Archive end in gold** (user decision: "put it in gold"; rules.md 11, rules_history.md).
+  `monthly`, `yearly` and `decadal` keep only periods whose last day is before the new setting
+  `products.archive_end` (2025-08-28); `daily` and `three_hourly` unchanged. Gold stops
+  (`ArchiveEndError`) if silver holds later reports, and records the date in
+  `silver_version.json`. *Finding:* the download ends in late August 2025 for every station (last
+  local days 21-26 August: 3,117 stations on the 24th, 2,235 on the 25th), so the current gold has
+  a 2025 "year" of eight months for 6,399 stations, a part August 2025 for 6,074, and a half
+  decade 2021-2030; the long-term page drew 2025 as a poorly sampled year. *Finding:* the latest
+  silver report is 2025-08-28 04:00 UTC (156 files), not 2025-08-27 as noted in rules.md 13.
+  *Rulings:* the date is a setting, not derived from the data (test data and early-closed stations
+  keep their last periods); a period ending on the day before the archive end stays; January-July
+  2025 stay in `monthly`; no METHOD_VERSION bump (gold only); tests use no archive end unless
+  they test it (conftest, as for the dusty-station threshold). Tests first: 5 new (cut periods
+  left out, the day-before edge, the default date, the checks catch a cut period, the guard);
+  the three cross-table checks compare only complete periods. 422 tests, ruff, mypy pass. Gold
+  not rebuilt yet (open item).
+
+- **Website map redesigned on the full gold** (design work, local mockup `map-v3.html`; details in
+  `docs/superpowers/mockups/DESIGN-NOTES.md`). *User decisions:* stations without a 2011-20 value
+  from >= 3 observed years are grey (4,014 of 10,846); fixed colour classes of dusty days per
+  observed year 0 | >0-3 | >3-7 | >7-14 | >14-21 | >21-30 | >30-60 | >60 (quantiles tried and
+  dropped); white (0) and grey dots smaller; dot size grows with zoom; popup always shows 2011-20
+  ("no data" for 3,666) plus "Dust on record" for the whole record; aridity from the Global
+  Aridity Index v3 at the trusted position, coastal stations from the nearest land cell within
+  2 km (604 filled, 176 without); search by station name, ID, ICAO and by place (GeoNames
+  cities15000, CC BY 4.0, downloaded to `$DCDR_DATA/catalog/geonames/` with the user's approval).
+  *Findings:* the aridity values in `catalog/stations.parquet` for 658 sea-cell stations come
+  from an untraced method (not used); 196 stations have 2011-20 reports but no observed day; 135
+  have a gap over 2011-20; 321 ICAO codes belong to 2+ station IDs (e.g. KPHX); Jan Mayen shows
+  5.5 dusty days a year (to check).
+
+- **Daily dataset for the collaborator's comparison paper** (El Paso, Phoenix, Fresno, 2015-2020;
+  request of 2026-11-04), in `$DCDR_DATA/exports/dust_elpaso_phoenix_fresno_2015_2020/`: one CSV
+  per station (2,192 days each, every day listed), `stations.csv`, `README.txt` (plain text); the script that
+  makes them in `_build/`. Cut from gold `20261106T133205Z-0f4d8a` (no scratch build).
+  - Stations within 60 km with 2015-2020 data: inside the cities El Paso 2 (KELP, Biggs AAF
+    KBIF), Phoenix 2 (KPHX, Deer Valley KDVT), Fresno 2 (KFAT, Fresno Chandler KFCH); the metro
+    areas add Ciudad Juarez, Dona Ana County, McGregor Range and 8 Phoenix-area airports.
+  - *User decisions:* the 5 in-city stations, without KFCH (no dust report ever, not in gold);
+    wind and visibility added; one file per station; folder under `exports/` on the SSD.
+  - Columns: `observed` (`valid_day`), `dust` (`dusty_day`), `dust_vis_le_5km`,
+    `distant_dust_remarks` (`remarks_dust_day`), wind mean/max/gust (m/s), visibility min and
+    harmonic mean (km). *Rulings:* the two optional dust columns kept (proposed, not objected
+    to); the 16 KBIF days without a gold row are listed with `observed` = 0, `dust` = 0 and no
+    values; WMO index only for the three stations whose ISD ID is one (not checked in OSCAR).
+  - Checks: every value equals gold (0 mismatches); the three airports give the same 137 dust
+    days as the list sent on 2026-11-04. KBIF is observed on 197 of 2,192 days, and 10 of its 13
+    dust days are on days not observed.
+  - Found: `vis_min` = 0 m on 5 days where the METAR says 10 SM: ISD misdecodes a stray letter
+    before the visibility (`S 10SM CLR`, `T 10SM`) as 0 with QC passed (KDVT 2015-05-21,
+    2018-07-30; KFAT 2017-05-11, 05-19, 07-22). The other 142 zero-visibility METARs of the
+    five stations in 2015-2020 say near-zero visibility (fog, the Phoenix haboob of 2016-08-21).
+    Left as in gold, listed in the README (Open items).
+  - Sent to the collaborator by the author (2026-11-06), with an email drafted here.
 - **`config/stations/all_isd.csv` committed, `.claude/` ignored** (user decision; this commit).
   The whole-ISD station list (30,375 IDs, 365 KB, listed from NOAA's S3 bucket on 2026-10-21)
   defines which stations every whole-ISD run covers, so it is versioned like the other station

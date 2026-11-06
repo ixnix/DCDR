@@ -23,7 +23,7 @@ def _no_env_data_root(monkeypatch: pytest.MonkeyPatch) -> None:
 def settings(tmp_path: Path) -> Settings:
     """Default settings with the data root inside this test's temporary folder, an empty
     isd-history there (every test station is then "unverified" and kept in gold), no position
-    overrides and no dusty-station threshold."""
+    overrides, no dusty-station threshold and no archive end."""
     s = load_settings(
         overrides={
             "paths": {"data_root": str(tmp_path / "data")},
@@ -35,6 +35,9 @@ def settings(tmp_path: Path) -> Settings:
                 "min_dusty_days": 0,
                 "min_dusty_years": 0,
             },
+            # no archive end: test data in any year keep their months, years and decades (the
+            # archive end has its own tests)
+            "products": {"archive_end": None},
         }
     )
     write_isd_history(s)

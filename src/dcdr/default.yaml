@@ -95,6 +95,11 @@ products:
   # yearly n_months_covered: months with at least this many valid days (a coverage count only;
   # no row is dropped)
   min_valid_days_month: 10
+  # The UTC day of the archive's last reports: the latest silver report is 2025-08-28 04:00 UTC.
+  # monthly, yearly and decadal keep only periods whose last day is before it, so no month, year
+  # or decade is cut short by the end of the download (user decision 2026-11-06). Gold stops if
+  # silver holds later reports: after a new download, move this date.
+  archive_end: 2025-08-28
   # Gold is built in batches of whole stations, at most this many silver reports each (a larger
   # station is a batch of its own): the unit of memory. 10 million: peak ~2.6 GB, ~900 batches
   # for the whole ISD; time does not depend on it (measured 2026-11-05, docs/code_design.md 9).

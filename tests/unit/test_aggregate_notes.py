@@ -29,6 +29,7 @@ def _with_notes(settings: Settings, tmp_path: Path, *rows: str) -> tuple[Setting
                 "min_dusty_days": 0,
                 "min_dusty_years": 0,
             },
+            "products": {"archive_end": None},  # as the fixture: no archive end
         }
     )
     return s, path

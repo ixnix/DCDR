@@ -7,12 +7,14 @@
 -- `decadal`). Decades start in a year ending in 1 (1991-2000, 2001-2010, ...), like the WMO
 -- normal periods. `period` is `annual` (the decadal mean), `01`..`12` (the same month over the
 -- decade's years) or `DJF`, `MAM`, `JJA`, `SON` (the same season; DJF pools December, January
--- and February of the decade's years). No visibility (user decision 2026-10-31).
+-- and February of the decade's years). No visibility (user decision 2026-10-31). Only decades
+-- that end before the archive end (variable `archive_end`; user decision 2026-11-06): with the
+-- ISD download (last reports 2025-08-28), the last decade is 2011-2020.
 --
 -- Mean per year (user decision 2026-10-31, "decadal means, month-wise means, season-wise means"):
 -- dusty_days_mean = dusty_freq * n_calendar_days / 10, the frequency on valid days times the
 -- period's mean length. It equals the decade's dusty days / 10 when every day is valid, and does
--- not count missing days as dust-free (also in the partial decade 2021-2030).
+-- not count missing days as dust-free (also in a station's partial first or last decade).
 --
 -- How the query is built (CTEs):
 --   periods   each month mapped to its three periods: annual, its season, itself
@@ -40,6 +42,8 @@ m AS (
     SELECT monthly.*, year - (year - 1) % 10 AS decade, p.period
     FROM monthly
     JOIN periods p USING (month)
+    -- the decade's last day (31 December of its tenth year) before the archive end
+    WHERE make_date(year - (year - 1) % 10 + 9, 12, 31) < getvariable('archive_end')
 ),
 calendar AS (
     SELECT

@@ -9,6 +9,10 @@
 -- nothing is dropped for low coverage. Frequencies use valid days only; the `*_obs` counts take
 -- any day with an observed dusty bin (a dust report is verified on its own).
 --
+-- Only months that end before the archive end (variable `archive_end`, products.archive_end): a
+-- month cut short by the end of the download is left out (user decision 2026-11-06). That is
+-- the archive's end, not the station's: a station's own first and last months stay.
+--
 -- Column contract: every additive count starts with `n_` and nothing else does. yearly.sql and
 -- decadal.sql sum the `n_` columns generically (all but `n_calendar_days`, which they recompute,
 -- and the visibility counts, which only this table reports).
@@ -21,6 +25,7 @@ WITH d AS (
         CAST(year(lmst_date) AS INTEGER) AS year,
         CAST(month(lmst_date) AS INTEGER) AS month
     FROM daily
+    WHERE last_day(lmst_date) < getvariable('archive_end')
 )
 SELECT
     station_id,

@@ -317,6 +317,7 @@ def _threshold(settings: Settings) -> Settings:
                 "min_dusty_days": 10,
                 "min_dusty_years": 2,
             },
+            "products": {"archive_end": None},  # as the fixture: no archive end
         }
     )
 

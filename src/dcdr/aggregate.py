@@ -50,6 +50,7 @@ import shutil
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import date, datetime
 from importlib.resources import files
 from pathlib import Path
 
@@ -127,6 +128,13 @@ def _count_order_checks(table: str) -> dict[str, str]:
 
 # The main counts compared when one statistics table must add up to another.
 _SUM_CHECK_COLS = ("n_days", "n_valid_days", "n_dusty_days", "n_dusty_days_obs")
+
+# Periods that end before the archive end (products.archive_end, SQL variable `archive_end`), as
+# the statistics SQL keeps them: so a table is compared only with the complete periods of the
+# table it is built from (a day of `daily`; a year of `monthly` or `yearly`).
+_MONTH_DONE = "last_day(lmst_date) < getvariable('archive_end')"
+_YEAR_DONE = "make_date(year, 12, 31) < getvariable('archive_end')"
+_DECADE_DONE = "make_date(year - (year - 1) % 10 + 9, 12, 31) < getvariable('archive_end')"
 
 
 def _decadal_parts_check(periods: list[str]) -> str:
@@ -306,10 +314,16 @@ PRODUCTS = [
                 "month(lmst_date) AS month, count(*) AS n_days, "
                 "count(*) FILTER (WHERE valid_day) AS n_valid_days, "
                 "count(*) FILTER (WHERE valid_day AND dusty_day) AS n_dusty_days "
-                "FROM daily GROUP BY ALL) d FULL JOIN monthly m USING (station_id, year, month) "
+                f"FROM daily WHERE {_MONTH_DONE} GROUP BY ALL) d "
+                "FULL JOIN monthly m USING (station_id, year, month) "
                 "WHERE d.n_days IS DISTINCT FROM m.n_days "
                 "OR d.n_valid_days IS DISTINCT FROM m.n_valid_days "
                 "OR d.n_dusty_days IS DISTINCT FROM m.n_dusty_days"
+            ),
+            # No month cut short by the archive end (docs/rules.md 11).
+            "before_archive_end": (
+                "SELECT count(*) FROM monthly WHERE last_day(make_date(year, month, 1)) "
+                ">= getvariable('archive_end')"
             ),
             **_count_order_checks("monthly"),
         },
@@ -328,7 +342,7 @@ PRODUCTS = [
                 "SELECT count(*) FROM (SELECT station_id, year, sum(n_days) AS n_days, "
                 "sum(n_obs_days) AS n_obs_days, sum(n_valid_days) AS n_valid_days, "
                 "sum(n_dusty_days) AS n_dusty_days, sum(n_dusty_days_obs) AS n_dusty_days_obs, "
-                "sum(n_bins_obs) AS n_bins_obs FROM monthly GROUP BY ALL) m "
+                f"sum(n_bins_obs) AS n_bins_obs FROM monthly WHERE {_YEAR_DONE} GROUP BY ALL) m "
                 "FULL JOIN yearly y USING (station_id, year) "
                 "WHERE m.n_days IS DISTINCT FROM y.n_days "
                 "OR m.n_obs_days IS DISTINCT FROM y.n_obs_days "
@@ -342,6 +356,8 @@ PRODUCTS = [
                 "SELECT count(*) FROM yearly WHERE NOT (n_months_covered <= n_months_valid "
                 "AND n_months_valid <= n_months_obs AND n_months_obs <= 12)"
             ),
+            # No year cut short by the archive end.
+            "before_archive_end": f"SELECT count(*) FROM yearly WHERE NOT ({_YEAR_DONE})",
             **_count_order_checks("yearly"),
         },
     ),
@@ -365,7 +381,7 @@ PRODUCTS = [
             "annual_matches_yearly": (
                 "SELECT count(*) FROM (SELECT station_id, year - (year - 1) % 10 AS decade, "
                 + ", ".join(f"sum({c}) AS {c}" for c in _SUM_CHECK_COLS)
-                + " FROM yearly GROUP BY ALL) y "
+                + f" FROM yearly WHERE {_DECADE_DONE} GROUP BY ALL) y "
                 "FULL JOIN (SELECT * FROM decadal WHERE period = 'annual') a "
                 "USING (station_id, decade) WHERE "
                 + " OR ".join(f"y.{c} IS DISTINCT FROM a.{c}" for c in _SUM_CHECK_COLS)
@@ -383,6 +399,11 @@ PRODUCTS = [
             "mean_null_iff_freq_null": (
                 "SELECT count(*) FROM decadal "
                 "WHERE (dusty_days_mean IS NULL) <> (dusty_freq IS NULL)"
+            ),
+            # No decade cut short by the archive end.
+            "before_archive_end": (
+                "SELECT count(*) FROM decadal "
+                "WHERE make_date(decade + 9, 12, 31) >= getvariable('archive_end')"
             ),
             **_count_order_checks("decadal"),
         },
@@ -402,6 +423,10 @@ class GoldCheckError(RuntimeError):
     """A gold product failed a validation check."""
 
 
+class ArchiveEndError(RuntimeError):
+    """Silver holds reports after `products.archive_end` (a newer download): move the setting."""
+
+
 @dataclass
 class SilverCheck:
     """What gold learns from the silver files' footers before building (`_check_silver`)."""
@@ -413,11 +438,15 @@ class SilverCheck:
     # (file station, other station): files that also hold reports of another station ID (some
     # ISD files: a station renumbered within a year); such stations must share a batch
     links: set[tuple[str, str]]
+    # the latest report time (`time_utc`) in any file, from the footers' statistics; None if no
+    # file has them (checked against products.archive_end)
+    last_report: datetime | None = None
 
 
 def _check_silver(paths: list[Path], ledger: pl.DataFrame) -> SilverCheck:
     """Read every silver file's footer once: its version (for the guards in `build_gold`), its
-    column layout (to decide how DuckDB reads the files), its number of reports (batches) and
+    column layout (to decide how DuckDB reads the files), its number of reports (batches), its
+    latest report time (the max statistic of `time_utc`, for the archive-end guard) and
     the station IDs in it, from the min/max statistics of `station_id` (`links`). Min and max are
     exact for files with at most two IDs, as every ISD file now; the `unique_station` check of
     the station table catches any other ID.
@@ -432,6 +461,7 @@ def _check_silver(paths: list[Path], ledger: pl.DataFrame) -> SilverCheck:
     rows: list[int] = []
     links: set[tuple[str, str]] = set()
     carried = 0
+    last_report: datetime | None = None
     for i, p in enumerate(paths, 1):
         footer = pq.read_metadata(p)  # the footer only, not the data
         meta = footer_metadata(footer.metadata)
@@ -447,9 +477,14 @@ def _check_silver(paths: list[Path], ledger: pl.DataFrame) -> SilverCheck:
             stats = footer.row_group(g).column(j).statistics
             if stats is not None and stats.has_min_max:
                 links.update((p.stem, sid) for sid in (stats.min, stats.max) if sid != p.stem)
+        t = schema.get_field_index("time_utc")
+        for g in range(footer.num_row_groups if t >= 0 else 0):
+            stats = footer.row_group(g).column(t).statistics
+            if stats is not None and stats.has_min_max and stats.max is not None:
+                last_report = max(last_report, stats.max) if last_report else stats.max
         if i % PROGRESS_EVERY == 0:
             log.info("silver check: %d/%d files", i, len(paths))
-    return SilverCheck(versions, carried, len(layouts), rows, links)
+    return SilverCheck(versions, carried, len(layouts), rows, links, last_report)
 
 
 def _station_batches(
@@ -760,6 +795,14 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
         raise StaleSilverError(
             f"silver is {versions.pop()}, code expects {expected}; re-run `dcdr process --force`"
         )
+    # Guard 3: the statistics drop periods cut by the archive end; reports after it mean a newer
+    # download, which must not be cut silently (move products.archive_end first).
+    archive_end = settings.products.archive_end
+    if archive_end and check.last_report and check.last_report.date() > archive_end:
+        raise ArchiveEndError(
+            f"silver has reports up to {check.last_report:%Y-%m-%d %H:%M} UTC, after "
+            f"products.archive_end {archive_end}: set it to the archive's last day"
+        )
     gold_root = settings.data_root / "gold"
     out_dir = gold_root / "versions" / run_id
     # Station-position inputs (stations.py), validated before anything is built.
@@ -808,6 +851,10 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     con.execute(
         f"SET VARIABLE min_valid_days_month = {int(settings.products.min_valid_days_month)}"
     )
+    # ... and the archive end: monthly, yearly and decadal keep periods ending before it (a far
+    # date when there is none, so the SQL needs no NULL case). A date: safe to inline.
+    end_sql = (archive_end or date(9999, 12, 31)).isoformat()
+    con.execute(f"SET VARIABLE archive_end = DATE '{end_sql}'")
     staging = out_dir / "_batches"
     target_bytes = int(settings.products.gold_file_mb * 2**20)
     try:
@@ -861,6 +908,8 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
             "gold_batches": len(batches),
             "gold_batch_reports": budget,
             "gold_grid_deg": settings.products.gold_grid_deg,
+            # periods cut by the archive end are not in monthly, yearly, decadal
+            "archive_end": archive_end.isoformat() if archive_end else None,
         }
         atomic_write_bytes(out_dir / "silver_version.json", json.dumps(lineage, indent=2).encode())
         for k, batch in enumerate(batches):

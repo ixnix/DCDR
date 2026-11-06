@@ -4,7 +4,9 @@
 -- days counts in n_months_covered).
 --
 -- Output: one row per station per year with at least one monthly row (gold table `yearly`).
--- No visibility (user decision 2026-10-31: visibility only in `monthly`).
+-- No visibility (user decision 2026-10-31: visibility only in `monthly`). Only years that end
+-- before the archive end (variable `archive_end`): `monthly` keeps the complete months of the
+-- last year, but the year itself is cut short (user decision 2026-11-06).
 --
 -- Every additive monthly count starts with `n_` (monthly.sql), so one COLUMNS(...) expression sums
 -- them all under their own names: every `n_` column except n_calendar_days (recomputed for the
@@ -29,5 +31,6 @@ SELECT
     count(*) FILTER (WHERE n_valid_days >= getvariable('min_valid_days_month')) AS n_months_covered,
     any_value(note) AS note  -- the period note of the year (as in monthly.sql)
 FROM monthly
+WHERE make_date(year, 12, 31) < getvariable('archive_end')
 GROUP BY station_id, year
 ORDER BY station_id, year  -- reproducible files
