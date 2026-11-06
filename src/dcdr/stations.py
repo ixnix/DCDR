@@ -9,7 +9,11 @@ Two hand-maintained files feed the decision which station position to trust:
 * The override file (`config/stations/position_overrides.csv`, versioned in git): the author's
   decision for single stations, each with a reason (user decision 2026-11-03).
 
-Both are validated here, so a bad row stops the gold build with a clear message instead of
+A third hand-maintained file annotates rather than decides: the period notes
+(`config/stations/period_notes.csv`), years of a station whose reports came from another place
+under the same station ID (user decision 2026-11-06). Gold copies them into a `note` column.
+
+All are validated here, so a bad row stops the gold build with a clear message instead of
 placing a station somewhere wrong.
 """
 
@@ -23,6 +27,7 @@ import polars as pl
 ISD_HISTORY_URL = "https://noaa-isd-pds.s3.amazonaws.com/isd-history.csv"
 OVERRIDE_COLUMNS = ["station_id", "lat", "lon", "action", "reason", "decided"]
 OVERRIDE_ACTIONS = ("use", "exclude")
+NOTE_COLUMNS = ["station_id", "from_year", "to_year", "note", "decided"]
 
 
 class MissingIsdHistoryError(FileNotFoundError):
@@ -31,6 +36,10 @@ class MissingIsdHistoryError(FileNotFoundError):
 
 class OverrideError(ValueError):
     """A row of the station-position override file is invalid."""
+
+
+class NoteError(ValueError):
+    """A row of the period-note file is invalid."""
 
 
 def file_md5(path: Path) -> str:
@@ -107,3 +116,80 @@ def load_overrides(path: Path) -> pl.DataFrame:
             where = [f"line {r}: {s}" for r, s in zip(rows["row"], rows["station_id"], strict=True)]
             raise OverrideError(f"{path}: {what}: {where}")
     return o.select(OVERRIDE_COLUMNS).cast(schema)  # type: ignore[arg-type]
+
+
+def load_period_notes(path: Path) -> pl.DataFrame:
+    """The period-note file, validated; an empty frame (same columns) if there is no file."""
+    schema = {
+        "station_id": pl.String,
+        "from_year": pl.Int32,
+        "to_year": pl.Int32,
+        "note": pl.String,
+        "decided": pl.String,
+    }
+    if not path.exists():
+        return pl.DataFrame(schema=schema)
+    raw = pl.read_csv(path, infer_schema_length=0)
+    missing = [c for c in NOTE_COLUMNS if c not in raw.columns]
+    if missing:
+        raise NoteError(f"{path}: missing columns {missing}")
+    n = raw.select([pl.col(c).str.strip_chars() for c in NOTE_COLUMNS]).with_columns(
+        from_year=pl.col("from_year").cast(pl.Int32, strict=False),
+        to_year=pl.col("to_year").cast(pl.Int32, strict=False),
+    )
+    sid = pl.col("station_id").fill_null("")
+    year_ok = pl.col("from_year").is_between(1800, 2100) & pl.col("to_year").is_between(1800, 2100)
+    problems = {
+        "station_id not 11 digits": ~sid.str.contains(r"^\d{11}$"),
+        "no note": pl.col("note").fill_null("") == "",
+        # gold joins the notes of a row with "; ", which must stay unambiguous
+        "note contains ; (the separator between notes)": pl.col("note")
+        .fill_null("")
+        .str.contains(";", literal=True),
+        "years must be 1800-2100": ~year_ok.fill_null(False),
+        "from_year after to_year": (pl.col("from_year") > pl.col("to_year")).fill_null(False),
+    }
+    for what, bad in problems.items():
+        rows = n.with_row_index("row", offset=2).filter(bad)  # file line numbers (header = 1)
+        if rows.height:
+            where = [f"line {r}: {s}" for r, s in zip(rows["row"], rows["station_id"], strict=True)]
+            raise NoteError(f"{path}: {what}: {where}")
+    return n.select(NOTE_COLUMNS).cast(schema)  # type: ignore[arg-type]
+
+
+def note_texts(notes: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """The text gold writes into its `note` columns, from the validated period notes.
+
+    Each note is labelled with its years ("1957-1970: ...", or "1974: ..." for one year); the
+    notes that apply to a row join in year order with "; ". Returns three lookups:
+    (station_id, year, note) for the tables with a year, (station_id, decade, note) for
+    `decadal` (decades start in a year ending in 1, as in decadal.sql; a note applies to every
+    decade it overlaps), and (station_id, notes) for the station table (all its notes)."""
+    labelled = notes.sort("station_id", "from_year", "to_year").with_columns(
+        text=pl.when(pl.col("from_year") == pl.col("to_year"))
+        .then(pl.col("from_year").cast(pl.String))
+        .otherwise(pl.format("{}-{}", "from_year", "to_year"))
+        + pl.lit(": ")
+        + pl.col("note")
+    )
+
+    def joined(df: pl.DataFrame, keys: list[str], name: str) -> pl.DataFrame:
+        # rows are in note order (sorted above, and explode keeps it): join them in that order
+        return df.group_by(keys, maintain_order=True).agg(pl.col("text").str.join("; ").alias(name))
+
+    def decade(year: pl.Expr) -> pl.Expr:  # first year of the decade: 1951, 1961, ...
+        return year - (year - 1) % 10
+
+    years = labelled.with_columns(
+        year=pl.int_ranges("from_year", pl.col("to_year") + 1, dtype=pl.Int32)
+    ).explode("year")
+    decades = labelled.with_columns(
+        decade=pl.int_ranges(
+            decade(pl.col("from_year")), decade(pl.col("to_year")) + 1, 10, dtype=pl.Int32
+        )
+    ).explode("decade")
+    return (
+        joined(years, ["station_id", "year"], "note"),
+        joined(decades, ["station_id", "decade"], "note"),
+        joined(labelled, ["station_id"], "notes"),
+    )

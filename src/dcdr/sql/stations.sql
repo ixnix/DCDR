@@ -2,9 +2,10 @@
 -- Definitions: docs/rules.md, "Station positions" (user decisions 2026-11-02 and 2026-11-03).
 -- Inputs: view `silver_all` (every silver report, before stations are left out); views
 -- `isd_history` (station_id, isd_name, isd_lat, isd_lon; null = no position) and `overrides`
--- (station_id, lat, lon, action, reason, decided), registered by aggregate.build_gold from
+-- (station_id, lat, lon, action, reason, decided), and `note_stations` (station_id, notes: every
+-- period note of the station with its years), registered by aggregate.build_gold from
 -- stations.py; variables `agree_km`, `conflict_km`, `min_dusty_days`, `min_dusty_years`,
--- `isd_history_md5`, `overrides_md5`.
+-- `isd_history_md5`, `overrides_md5`, `period_notes_md5`.
 --
 -- Output: one row per station in silver. Built FIRST: build_gold then narrows the `silver` view
 -- to the stations with `in_gold`, which every later product reads.
@@ -190,15 +191,19 @@ SELECT
     is_dusty_station,
     * EXCLUDE (station_id, status, computed_status, position_ok, is_dusty_station),
     getvariable('isd_history_md5') AS isd_history_md5,
-    getvariable('overrides_md5') AS overrides_md5
+    getvariable('overrides_md5') AS overrides_md5,
+    getvariable('period_notes_md5') AS period_notes_md5
 FROM (
     SELECT
         d.*,
         coalesce(y.n_dusty_days, 0) AS n_dusty_days,
         coalesce(y.n_dusty_years, 0) AS n_dusty_years,
         coalesce(y.n_dusty_days, 0) >= getvariable('min_dusty_days')
-            AND coalesce(y.n_dusty_years, 0) >= getvariable('min_dusty_years') AS is_dusty_station
+            AND coalesce(y.n_dusty_years, 0) >= getvariable('min_dusty_years') AS is_dusty_station,
+        -- years whose reports came from another place under this ID (period notes); null if none
+        ns.notes
     FROM decided AS d
     LEFT JOIN dusty AS y ON d.station_id = y.station_id
+    LEFT JOIN note_stations AS ns ON d.station_id = ns.station_id
 )
 ORDER BY station_id  -- reproducible files

@@ -93,6 +93,7 @@ def _with_overrides(settings: Settings, tmp_path: Path, *rows: str) -> Settings:
         overrides={
             "paths": {"data_root": str(settings.data_root)},
             "stations": {
+                **settings.stations.model_dump(),  # never the repository's hand-edited files
                 "position_overrides": str(path),
                 "min_dusty_days": 0,  # these stations have no dust
                 "min_dusty_years": 0,
@@ -312,7 +313,7 @@ def _threshold(settings: Settings) -> Settings:
         overrides={
             "paths": {"data_root": str(settings.data_root)},
             "stations": {
-                "position_overrides": settings.stations.position_overrides,
+                **settings.stations.model_dump(),  # never the repository's hand-edited files
                 "min_dusty_days": 10,
                 "min_dusty_years": 2,
             },

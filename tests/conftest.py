@@ -31,6 +31,7 @@ def settings(tmp_path: Path) -> Settings:
             # little dust it has (the dusty-station threshold has its own tests)
             "stations": {
                 "position_overrides": str(tmp_path / "no_overrides.csv"),
+                "period_notes": str(tmp_path / "no_period_notes.csv"),  # nor its real notes
                 "min_dusty_days": 0,
                 "min_dusty_years": 0,
             },

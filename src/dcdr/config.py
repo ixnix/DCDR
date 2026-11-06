@@ -169,6 +169,7 @@ class StationsCfg(_Section):
     # Station positions (gold `stations`, docs/rules.md "Station positions"):
     isd_history: str  # NOAA's isd-history.csv, saved copy (relative to the data root)
     position_overrides: str  # hand-edited overrides CSV (relative to the working directory)
+    period_notes: str  # hand-edited notes on years from another place (relative to working dir)
     agree_km: float  # in-file and isd-history positions "agree" below this distance
     conflict_km: float  # ... and are in "conflict" at or above it ("moved" in between)
     # Dusty-station threshold: a station goes into gold only with at least this many dusty days
@@ -207,6 +208,11 @@ class Settings(_Section):
     def position_overrides_path(self) -> Path:
         """The station-position override file, as an absolute path (versioned in git)."""
         return _from_working_dir(self.stations.position_overrides)
+
+    @property
+    def period_notes_path(self) -> Path:
+        """The period-note file (gold `note` columns), as an absolute path (versioned in git)."""
+        return _from_working_dir(self.stations.period_notes)
 
 
 def _from_working_dir(text: str) -> Path:

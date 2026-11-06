@@ -1,2 +1,13 @@
 station_id,lat,lon,action,reason,decided
 61230099999,15.239,-9.577,use,author review of stations_review.csv: use the isd-history position (in-file 15.2333/-9.35; 24 km; status moved),2026-11-03
+41680099999,30.65,73.133,use,in-file longitude -73.133 has the wrong sign (block 41 = Pakistan; isd-history has no position): same-day 12 UTC is 11 C warmer than 03 UTC which fits 73 E (16:53 local) not 73 W (07:08); status unverified,2026-11-06
+72216513815,31.58333,-84.11667,use,all reports 1941-74 are named ALBANY NAS GA at this position; isd-history lists OLIVE BRANCH MS (648 km) a later use of the ID; status conflict,2026-11-06
+47128599999,36.5666667,127.2833333,use,all reports 2001-05 are named CHOCH IWON at this position; isd-history's position is Uljin (196 km); status conflict,2026-11-06
+74733099999,32.9,-106.4,use,isd-history position: in-file latitude 33.9 is 1 degree off for Northrup Strip (White Sands NM); same longitude; status conflict,2026-11-06
+86097099999,-22.64,-55.833,use,isd-history position (also in-file from 2023): in-file -23.63 before 2023 is 1 degree off for Pedro Juan Caballero; same longitude; status conflict,2026-11-06
+10312099999,52.318,8.17,use,isd-history position = in-file BELM 1932-42; only the 444 unnamed 1931 reports are at 51.933/7.65 (56 km); status conflict,2026-11-06
+47106099999,37.5,129.1333333,use,DONGHAE RADAR (1951-56 1973 1975-2025); the 1957-70 and 1974 reports are CAMP REDCLOUD UIJD at 37.75/127.03 (187 km; daily anomalies track Seoul at r 0.98); status conflict,2026-11-06
+76253099999,27.392639,-109.833111,use,reports 1979-2024 named CIUDAD OBREGON INTERNATIONAL; the 2025 SANTA ROSALIA BCS label (and isd-history) is metadata only: dew-point anomalies follow Obregon city in every period (r 0.80-0.87) and Loreto BCS least (0.44-0.50); status conflict,2026-11-06
+35687099999,47.99835,70.770658,use,KARAZHAL (2005-25) = isd-history; the 1959-96 reports are named KOKTAS at 47.517/70.9 (54 km; same longitude); status conflict,2026-11-06
+97600099999,-2.0833333,126.0,use,SANANA (1951-2023 position); the 2024-25 position -3.143/126.977 (Namniwel on Buru; 160 km) is metadata only: same elevation and SYNOP count and the same relation to Namlea 97700099999 in 2010-25 (t diff +1.0 to +1.4); status conflict,2026-11-06
+85196099999,-16.25,-62.1,use,CONCEPCION BL (1942-2023 position); the 2024-25 position -38.08/-70.64 (Neuquen in Argentina; 2567 km; elevation 1106 m) is metadata only: FIPS BL became ISO BO and the temperatures stay tropical (25-29 C every month as in 2018-23; warmest hour 19 UTC); status conflict,2026-11-06

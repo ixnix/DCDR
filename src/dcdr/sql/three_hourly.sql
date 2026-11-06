@@ -1,7 +1,8 @@
 -- 3-hourly station product on fixed UTC bins: 00 = 00:00-02:59, 03 = 03:00-05:59, ..., 21.
 -- Definitions: docs/rules.md section 10. Built from silver, independently of the daily table.
 -- Inputs: view `silver` (its `source_group`: synop / metar / other, method 2.0.0); variable
--- `vis5_max_m` (dust at or below this visibility counts for dust_vis5).
+-- `vis5_max_m` (dust at or below this visibility counts for dust_vis5); view `note_years`
+-- (station_id, year, note: the period notes of that year, docs/rules.md 4.3).
 --
 -- Output: one row per station per bin with at least one report (gold table `three_hourly`).
 -- Run by aggregate.build_gold, like daily.sql.
@@ -185,8 +186,12 @@ SELECT
     a.n_synop,
     a.n_metar,
     a.n_speci,
-    a.n_other
+    a.n_other,
+    -- reports from another place under this station ID in this year (period notes); null if none
+    nt.note
 FROM state AS s
 JOIN agg AS a ON s.station_id = a.station_id AND s.bin_time = a.bin_time
 JOIN station AS st ON s.station_id = st.station_id
+LEFT JOIN note_years AS nt
+    ON s.station_id = nt.station_id AND nt.year = year(CAST(s.bin_time + st.lmst_offset AS DATE))
 ORDER BY s.station_id, s.bin_time

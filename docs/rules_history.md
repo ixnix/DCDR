@@ -5,7 +5,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 *ruling*, a choice made during implementation and open to review). The dated log of all work is
 [worklog.md](worklog.md); notebooks are kept locally (not in the public repository).
 
-> Last updated: 2026-11-04 (current method version 2.1.0). Commit hashes refer to this repository.
+> Last updated: 2026-11-06 (current method version 2.1.0). Commit hashes refer to this repository.
 
 ## Versions at a glance
 
@@ -32,6 +32,7 @@ evidence (validation notebooks), the rule it replaced, and who decided (*user de
 | (no change) | 2026-11-03 | station positions: four-way rule, 949999 southern-hemisphere gate, overrides; gold uses the trusted longitude | user + rulings | c82178f, 756b678, a1af02d, 7dde73e, d6a1a89 |
 | (no change) | 2026-11-03 | dusty-station threshold: >= 10 dusty days in >= 2 years to enter gold | user + rulings | 51e44dd |
 | 2.1.0 | 2026-11-04 | no station-year without a position (missing, or 0/0) unless isd-history places it; 0/0 reports have no position; missing longitudes from isd-history first | user + rulings | 27e9999, (this commit) |
+| (no change) | 2026-11-06 | period notes: years from another place under the same station ID marked in a `note` column; 12 position overrides from the review of the whole-ISD gold | user + rulings | (this commit) |
 
 ---
 
@@ -501,6 +502,30 @@ instead of rebuilt (code_design.md 8). *Check:* the 24-station benchmark sample 
 built by 2.0.0): all 425 carried and all 425 identical to a re-process with 2.1.0; real affected
 stations in a scratch copy: Xuzhou rebuilt (1974 placed by isd-history), the 0/0 years of
 15091099999 removed, Tema (lon 0) carried and identical.
+
+## Period notes and the position review (2026-11-06, no method version change)
+
+*What:* a hand-edited file `config/stations/period_notes.csv` marks the years in which a station
+ID held reports from another place; gold copies the note, with its years, into a `note` column of
+every table and a `notes` column of `stations` (rules.md 4.3). Twelve position overrides from the
+review of the first whole-ISD gold (`stations_review.csv` of `20261105T214257Z-79ec25`, 101
+stations). *Why:* the review found that the CSV `NAME` field of a station's own reports tells
+"another place" from "a wrong position" better than distances alone: 5 of the 10 conflicts were
+two names under one ID. Checked against neighbouring stations (daily temperature and dew-point
+anomalies), only two were really another place: Camp Red Cloud (Uijeongbu) in Donghae's ID
+(1960-70 anomalies track Seoul at r 0.98) and Koktas in Karazhal's (not separable by the data, the
+names differ; kept as the author decided). The other three were NOAA's 2024-25 metadata: Ciudad
+Obregón labelled Santa Rosalía (dew-point anomalies follow Obregón city, r 0.80-0.87, not Loreto
+across the Gulf, 0.44-0.50, in 2025 as before), Sanana placed on Buru, Concepción (BO) placed in
+Argentina (temperatures stay tropical). One `unverified` station had a sign error found by the
+daily temperature cycle: `41680099999` at 73° W instead of 73° E (same-day 12 UTC 11 °C warmer
+than 03 UTC), so its local days were ~10 h off in the first whole-ISD gold.
+*Superseded:* nothing; before, such years were silently part of the station's record.
+*Decision:* user, 2026-11-06 (the 12 overrides; notes, not exclusion, for the other-place years;
+no notes for the metadata-only cases after the evidence). *Rulings:* no `METHOD_VERSION` bump
+(it versions silver; gold-only rules have been "no change", as above); a note must not contain
+`;` (the separator); `monthly` and `yearly` take the note of their year (`any_value`, exact
+because notes are per year); a decade gets every note that overlaps it.
 
 ## Resolved questions
 

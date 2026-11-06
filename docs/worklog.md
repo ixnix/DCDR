@@ -7,8 +7,10 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] Review `stations_review.csv` (conflicts and unverified, most dusty first) and write
-      `config/stations/position_overrides.csv` before the whole-ISD gold.
+- [ ] Rebuild the whole-ISD gold with the 12 overrides and the period notes (2026-11-06; gold only,
+      ~2.8 h; command in code_design.md 8), then check its `stations_review.csv`.
+- [ ] Optional: the daily-temperature longitude test (found `41680099999`'s sign error) as an
+      automatic check over every station in gold, not only the review list.
 - [ ] Re-run notebook 07 (Australia) and look at the first `three_hourly` table (e.g. one outbreak
       at Phoenix and one at Niamey).
 - [ ] Station catalog with aridity index and the dust-source flag (criteria from the statistics,
@@ -56,6 +58,54 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
   default, the cache off by default for some events) do not touch this workflow, which sets
   none of them. The `ubuntu-latest` move to Ubuntu 26 needs nothing unless a run breaks.
 - Merged `fix/gold-uniform-schema` into `main` (fast-forward to c7f8bba) and pushed; CI passed.
+
+- **Review of the whole-ISD `stations_review.csv`; 12 position overrides; period notes** (this
+  commit). The review list of `20261105T214257Z-79ec25` held 101 dusty stations: 10 `conflict`
+  (left out of gold), 43 `moved`, 48 `unverified`.
+  - Method of the review (scratchpad scripts): per station and year, the CSV `NAME`, position and
+    elevation of its own reports (bronze) and dusty days (silver); the daily temperature cycle
+    against the longitude (warmest hour vs 14:30 local solar time, then within-day anomalies,
+    which remove the bias of hours observed mostly in one season); and, where an ID changed name,
+    daily temperature and dew-point anomalies against neighbouring stations.
+  - `moved` (43): about 24 change name and position only in 2024-25 (NOAA's metadata update, often
+    to an airport, e.g. XINING -> XINING CAOJIAPU); the rule keeps the long-record position,
+    which is right. Nothing to change. `unverified` (48): every position fits its WMO block; the
+    daily cycle agrees with the longitude at 46 (one, 72902099999 at 78.6 N, has no daily cycle);
+    one sign error: `41680099999` at 73.133 W is in the Atlantic; same-day 12 UTC is 11 C warmer
+    than 03 UTC, which fits 73 E (16:53 local), not 73 W (07:08). Its local days were ~10 h off
+    in the current gold.
+  - The 10 conflicts: 5 wrong positions (Albany NAS GA, whose ID isd-history now lists as Olive
+    Branch MS, 648 km; Choch'iwon vs Uljin in isd-history; Northrup Strip and Pedro Juan
+    Caballero 1 degree off in the data; Belm 1931) and 5 IDs with two names. Of these, the
+    neighbour test found two real other places (Camp Red Cloud in Uijeongbu inside Donghae
+    Radar's ID in 1957-70 and 1974: anomalies track Seoul at r 0.98; Koktas inside Karazhal's ID
+    in 1959-96, not separable by the data) and three NOAA 2024-25 relabels of the same station:
+    Ciudad Obregón as Santa Rosalía (dew-point anomalies follow Obregón city, r 0.80-0.87, and
+    least Loreto across the Gulf, 0.44-0.50, in 2025 as in 2010-24), Sanana placed on Buru (same
+    elevation, SYNOP count and relation to Namlea 97700099999), Concepción (BO) placed in Argentina
+    (FIPS BL -> ISO BO; temperatures stay at 25-29 C every month).
+  - *User decisions:* the 6 clear overrides (41680 and 5 conflicts); Donghae Radar, Ciudad Obregón,
+    Karazhal, Sanana and Concepción (BL) positions for the other 5; notes (a new column) on the
+    other-place years, Camp Red Cloud and Koktas; no notes for Santa Rosalía 2025 and Namniwel
+    2024-25 once the data showed the same station (the author first asked for notes on them).
+  - Change: `config/stations/period_notes.csv` (3 rows) and a `note` column in every gold table
+    (`notes` and `period_notes_md5` in `stations`; `note_unused` in the review list); rules.md
+    4.3, rules_history.md. `position_overrides.csv`: 12 new rows, each with its evidence.
+  - *Rulings:* no `METHOD_VERSION` bump (it versions silver; bumping marks all 704,777 silver
+    files stale; gold-only rule changes have been "no method version change"; I had proposed
+    2.2.0 before checking this); a note must not contain `;` (the separator; caught my own first
+    draft); `monthly`/`yearly` take their year's note with `any_value` (exact: notes are per
+    year); a decade carries every note that overlaps it (decades start in a year ending in 1, so
+    1970 is in 1961-1970).
+  - Checks: tests first (loader validation incl. `;`, note texts per year/decade/station, every
+    gold table, no-file case, review row, lineage); 417 tests, ruff, mypy. Found on the way: three
+    test helpers built their own settings and so read the repository's real override (and now
+    notes) file; one failed once the real notes existed. They now copy the test fixture's
+    `stations` settings. Real data, scratch gold
+    of the 11 reviewed stations plus Kuwait from real silver (478 files): all 11 in gold at the
+    chosen positions (41680 at 73.133 E); notes on exactly the named years (Koktas 31 years,
+    Red Cloud 1957-1970 + 1974), the 1971-1980 decade only with the 1974 note; none elsewhere.
+  - Not yet in the active gold: needs the rebuild (Open items).
 
 ## 2026-11-05
 

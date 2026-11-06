@@ -119,6 +119,9 @@ stations:
   # "conflict" (left out of gold until resolved); in between "moved" (kept, flagged).
   isd_history: catalog/isd-history.csv  # relative to the data root
   position_overrides: config/stations/position_overrides.csv  # hand decisions, a reason each
+  # Years of a station whose reports came from another place under the same station ID (user
+  # decision 2026-11-06): copied into the `note` column of every gold table; nothing is dropped.
+  period_notes: config/stations/period_notes.csv
   agree_km: 10
   conflict_km: 50
   # Dusty stations (user decision 2026-11-03): only a station with >= 10 dusty days (any coverage,

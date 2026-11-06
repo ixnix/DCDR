@@ -110,7 +110,9 @@ SELECT
     count(*) FILTER (WHERE vis_hmean > 0 AND dusty_day) AS n_days_vis_dusty,
     avg(1000.0 / vis_hmean) FILTER (WHERE vis_hmean > 0 AND dusty_day) AS ext_mean_dusty,
     min(vis_min) AS vis_min,
-    CAST(coalesce(sum(n_vis_zero), 0) AS BIGINT) AS n_bins_vis_zero
+    CAST(coalesce(sum(n_vis_zero), 0) AS BIGINT) AS n_bins_vis_zero,
+    -- the period note of the year (the same on every day of a year, so any value is exact)
+    any_value(note) AS note
 FROM d
 GROUP BY station_id, year, month
 -- sorted, so the same input gives the same file (as daily.sql and three_hourly.sql)

@@ -204,7 +204,12 @@ def test_yearly_covered_months_threshold_from_config(settings: Settings) -> None
         overrides={
             "paths": {"data_root": str(settings.data_root)},
             "products": {"min_valid_days_month": 2},
-            "stations": {"min_dusty_days": 0, "min_dusty_years": 0},  # keep the clear station
+            # the fixture's stations settings (never the repository's hand-edited files)
+            "stations": {
+                **settings.stations.model_dump(),
+                "min_dusty_days": 0,
+                "min_dusty_years": 0,
+            },
         }
     )
     rows = _days(1, 10) + _days(2, 2)

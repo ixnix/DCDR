@@ -1,6 +1,7 @@
 -- Decadal station statistics: decadal, month-wise and season-wise counts and means.
 -- Definitions: docs/rules.md section 11. Built from the gold `monthly` table of the same run.
--- Inputs: view `monthly`.
+-- Inputs: view `monthly`; view `note_decades` (station_id, decade, note: every period note that
+-- overlaps the decade, docs/rules.md 4.3).
 --
 -- Output: one row per station, decade and period with at least one monthly row (gold table
 -- `decadal`). Decades start in a year ending in 1 (1991-2000, 2001-2010, ...), like the WMO
@@ -82,7 +83,9 @@ SELECT
     c.n_calendar_days,
     a.* EXCLUDE (station_id, decade, period),
     -- mean dusty days per year in the period; null without valid days
-    a.dusty_freq * c.n_calendar_days / 10 AS dusty_days_mean
+    a.dusty_freq * c.n_calendar_days / 10 AS dusty_days_mean,
+    nd.note  -- reports from another place under this station ID in the decade; null if none
 FROM agg a
 JOIN calendar c USING (decade, period)
+LEFT JOIN note_decades nd ON a.station_id = nd.station_id AND a.decade = nd.decade
 ORDER BY a.station_id, a.decade, a.period  -- reproducible files

@@ -26,7 +26,8 @@ SELECT
     -- coverage across the months: observed, valid, and with enough valid days
     count(*) FILTER (WHERE n_obs_days > 0) AS n_months_obs,
     count(*) FILTER (WHERE n_valid_days > 0) AS n_months_valid,
-    count(*) FILTER (WHERE n_valid_days >= getvariable('min_valid_days_month')) AS n_months_covered
+    count(*) FILTER (WHERE n_valid_days >= getvariable('min_valid_days_month')) AS n_months_covered,
+    any_value(note) AS note  -- the period note of the year (as in monthly.sql)
 FROM monthly
 GROUP BY station_id, year
 ORDER BY station_id, year  -- reproducible files

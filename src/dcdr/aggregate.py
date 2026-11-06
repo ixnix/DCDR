@@ -61,7 +61,13 @@ from dcdr.config import Settings, silver_config_hash
 from dcdr.process import METHOD_VERSION
 from dcdr.process.migrations import effective_version, ledger_path, read_ledger
 from dcdr.state import atomic_write_bytes, footer_metadata, safe_listdir
-from dcdr.stations import file_md5, load_isd_history, load_overrides
+from dcdr.stations import (
+    file_md5,
+    load_isd_history,
+    load_overrides,
+    load_period_notes,
+    note_texts,
+)
 
 log = logging.getLogger(__name__)
 
@@ -619,8 +625,9 @@ def station_status_counts(gold_dir: Path) -> dict[str, int]:
 
 def _write_review(con: duckdb.DuckDBPyConnection, path: Path) -> None:
     """The dusty stations that need a human decision (conflict, unverified, moved; not
-    overridden), plus override rows for stations with no silver, most dusty first (docs/rules.md
-    4.3: positions are checked by hand only for stations that turn out dusty)."""
+    overridden), plus override and period-note rows for stations with no silver (a typo would
+    otherwise do nothing), most dusty first (docs/rules.md 4.3: positions are checked by hand only
+    for stations that turn out dusty)."""
     con.execute(f"""
         COPY (
             SELECT station_id, status, file_lat, file_lon, isd_name, isd_lat, isd_lon, max_km,
@@ -631,6 +638,11 @@ def _write_review(con: duckdb.DuckDBPyConnection, path: Path) -> None:
             SELECT station_id, 'override_unused', NULL, NULL, NULL, NULL, NULL, NULL,
                    NULL, NULL, NULL, NULL
             FROM overrides
+            WHERE station_id NOT IN (SELECT station_id FROM stations)
+            UNION ALL
+            SELECT DISTINCT station_id, 'note_unused', NULL, NULL, NULL, NULL, NULL, NULL,
+                   NULL, NULL, NULL, NULL
+            FROM period_notes
             WHERE station_id NOT IN (SELECT station_id FROM stations)
             ORDER BY n_dusty_reports DESC NULLS LAST, station_id
         ) TO '{_sql_path(path)}' (HEADER, DELIMITER ',')
@@ -753,6 +765,9 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     # Station-position inputs (stations.py), validated before anything is built.
     isd_path, overrides_path = settings.isd_history_path, settings.position_overrides_path
     isd_history, overrides = load_isd_history(isd_path), load_overrides(overrides_path)
+    notes_path = settings.period_notes_path
+    period_notes = load_period_notes(notes_path)
+    note_years, note_decades, note_stations = note_texts(period_notes)
     union = check.schemas > 1
     if union:
         log.warning(
@@ -769,7 +784,16 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
     con = _connect(settings, spill)
     con.register("isd_history", isd_history)
     con.register("overrides", overrides)
-    inputs_md5 = {"isd_history_md5": file_md5(isd_path), "overrides_md5": file_md5(overrides_path)}
+    # Period notes (stations.py): the text each gold table copies into its `note` column.
+    con.register("period_notes", period_notes)
+    con.register("note_years", note_years)
+    con.register("note_decades", note_decades)
+    con.register("note_stations", note_stations)
+    inputs_md5 = {
+        "isd_history_md5": file_md5(isd_path),
+        "overrides_md5": file_md5(overrides_path),
+        "period_notes_md5": file_md5(notes_path),
+    }
     con.execute(f"SET VARIABLE agree_km = {float(settings.stations.agree_km)}")
     con.execute(f"SET VARIABLE conflict_km = {float(settings.stations.conflict_km)}")
     con.execute(f"SET VARIABLE min_dusty_days = {int(settings.stations.min_dusty_days)}")
@@ -833,7 +857,7 @@ def build_gold(settings: Settings, silver_paths: list[Path], run_id: str) -> Pat
             "silver_config_hash": expected[1],
             "silver_files": len(silver_paths),
             "silver_carried": n_carried,  # files built by an earlier method, carried forward
-            **inputs_md5,  # the station-position inputs (isd-history, overrides)
+            **inputs_md5,  # the station inputs (isd-history, overrides, period notes)
             "gold_batches": len(batches),
             "gold_batch_reports": budget,
             "gold_grid_deg": settings.products.gold_grid_deg,

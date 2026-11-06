@@ -6,7 +6,7 @@ how they came about.
 The running record of decisions and changes is [worklog.md](worklog.md).
 
 > Living document. It describes the code **as it is now** and is updated with every change.
-> Last updated: 2026-11-05 (method version 2.1.0).
+> Last updated: 2026-11-06 (method version 2.1.0).
 
 ---
 
@@ -157,7 +157,7 @@ All method choices live in `src/dcdr/default.yaml`, validated by Pydantic models
 | `classify` | weather fields used, haze window, snow/sand temperatures, SYNOP iX rule, inferred nil (V3) and its guard, METAR rules (`metar_rules`, `metar_report_types`, `metar_nil_min_vis_m`), METAR inference and its guard (`metar_infer_nil`, `metar_nil_guard_*`), derived SYNOPs (`derived_*`) | yes |
 | `sources` | excluded report types (`exclude_types`: SOD, SOM), source groups (`groups`: SYNOP and METAR report types; every other type is "other") | yes |
 | `products` | valid-day threshold (`min_bins_per_day`), visibility limit of `dusty_day_vis5` (`vis5_max_m`), gold versions kept (`gold_keep_versions`, 2); gold build size: reports per batch (`gold_batch_reports`, 10 million), DuckDB memory limit (`gold_memory_limit`, 4GB), target file size (`gold_file_mb`, 256), grid cell for ordering stations by place (`gold_grid_deg`, 10) | no (gold only) |
-| `stations` | default station list; station positions: the saved isd-history (`isd_history`, relative to the data root), the override file (`position_overrides`), the distance bands `agree_km` (10) and `conflict_km` (50); the dusty-station threshold `min_dusty_days` (10) and `min_dusty_years` (2) | no (gold only) |
+| `stations` | default station list; station positions: the saved isd-history (`isd_history`, relative to the data root), the override file (`position_overrides`), the period-note file (`period_notes`), the distance bands `agree_km` (10) and `conflict_km` (50); the dusty-station threshold `min_dusty_days` (10) and `min_dusty_years` (2) | no (gold only) |
 
 Precedence: `default.yaml` < `--profile` < test overrides < `DCDR_DATA`.
 
@@ -187,6 +187,7 @@ copy, not in the public repo: NOAA NCEI publishes it with the ISD data).
 | `contrast.csv` | the 12 hand-picked contrast stations, with reasons | by hand |
 | `regions.yaml` | dust regions: lat/lon box + optional country filter | by hand |
 | `position_overrides.csv` | hand decisions on station positions: `station_id, lat, lon, action` (`use` the given position or `exclude` the station), `reason` (required), `decided` (date); validated by `stations.load_overrides` (a missing or non-11-digit `station_id`, a missing reason, a duplicate station, an out-of-range position or an unknown action stops the gold build, naming the file line) | by hand |
+| `period_notes.csv` | years in which a station ID held reports from another place: `station_id, from_year, to_year, note, decided`; gold copies the note, labelled with its years, into the `note` column of every table (Part 2, 4.3); validated by `stations.load_period_notes` (a non-11-digit `station_id`, a missing note, a `;` in a note, a year outside 1800-2100 or `from_year` after `to_year` stops the gold build); `stations.note_texts` builds the per-year, per-decade and per-station texts | by hand |
 
 Station-list columns: `station_id, name, country, lat, lon, region, aridity_index`. Only
 `station_id` is required by the pipeline.
@@ -362,12 +363,14 @@ dust years ≤ valid years ≤ observed years ≤ 10 and dust years ≤ dust yea
 
 ### 7.5a Gold `stations`
 One row per station in silver, built **first** in every gold run from the view `silver_all` (all
-silver files), the saved isd-history and the override file (`stations.py`, registered as DuckDB
-views `isd_history` and `overrides`). Columns (Part 2, section 4.3): `station_id, status,
+silver files), the saved isd-history, the override file and the period notes (`stations.py`,
+registered as DuckDB views `isd_history`, `overrides`, `period_notes` and the note texts
+`note_years`, `note_decades`, `note_stations`). Columns (Part 2, section 4.3): `station_id, status,
 computed_status, in_gold, position_ok, is_dusty_station, n_dusty_days, n_dusty_years,
 trusted_lat, trusted_lon, file_lat, file_lon, isd_name, isd_lat,
 isd_lon, max_km, first_year, last_year, n_years, n_dusty_reports, override_action,
-override_reason, isd_history_md5, overrides_md5`. Right after it, `build_gold` creates the view
+override_reason, notes, isd_history_md5, overrides_md5, period_notes_md5`. Every other gold table
+ends with a `note` column (null without a period note). Right after it, `build_gold` creates the view
 `silver` = `silver_all` restricted to the stations with `in_gold`, which every later product reads,
 and writes `stations_review.csv`. Checks: one row per station; known statuses; every station in
 gold has a trusted longitude; `in_gold` = `position_ok AND is_dusty_station` (`trusted_lat` can be null for an `unverified` station without an
@@ -385,7 +388,7 @@ also check that they hold only stations in gold (`stations_in_gold`).
   `method_version` and `run_id` match it.
 - Gold lineage (`silver_version.json`) also records `silver_files` and `silver_carried`.
 - Gold lineage (`silver_version.json`): `silver_method_version, silver_config_hash,
-  isd_history_md5, overrides_md5` (empty when there is no override file).
+  isd_history_md5, overrides_md5, period_notes_md5` (empty when there is no such file).
 - Run log: `run_id, command, started_at, finished_at, status, git_commit, git_dirty,
   dcdr_version, config_hash, summary` (JSON with counts and failures).
 
@@ -491,6 +494,17 @@ station's bronze is still read once (guards and `affects`), about an hour for th
 only affected stations are built. A change that can affect every station (QC, common codes) gets
 no migration: it rebuilds in full. Before a published release, rebuild in full
 (`dcdr process --force`) rather than relying on carried files.
+
+**Build gold for the whole ISD** (2 h 48 min on 2026-11-05: ~30 min of footer checks, the
+station table, 236 batches of products, then ~34 min for DuckDB to close). Gold reads only
+silver; a change of the override or period-note file needs only this step. Run it detached and
+keep the log: `2>&1` sends the log lines (stderr) into the file, `nohup` keeps the run alive if
+the terminal closes.
+```bash
+nohup caffeinate -ims uv run dcdr aggregate --years 1901-2025 --stations config/stations/all_isd.csv > ~/dcdr_aggregate.log 2>&1 &
+```
+Then check the new version's `stations_review.csv` (`note_unused` and `override_unused` rows mean
+a station ID in the hand-edited files that gold does not have).
 
 ## 9. Design decisions (engineering)
 

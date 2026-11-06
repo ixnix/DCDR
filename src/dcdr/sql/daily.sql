@@ -2,7 +2,8 @@
 -- Definitions: docs/rules.md section 9 (rule tables: section 5.3).
 -- Inputs: view `three_hourly` (the bins, built just before in the same gold run); view `silver`,
 -- read only for daily-summary (SOD) dust, dated with the trusted longitude in view `stations`;
--- variable `min_bins` (valid-day threshold).
+-- variable `min_bins` (valid-day threshold); view `note_years` (station_id, year, note: the
+-- period notes of that year, docs/rules.md 4.3).
 --
 -- Output: one row per station per LMST day (gold table `daily`).
 -- Run by aggregate.build_gold, which creates the views and sets the variables (config
@@ -153,15 +154,18 @@ joined AS (
         b.td_mean,
         b.rh_mean,
         b.slp_mean,
-        b.dup6_mean
+        b.dup6_mean,
+        -- reports from another place under this station ID in this year (period notes)
+        nt.note
     FROM bin_daily AS b
     LEFT JOIN summary_daily AS m ON b.station_id = m.station_id AND b.lmst_date = m.lmst_date
+    LEFT JOIN note_years AS nt ON b.station_id = nt.station_id AND nt.year = year(b.lmst_date)
 )
 -- Day-to-day changes in mean temperature and pressure (signals of fronts, which often bring
 -- dust). `lag(x) OVER w` is x on the previous row of the same station (window w). A change is
 -- only computed between two VALID days that are exactly one calendar day apart.
 SELECT
-    *,
+    * EXCLUDE (note),
     CASE
         WHEN valid_day AND lag(valid_day) OVER w AND date_diff('day', lag(lmst_date) OVER w, lmst_date) = 1
         THEN t_mean - lag(t_mean) OVER w
@@ -169,7 +173,8 @@ SELECT
     CASE
         WHEN valid_day AND lag(valid_day) OVER w AND date_diff('day', lag(lmst_date) OVER w, lmst_date) = 1
         THEN slp_mean - lag(slp_mean) OVER w
-    END AS d_slp_mean
+    END AS d_slp_mean,
+    note  -- last, as in every gold table
 FROM joined
 WINDOW w AS (PARTITION BY station_id ORDER BY lmst_date)
 ORDER BY station_id, lmst_date

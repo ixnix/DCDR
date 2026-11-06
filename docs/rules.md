@@ -7,7 +7,7 @@ and 3-hourly records and monthly, yearly and decadal statistics, and briefly why
 superseded rules and the decisions; [worklog.md](worklog.md) is the dated log.
 
 > Describes the method **as implemented** (method version **2.1.0**). Planned steps are marked
-> *planned*. Last updated: 2026-11-04.
+> *planned*. Last updated: 2026-11-06.
 
 Authority for every field and code: the NOAA ISD format document (`legacy/isd-format-document.pdf`,
 local) and the WMO *Manual on Codes* (WMO-No. 306) as published in the WMO Codes Registry
@@ -190,10 +190,25 @@ thresholds to 0 keeps every station (e.g. for a pilot run).
 
 **Review list:** each gold version writes `stations_review.csv`: the **dusty** `conflict`,
 `unverified` and `moved` stations without an override (positions are checked by hand only for
-stations that turn out dusty), and override rows for stations with no data
-(`override_unused`), most dusty first (dusty reports counted in silver, since conflict stations
-are not in gold). The md5 of isd-history and of the override file are recorded in the table and
-in the gold lineage.
+stations that turn out dusty), and override and period-note rows for stations with no data
+(`override_unused`, `note_unused`), most dusty first (dusty reports counted in silver, since
+conflict stations are not in gold). The md5 of isd-history, of the override file and of the
+period-note file are recorded in the table and in the gold lineage.
+
+**Period notes** (user decision 2026-11-06). A station ID can hold reports from another place for
+some years (e.g. `47106099999`: DONGHAE RADAR, but CAMP REDCLOUD UIJD in Uijeongbu, 187 km away,
+in 1957-1970 and 1974). The station keeps one position, and those years stay in gold, marked:
+`config/stations/period_notes.csv` (`station_id, from_year, to_year, note, decided`; a note is
+required and must not contain `;`) puts the note, labelled with its years ("1957-1970: ..."),
+into a `note` column of every gold table: `three_hourly` and `daily` by the year of the local
+(LMST) date, `monthly` and `yearly` by their year, `decadal` for every note that overlaps the
+decade, and the `stations` table lists all of a station's notes (`notes`). Several notes of a row
+join in year order with "; "; a row without a note has null. *Why:* the years are real
+observations, but not of the station's place; a user can keep or drop them. *What is not a
+note:* a new name or position only in NOAA's 2024-25 metadata, while the data stay the same
+(same elevation, report counts, and relation to neighbouring stations), is a metadata change, not
+another place: e.g. Concepción (BO) 2024-25 at -38° in Argentina, whose temperatures stay
+tropical. Such stations get a position override with the evidence in its reason.
 
 ## 5. Was the weather observed?
 
