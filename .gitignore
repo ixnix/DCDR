@@ -57,3 +57,6 @@ notebooks/
 
 # DuckDB spill files (default temp folder of an in-memory connection)
 .tmp/
+
+# Local Claude Code settings (e.g. launch.json for the preview server)
+.claude/

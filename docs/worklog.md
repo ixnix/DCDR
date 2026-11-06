@@ -29,7 +29,6 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
       Good Hope): change of observing practice or real decline?
 - [ ] Later gold products: climatology, diurnal cycle, trends, code-06 diagnostic.
 - [ ] Publish documentation (e.g. MkDocs) when stable.
-- [ ] `config/stations/all_isd.csv` (untracked): commit or ignore.
 - [ ] Before a published release: a full rebuild (`--force`).
 - [ ] Same-station reports at the same time in two files (9,303 reports, 4 station-years,
       2026-11-05; in gold only Laredo 1965 and Lackland 1973, no dusty bin): accept, or collapse
@@ -48,6 +47,12 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## 2026-11-06
 
+- **`config/stations/all_isd.csv` committed, `.claude/` ignored** (user decision; this commit).
+  The whole-ISD station list (30,375 IDs, 365 KB, listed from NOAA's S3 bucket on 2026-10-21)
+  defines which stations every whole-ISD run covers, so it is versioned like the other station
+  lists; a new listing shows up as a diff. `.claude/` holds local Claude Code settings
+  (`launch.json`). Both were untracked, which made every run log `dirty=True` although the code
+  was unchanged (`git_revision` counts untracked files).
 - **Whole-ISD gold rebuilt with the 12 overrides and the period notes**: run
   `20261106T133205Z-0f4d8a` (commit daae86c; logged `dirty=True` only because of the untracked
   `.claude/` and `config/stations/all_isd.csv`), 08:32-11:59, of which 79 min was DuckDB closing

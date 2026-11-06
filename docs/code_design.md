@@ -424,7 +424,8 @@ CSV, 1901-2025; about 115 GB of bronze; roughly a day on a home connection). Run
 terminal; it does not need Claude.
 
 1. Make the station list (about 20 s; lists NOAA's S3 bucket, writes `config/stations/all_isd.csv`
-   with one column, `station_id`):
+   with one column, `station_id`; the list of 2026-10-21 is versioned in git, so a new listing
+   shows up as a diff):
    ```bash
    uv run python scripts/list_isd_stations.py
    ```
