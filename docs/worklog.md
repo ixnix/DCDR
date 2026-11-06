@@ -7,9 +7,6 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
-- [ ] Rebuild the statistics with the archive end (2026-11-06, code ready):
-      `uv run dcdr aggregate --statistics-only` (author's run, minutes); then check `monthly` ends
-      with July 2025, `yearly` with 2024, `decadal` with 2011-2020.
 - [ ] ISD stores VIS 0 m (QC passed) for some METARs that say 10 SM, when a stray letter precedes
       the visibility (`S 10SM CLR`; 5 days at KDVT and KFAT in 2015-2020, 2026-11-06). Census over
       all METARs, then decide: reject VIS 0 when the METAR text disagrees (a method change)?
@@ -54,6 +51,18 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 ---
 
 ## 2026-11-06
+
+- **Gold statistics rebuilt with the archive end** (author's run `dcdr aggregate
+  --statistics-only`, run 20261106T234422Z-a5d12e from 20261106T133205Z-0f4d8a, commit 5540426,
+  clean tree): **1 min 30 s** (the last full build: 3 h 27 min). Checked against the previous
+  version: `stations`, `daily`, `three_hourly` the same files, rows and bytes (the station file
+  and `stations_review.csv` compared byte for byte); `monthly` 5,082,755 -> 5,076,681 rows
+  (August 2025 removed, 6,074), `yearly` 457,383 -> 450,984 (2025 removed, 6,399), `decadal`
+  1,045,067 -> 930,642 (2021-2030 removed: 114,425 rows of 6,944 stations; 1 station, which
+  started after 2020, now has no decadal row). Every other row equal, except the last bits of
+  `ext_mean` (1,224 months) and `ext_mean_dusty` (19), relative differences <= 1.5e-15: DuckDB's
+  parallel float sums, as between two full builds (2026-11-05 entry). Now `monthly` ends with July
+  2025, `yearly` with 2024, `decadal` with 2011-2020.
 
 - **Statistics-only rebuild** (user decision: option B; this commit). `dcdr aggregate
   --statistics-only` makes a new gold version from the active one: `stations`, `daily`,
