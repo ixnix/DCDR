@@ -7,6 +7,26 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 
 ## Open items
 
+- [ ] **Automatic stations may hide dust (2026-11-06; user decision: no method change, trends
+      are left to users; the About page explains the processing and advises caution).** Alice Springs
+      (94326099999), Australia's dustiest station (57.5 dusty days a year in 2011-20): dusty days
+      fall from 48-115 a year (2011-16) to 0-38 (2017-21) and 0 (2022-24) while every day stays
+      well sampled. From 2017 its SYNOP bins (~2,900 a year, nearly 8 a day) report no dust at
+      all, and its METARs (which carried the dust) fade out (1,780 bins in 2015, 0 in 2023);
+      remarks dust stops in 2016. Likely an automatic station (iX 7, WMO table 4680), which can
+      only report dust as 04/05 or 27-29 (rules.md 6.3): its "no dust" may mean "cannot see dust".
+      Check iX per year at Alice Springs, then the extent across stations; decide whether
+      automatic present weather counts as "observed" for dust ("if it cannot be verified, it is
+      not observed").
+- [ ] Country codes, clear errors not yet approved (proposal (a), 2026-11-06): 11 East German
+      stations coded "GQ" (= Guam; shown "Guam") -> GM; Fort Trinquet, Mauritania, "MB"
+      (= Martinique) -> MR; Djibouti "BP" (= Solomon Islands) -> DJ; Cocos Islands "CC" (shown
+      "Ceuta and Melilla") -> CK. Left as ISD codes them: Futenma (US base in Japan) "US"; Taiwan
+      18 stations "CH", 41 "TW".
+- [ ] Station names: isd-history's name belongs to the latest station under an ID; where an ID
+      was reused, older records carry a later station's name (72205112841 "ATOKA MUNI, OK" holds
+      Orlando, Florida, 1941-1990; 72216513815 "OLIVE BRANCH, MS" Albany, Georgia; 74694113786
+      "MONROE CO, MS" Elizabeth City, NC).
 - [ ] ISD stores VIS 0 m (QC passed) for some METARs that say 10 SM, when a stray letter precedes
       the visibility (`S 10SM CLR`; 5 days at KDVT and KFAT in 2015-2020, 2026-11-06). Census over
       all METARs, then decide: reject VIS 0 when the METAR text disagrees (a method change)?
@@ -51,6 +71,60 @@ open to review. Details of the current method: [rules.md](rules.md); of the soft
 ---
 
 ## 2026-11-06
+
+- **Switzerland coded "SZ"** (user decision: "if you are confident ... use SZ"). isd-history codes
+  1,200 stations "CH": 967 lie in China, 167 in Switzerland (all with Swiss WMO block 06, e.g.
+  Geneva 067000, Zurich 066600), the rest in Taiwan, Hong Kong or at sea. The reference file now
+  has `country_code` (FIPS): "CH" -> "SZ" for the 167 (`CODE_FIXES` in
+  `make_station_reference.py`); the map popup shows "Switzerland (SZ)". Then all the clashes
+  (user decision: "fix all these incorrect country codes"): 37 (ISD code, country) pairs where
+  an ISO code is another country in FIPS (e.g. "AU" in Australia -> "AS", "AQ" in Antarctica ->
+  "AY", "CN" in China -> "CH", "GB" in the UK -> "UK", "BO" in Bolivia -> "BL"), each target
+  code taken from NOAA's country-list.txt, plus 3 Swedish stations coded "SZ" -> "SW" (WMO block
+  02): 316 stations recoded, 133 in gold. New column `country_name` (NOAA's name for the code).
+  Then (user decision (b): the country *name* comes from the code, not the map): 26 more pairs
+  where the ISO code is no FIPS code at all (DE -> GM, DZ -> AG, JP -> JA, RU -> RS, TR -> TU,
+  VN -> VM, AE -> TC, ...) and "TL" in East Timor -> "TT" (ISD's own code for its other East
+  Timor stations); display names are NOAA's, title-cased, with modern short forms (Myanmar, DR
+  Congo, South Korea, Samoa, Eswatini, ...); a code without a NOAA name takes the map's name.
+  Territories and disputed areas follow ISD's code (Crimea: Ukraine). In gold: 46 stations have
+  no ISD country code (name from the map), 3 have neither.
+
+- **The author's answers on the website list** (user decisions, details in DESIGN-NOTES.md):
+  trends left to users with a caution in the About page; About / method page in plain language;
+  station header on every page; "Monthly" renamed "Long-term"; export on the long-term page;
+  edge cases case by case; industry-standard stack, open-source map service, non-commercial
+  licence, public version v1. *Ruling (the author asked to work out the 8 US stations):* in
+  `make_station_reference.py`, isd-history's US state wins when the station is within 5 km of it
+  (Dutch Harbor AK 3.2 km, Lawson AAF GA 0.5 km, St Joseph MO x2 3.0 km); farther, the map's
+  state stands (three reused IDs: Orlando FL, Albany GA, Elizabeth City NC); Nantucket Shoals
+  (a radar platform 47 km at sea) has none. 80 stations of the whole table take the rule; in
+  gold 1,135 of 1,143 US stations now carry isd-history's state (the rest: the 3 reused IDs,
+  Nantucket, 4 Puerto Rico / Virgin Islands named by the map).
+
+- **Station reference file** (user decision: one file merging the ISD station facts, aridity and
+  state/province, as the reference). `scripts/make_station_reference.py` writes
+  `$DCDR_DATA/catalog/station_reference.csv`: all 29,335 stations of the gold station table
+  (10,846 in gold) with isd-history name, ICAO, country code, US state and elevation; gold's
+  trusted position and dust totals; region (Natural Earth admin-1); aridity (Global AI v3); both
+  country readings kept apart (NOAA's FIPS name, the region's country) until the country decision
+  (open item). Checked: regions equal the first run's for all 10,846, aridity equals the map
+  mockup's for all 10,846. In gold: region 10,543, aridity 10,670, elevation 10,773, ICAO 4,408.
+  Map popup: "State / province" shows the name only (user: no "(province)").
+
+- **State / province names for every station in gold** (user request; design work, mockups). ISD
+  has a state for only 1,157 of the 10,846 stations (1,143 US). Natural Earth admin-1 polygons
+  (public domain, v5.1.1, downloaded with the user's approval to `$DCDR_DATA/catalog/naturalearth/`)
+  at the trusted position, nearest within 2 km on coasts: 10,543 named (97 %; 8 more fall in
+  polygons without a name), 303 none. *Check:*
+  US state from isd-history agrees for 1,131 of 1,143 (+4 Puerto Rico/Virgin Islands by name);
+  6 disagree (one on the Kansas/Missouri line, five far apart: a wrong position or a wrong ISD
+  state, to review), 2 none. *Finding:* isd-history's `CTRY` mixes FIPS and ISO codes: 358
+  stations match the map's country only as ISO (Finland FI, Taiwan TW, Switzerland CH, ...), and
+  "CH" means China in FIPS but Switzerland in ISO (38 Swiss stations): country names cannot come
+  from NOAA's FIPS list (`country-list.txt`, downloaded too) alone. Natural Earth's own admin-1
+  FIPS codes are often empty or old (Denmark, China, Serbia "RB"), so the check needs a FIPS-ISO
+  crosswalk (open item).
 
 - **Gold statistics rebuilt with the archive end** (author's run `dcdr aggregate
   --statistics-only`, run 20261106T234422Z-a5d12e from 20261106T133205Z-0f4d8a, commit 5540426,

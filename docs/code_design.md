@@ -76,7 +76,8 @@ DCDR/
 │                               03: METAR present weather; 04: slot sources over the full record)
 ├── scripts/                    one-off scripts (thin_slice_report.py; fetch_references.py;
 │                               list_isd_stations.py: station list of the whole ISD archive;
-│                               compare_gold_versions.py: dusty days per station, two gold versions)
+│                               compare_gold_versions.py: dusty days per station, two gold versions;
+│                               make_station_reference.py: the station reference file, 6.4)
 ├── references/                official code manuals, local copies (git-ignored; index: docs/references.md)
 ├── tests/                      pytest: unit/, integration/, fixtures/
 ├── docs/                       code_design.md, rules.md, rules_history.md, worklog.md, references
@@ -199,6 +200,28 @@ never downloads it. `stations.load_isd_history` keys it by `station_id` = USAF +
 empty position or 0/0 as "no position", and stops on a station listed twice or a missing file.
 Silver uses its longitude for reports without a position (rules.md 4.2; without the file,
 `process` warns and fills from the station-year median), gold for the position check (4.3).
+
+### 6.4 Station reference file
+`scripts/make_station_reference.py` writes `<data root>/catalog/station_reference.csv`: one row
+per station of the active gold's station table (29,335; `in_gold` marks the 10,846 in gold),
+the single file the website and the published station table read (user decision 2026-11-06).
+Not part of the pipeline: it needs `geopandas` and `rasterio`, borrowed for the run
+(`uv run --with geopandas --with rasterio python scripts/make_station_reference.py`, ~10 s), and
+is rerun after a gold build. Columns and sources:
+
+| Columns | Source |
+|---|---|
+| `name`, `icao`, `isd_ctry`, `isd_state`, `elev_m` | isd-history (elevation `-0999.0`, `-0999.9`, empty = unknown) |
+| `country_code` | `isd_ctry` corrected to FIPS where it is an ISO code of another country (`CODE_FIXES`: the 167 Swiss stations coded "CH" -> "SZ") |
+| `region_postal`, `region_source` | the region's postal code; `isd_state` when a US station lies within 5 km of its isd-history state (border and coast cases), else `map` |
+| `isd_country_name_fips` | NOAA `country-list.txt` (catalog/noaa_country_list/) for `isd_ctry` read as FIPS; wrong for the stations coded in ISO ("CH" = China in FIPS, Switzerland in ISO) |
+| `lat`, `lon`, `position_status`, `first_year`, `last_year`, `n_dusty_days`, `n_dusty_years`, `in_gold` | gold `stations` (trusted position) |
+| `region`, `region_local`, `region_type`, `region_km`, `map_country`, `map_country_iso` | Natural Earth admin-1 1:10m v5.1.1 (catalog/naturalearth/, public domain) at the trusted position; just outside every region, the nearest within 2 km (`region_km` > 0) |
+| `aridity_index`, `aridity_class`, `aridity_km` | Global Aridity Index v3 (`legacy/station_history/ai_v3_yr.tif`, value × 10,000) at the trusted position; on a sea cell, the nearest land cell within 2 km; UNEP classes (hyper-arid < 0.03, arid < 0.2, semi-arid < 0.5, dry sub-humid < 0.65, humid) |
+| `gold_version` | the gold version it was built from |
+
+Which country name the published table shows (the region's country or the ISD code) is open
+(worklog).
 
 ## 7. Outputs
 
